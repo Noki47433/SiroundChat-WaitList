@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useRef, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import { track } from "@/src/lib/analytics/ga";
@@ -10,6 +10,33 @@ type WaitlistResponse = {
   error?: string;
 };
 
+type ConfettiPiece = {
+  id: number;
+  left: number;
+  size: number;
+  rotation: number;
+  delay: number;
+  duration: number;
+  color: string;
+  opacity: number;
+};
+
+const createConfettiPieces = (): ConfettiPiece[] => {
+  const colors = ["#f59e0b", "#fbbf24", "#fcd34d", "#f97316", "#fde68a"];
+  return Array.from({ length: 30 }, (_, index) => ({
+    id: Date.now() + index,
+    left: Math.random() * 100,
+    size: 5 + Math.random() * 5,
+    rotation: Math.random() * 160,
+    delay: Math.random() * 0.25,
+    duration: 1.2 + Math.random() * 0.5,
+    color: colors[Math.floor(Math.random() * colors.length)],
+    opacity: 0.45 + Math.random() * 0.45
+  }));
+};
+
+const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
 export default function HeroWaitlist() {
   const searchParams = useSearchParams();
   const isBlocked = searchParams?.get("blocked") === "1";
@@ -17,7 +44,37 @@ export default function HeroWaitlist() {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
+  const [analysisMessage, setAnalysisMessage] = useState("");
+  const [showFounderModal, setShowFounderModal] = useState(false);
+  const [confettiPieces, setConfettiPieces] = useState<ConfettiPiece[]>([]);
   const hasTrackedFormStart = useRef(false);
+  const logoClicksRef = useRef<number[]>([]);
+  const logoResetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const founderModalTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (logoResetTimeoutRef.current) {
+        clearTimeout(logoResetTimeoutRef.current);
+      }
+      if (founderModalTimeoutRef.current) {
+        clearTimeout(founderModalTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!showFounderModal || typeof document === "undefined") {
+      return;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [showFounderModal]);
 
   const handleFormStart = () => {
     if (hasTrackedFormStart.current) {
@@ -28,11 +85,62 @@ export default function HeroWaitlist() {
     track("form_start", { form: "waitlist", field: "email" });
   };
 
+  const handleLogoClick = () => {
+    const now = Date.now();
+    const recentClicks = [...logoClicksRef.current.filter((timestamp) => now - timestamp <= 4000), now];
+    logoClicksRef.current = recentClicks;
+
+    if (logoResetTimeoutRef.current) {
+      clearTimeout(logoResetTimeoutRef.current);
+    }
+    logoResetTimeoutRef.current = setTimeout(() => {
+      logoClicksRef.current = [];
+    }, 4000);
+
+    if (recentClicks.length < 5) {
+      return;
+    }
+
+    logoClicksRef.current = [];
+    if (logoResetTimeoutRef.current) {
+      clearTimeout(logoResetTimeoutRef.current);
+      logoResetTimeoutRef.current = null;
+    }
+
+    if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+      navigator.vibrate([20, 40, 20]);
+    }
+
+    setConfettiPieces(createConfettiPieces());
+    setShowFounderModal(true);
+
+    if (founderModalTimeoutRef.current) {
+      clearTimeout(founderModalTimeoutRef.current);
+    }
+    founderModalTimeoutRef.current = setTimeout(() => {
+      setShowFounderModal(false);
+    }, 4000);
+  };
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (loading) {
+      return;
+    }
+
     setLoading(true);
     setSuccess(false);
     setError("");
+    setAnalysisMessage("🤖 Analyzing business growth potential...");
+
+    await wait(1200);
+    setAnalysisMessage("📊 Founder probability: 87%");
+    await wait(800);
+    setAnalysisMessage("🚀 Early adopter detected.");
+    if (typeof navigator !== "undefined" && "vibrate" in navigator) {
+      navigator.vibrate(20);
+    }
 
     try {
       const response = await fetch("/api/waitlist", {
@@ -54,6 +162,7 @@ export default function HeroWaitlist() {
       setError("Something went wrong. Please try again.");
     } finally {
       setLoading(false);
+      setAnalysisMessage("");
     }
   }
 
@@ -71,7 +180,18 @@ export default function HeroWaitlist() {
         ) : null}
         <div className="overflow-hidden rounded-[2rem] border border-amber-300/35 bg-white/75 shadow-[0_28px_60px_-40px_rgba(217,119,6,0.65)] backdrop-blur-2xl">
           <div className="flex items-center justify-between border-b border-amber-200/35 bg-white/70 px-5 py-4 sm:px-8">
-            <div className="flex items-center gap-3">
+            <div
+              className="flex cursor-pointer items-center gap-3 select-none"
+              onClick={handleLogoClick}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  handleLogoClick();
+                }
+              }}
+              role="button"
+              tabIndex={0}
+            >
               <Image
                 alt="SiroundChat logo"
                 src="/images-logo/SiroundChatLogo.png"
@@ -140,6 +260,16 @@ export default function HeroWaitlist() {
                   {loading ? "Joining..." : "Join the waitlist"}
                 </button>
               </div>
+              <p
+                aria-live="polite"
+                className={`min-h-6 text-sm text-amber-700 transition-opacity duration-300 ${loading && analysisMessage ? "opacity-100" : "opacity-0"}`}
+              >
+                {loading && analysisMessage ? (
+                  <span key={analysisMessage} className="inline-block" style={{ animation: "waitlistStatusFade 240ms ease" }}>
+                    {analysisMessage}
+                  </span>
+                ) : null}
+              </p>
               <p className="mt-3 text-xs text-slate-600">No spam. Early-access invites only.</p>
 
               <div className="mt-6 grid gap-3 sm:grid-cols-2">
@@ -160,6 +290,59 @@ export default function HeroWaitlist() {
           </div>
         </div>
       </div>
+      {showFounderModal ? (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/35 px-6">
+          <div className="pointer-events-none absolute inset-0 overflow-hidden">
+            {confettiPieces.map((piece) => (
+              <span
+                key={piece.id}
+                className="absolute top-[-8%] rounded-[2px]"
+                style={{
+                  left: `${piece.left}%`,
+                  width: `${piece.size}px`,
+                  height: `${piece.size * 1.8}px`,
+                  backgroundColor: piece.color,
+                  opacity: piece.opacity,
+                  transform: `rotate(${piece.rotation}deg)`,
+                  animation: `founderConfetti ${piece.duration}s cubic-bezier(0.22,0.61,0.36,1) forwards`,
+                  animationDelay: `${piece.delay}s`
+                }}
+              />
+            ))}
+          </div>
+          <div className="relative w-full max-w-md rounded-3xl border border-amber-200/50 bg-white/95 px-8 py-9 text-center shadow-[0_35px_90px_-50px_rgba(217,119,6,0.7)] backdrop-blur-xl">
+            <h2 className="text-3xl font-semibold tracking-tight text-slate-900">You&apos;re persistent.</h2>
+            <p className="mt-3 text-base text-slate-700">That&apos;s how real founders win.</p>
+            <p className="mt-6 text-xs uppercase tracking-[0.16em] text-amber-700/75">Screenshot this. You earned it.</p>
+          </div>
+        </div>
+      ) : null}
+      <style jsx>{`
+        @keyframes waitlistStatusFade {
+          from {
+            opacity: 0;
+            transform: translateY(4px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        @keyframes founderConfetti {
+          0% {
+            opacity: 0;
+            transform: translateY(-12px) rotate(0deg);
+          }
+          12% {
+            opacity: 1;
+          }
+          100% {
+            opacity: 0;
+            transform: translateY(115vh) rotate(420deg);
+          }
+        }
+      `}</style>
     </section>
   );
 }
