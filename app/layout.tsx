@@ -2,6 +2,7 @@
 import type { Metadata } from "next";
 import Script from "next/script";
 import { Inter } from "next/font/google";
+import { Suspense } from "react";
 import GoogleAnalytics from "./components/GoogleAnalyticsClient";
 import "./globals.css";
 
@@ -75,7 +76,9 @@ window.gtag = gtag;
 gtag('js', new Date());
 gtag('config', '${GA_ID}');`}
             </Script>
-            <GoogleAnalytics />
+            <Suspense fallback={null}>
+              <GoogleAnalytics />
+            </Suspense>
           </>
         ) : null}
         {children}

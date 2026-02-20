@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { requireBusinessUser } from "@/lib/server/business-auth";
 import { log } from "@/lib/utils/log";
 
+export const dynamic = "force-dynamic";
+
 const RANGE_MAP: Record<string, number> = {
   "7d": 7,
   "30d": 30,

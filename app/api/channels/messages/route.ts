@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { requireBusinessUser } from "@/lib/server/business-auth";
 import { log } from "@/lib/utils/log";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(request: Request) {
   const { context, response } = await requireBusinessUser();
   if (response) return response;
