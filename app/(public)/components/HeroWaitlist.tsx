@@ -11,7 +11,7 @@ type WaitlistResponse = {
 
 export default function HeroWaitlist() {
   const searchParams = useSearchParams();
-  const isBlocked = searchParams.get("blocked") === "1";
+  const isBlocked = searchParams?.get("blocked") === "1";
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);

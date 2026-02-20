@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import BenefitPitch from "./(public)/components/BenefitPitch";
 import Footer from "./(public)/components/Footer";
 import HeroWaitlist from "./(public)/components/HeroWaitlist";
@@ -11,7 +12,9 @@ export default function Page() {
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_100%_20%,rgba(251,191,36,0.1),transparent_34%)]" />
       </div>
       <div className="relative">
-        <HeroWaitlist />
+        <Suspense fallback={null}>
+          <HeroWaitlist />
+        </Suspense>
         <BenefitPitch />
         <HowItWorksFAQ />
         <Footer />
