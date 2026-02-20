@@ -1,8 +1,9 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useRef, useState } from "react";
 import Image from "next/image";
 import { useSearchParams } from "next/navigation";
+import { track } from "@/src/lib/analytics/ga";
 
 type WaitlistResponse = {
   ok?: boolean;
@@ -16,6 +17,16 @@ export default function HeroWaitlist() {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
+  const hasTrackedFormStart = useRef(false);
+
+  const handleFormStart = () => {
+    if (hasTrackedFormStart.current) {
+      return;
+    }
+
+    hasTrackedFormStart.current = true;
+    track("form_start", { form: "waitlist", field: "email" });
+  };
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -32,6 +43,7 @@ export default function HeroWaitlist() {
       const data = (await response.json().catch(() => null)) as WaitlistResponse | null;
 
       if (response.ok && data?.ok) {
+        track("waitlist_submit", { method: "email" });
         setSuccess(true);
         setEmail("");
         return;
@@ -111,13 +123,18 @@ export default function HeroWaitlist() {
                   type="email"
                   required
                   value={email}
-                  onChange={(event) => setEmail(event.target.value)}
+                  onFocus={handleFormStart}
+                  onChange={(event) => {
+                    handleFormStart();
+                    setEmail(event.target.value);
+                  }}
                   placeholder="you@company.com"
                   className="h-12 w-full rounded-2xl border border-amber-300/45 bg-white/90 px-4 text-sm text-slate-900 placeholder:text-slate-400 focus:border-amber-500 focus:outline-none focus:ring-2 focus:ring-amber-300/35"
                 />
                 <button
                   type="submit"
                   disabled={loading}
+                  onClick={() => track("button_click", { id: "primary_cta", text: "Join the waitlist" })}
                   className="h-12 rounded-2xl border border-amber-300/60 bg-gradient-to-r from-amber-400 to-yellow-300 px-6 text-sm font-semibold text-amber-900 transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_12px_26px_-14px_rgba(245,158,11,0.9)] disabled:cursor-not-allowed disabled:opacity-70"
                 >
                   {loading ? "Joining..." : "Join the waitlist"}
