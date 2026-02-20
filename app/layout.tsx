@@ -1,6 +1,8 @@
 // Summary: App-wide root layout applying fonts, global styles, and metadata; secondary framework wrapper.
 import type { Metadata } from "next";
+import Script from "next/script";
 import { Inter } from "next/font/google";
+import GoogleAnalytics from "@/app/components/GoogleAnalytics.client";
 import "./globals.css";
 
 
@@ -11,6 +13,7 @@ const inter = Inter({
 });
 
 const googleVerification = "BHFvsACrgww4TItleStGj7tu2SPHj9DqmqEOdCP9BnM";
+const GA_ID = process.env.NEXT_PUBLIC_GA_ID;
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://siroundchat.com"),
@@ -58,6 +61,23 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${inter.variable} min-h-screen bg-bg-page text-ink antialiased font-sans`}>
+        {GA_ID ? (
+          <>
+            <Script
+              async
+              src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`}
+              strategy="afterInteractive"
+            />
+            <Script id="ga-init" strategy="afterInteractive">
+              {`window.dataLayer = window.dataLayer || [];
+function gtag(){dataLayer.push(arguments);}
+window.gtag = gtag;
+gtag('js', new Date());
+gtag('config', '${GA_ID}');`}
+            </Script>
+            <GoogleAnalytics />
+          </>
+        ) : null}
         {children}
       </body>
     </html>
