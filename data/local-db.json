@@ -1,0 +1,125 @@
+{
+  "widgets": {
+    "3f4f2958-f413-49ad-8242-4877b279dea2": {
+      "siteId": "3f4f2958-f413-49ad-8242-4877b279dea2",
+      "businessName": "siroundstudio",
+      "theme": {
+        "primary": "#EC4899",
+        "accent": "#F97316",
+        "secondary": "#F97316",
+        "background": "#FFF1F2",
+        "text": "#1F2937",
+        "shape": "rounded"
+      },
+      "greeting": "hello! I'm your virtual assistant. How can I help you today?",
+      "launcherVariant": "iconWithLabel",
+      "logoUrl": null,
+      "iconId": "hotel-1",
+      "businessType": "gym",
+      "faqs": [
+        {
+          "id": "gym-1",
+          "question": "Do you offer day passes?",
+          "answer": "Yes, day passes are available. Ask at the front desk or purchase online."
+        },
+        {
+          "id": "gym-2",
+          "question": "Do you have personal trainers?",
+          "answer": "We have certified trainers available for 1:1 and small group sessions."
+        },
+        {
+          "id": "gym-3",
+          "question": "What classes do you offer?",
+          "answer": "We offer HIIT, yoga, strength, and spin classes daily."
+        },
+        {
+          "id": "gym-4",
+          "question": "Is there locker access?",
+          "answer": "Secure lockers and showers are available for all members and guests."
+        }
+      ],
+      "updatedAt": "2026-01-03T18:52:51.908Z"
+    },
+    "64a234f3-dff7-4ed3-93d2-3221c4eb9c41": {
+      "siteId": "64a234f3-dff7-4ed3-93d2-3221c4eb9c41",
+      "businessName": "Rikoli Restaurant",
+      "theme": {
+        "primary": "#312E81",
+        "accent": "#22D3EE",
+        "secondary": "#22D3EE",
+        "background": "#0F172A",
+        "text": "#E5E7EB",
+        "shape": "rounded"
+      },
+      "greeting": "pershendetje",
+      "launcherVariant": "iconWithLabel",
+      "logoUrl": "https://jevqmewqvgcrrjrponwe.supabase.co/storage/v1/object/public/business-logos/logos/b63c1359-e2f5-4e95-9e84-e2070465a0ab/logo.png",
+      "iconId": "restaurant-1",
+      "businessType": "restaurant",
+      "faqs": [
+        {
+          "id": "rest-1",
+          "question": "Do you take reservations?",
+          "answer": "Yes, you can reserve a table anytime using our booking form or by calling us."
+        },
+        {
+          "id": "rest-2",
+          "question": "Do you offer delivery?",
+          "answer": "We offer delivery through our partners and direct phone orders."
+        },
+        {
+          "id": "rest-3",
+          "question": "Do you have vegetarian options?",
+          "answer": "Yes, we have multiple vegetarian and vegan options on the menu."
+        },
+        {
+          "id": "rest-4",
+          "question": "Do you have Wi-Fi?",
+          "answer": "Yes, free Wi-Fi is available for all guests."
+        }
+      ],
+      "updatedAt": "2026-02-16T16:02:31.491Z"
+    }
+  },
+  "embeddings": [],
+  "conversations": {
+    "799eae2d-f4a9-4b7e-9c8d-4d69a0758cf2": {
+      "id": "799eae2d-f4a9-4b7e-9c8d-4d69a0758cf2",
+      "businessId": "b23a1a09-e0b2-476a-9b47-3f37de15e7c2",
+      "siteId": "b23a1a09-e0b2-476a-9b47-3f37de15e7c2",
+      "messages": [
+        {
+          "id": "6293bf90-8c41-41d4-bc64-ac5be5d65baf",
+          "sender": "user",
+          "message_text": "hello",
+          "created_at": "2026-01-01T16:51:22.997Z"
+        },
+        {
+          "id": "26c89434-7669-4fa9-8ea6-c95fafe5144b",
+          "sender": "ai",
+          "message_text": "Hello! How can I assist you today?",
+          "created_at": "2026-01-01T16:51:24.723Z"
+        }
+      ]
+    },
+    "48d78434-c324-4af7-98fb-6628aa1de9bd": {
+      "id": "48d78434-c324-4af7-98fb-6628aa1de9bd",
+      "businessId": "b23a1a09-e0b2-476a-9b47-3f37de15e7c2",
+      "siteId": "b23a1a09-e0b2-476a-9b47-3f37de15e7c2",
+      "messages": [
+        {
+          "id": "481ed264-a5bb-4ca1-ae0c-732bd223aea4",
+          "sender": "user",
+          "message_text": "lorem50",
+          "created_at": "2026-01-02T11:59:23.829Z"
+        },
+        {
+          "id": "7d7bea5c-aa6e-4dd5-96af-82d6279ce3cd",
+          "sender": "ai",
+          "message_text": "Më vjen keq, por nuk kam informacion për \"lorem50\". A mund të më jepni më shumë detaje për atë që po kërkoni?",
+          "created_at": "2026-01-02T11:59:27.051Z"
+        }
+      ]
+    }
+  }
+}

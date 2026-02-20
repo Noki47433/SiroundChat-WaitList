@@ -1,0 +1,24 @@
+{
+  "name": "Real Estate",
+  "blocks": [
+    {
+      "type": "hero",
+      "position": 0,
+      "data": {
+        "title": "Find your next home",
+        "subtitle": "Apartments in Prishtina, Prizren, Tirana.",
+        "cta": "See listings"
+      }
+    },
+    {
+      "type": "gallery",
+      "position": 1,
+      "data": {
+        "images": [
+          "/images/home1.jpg",
+          "/images/home2.jpg"
+        ]
+      }
+    }
+  ]
+}

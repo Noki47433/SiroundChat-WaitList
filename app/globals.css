@@ -1,0 +1,333 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  --sc-bg: #fffdf6;
+  --sc-surface: #ffffff;
+  --sc-surface-2: #fff7d1;
+  --sc-border: #e7e2cf;
+  --sc-text: #161616;
+  --sc-muted: #6b6b6b;
+  --sc-yellow: #ffd400;
+  --sc-yellow-2: #ffe066;
+  --sc-danger: #e5484d;
+  --sc-focus: rgba(255, 212, 0, 0.55);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply bg-bg-page text-ink antialiased;
+}
+
+html,
+body {
+  overflow-x: hidden;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+.sc-editor [data-section-selected="true"],
+.sc-editor [data-element-selected="true"],
+.sc-editor [data-content-selected="true"] {
+  outline: 2px solid var(--sc-yellow);
+  outline-offset: 4px;
+  box-shadow: 0 0 0 4px rgba(255, 212, 0, 0.2);
+}
+
+.sc-editor [data-section-id]:hover,
+.sc-editor [data-element-id]:hover,
+.sc-editor [data-content-key]:hover {
+  outline: 2px solid rgba(255, 212, 0, 0.6);
+  outline-offset: 4px;
+}
+
+.builder-panel input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+.builder-panel select,
+.builder-panel textarea {
+  background-color: var(--sc-surface);
+  color: var(--sc-text);
+  border: 1px solid var(--sc-border);
+  border-radius: 0.75rem;
+}
+
+.builder-panel input::placeholder,
+.builder-panel textarea::placeholder {
+  color: var(--sc-muted);
+}
+
+.builder-panel input:focus,
+.builder-panel select:focus,
+.builder-panel textarea:focus {
+  outline: none;
+  border-color: var(--sc-yellow);
+  box-shadow: 0 0 0 2px var(--sc-focus);
+}
+
+.sc-editor [draggable="true"] {
+  cursor: grab;
+}
+
+.sc-editor [draggable="true"]:active {
+  cursor: grabbing;
+}
+
+.builder-panel select {
+  color-scheme: light;
+}
+
+@keyframes wrapped-float {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(0, -10px, 0);
+  }
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes wrapped-spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes wrapped-draw {
+  0% {
+    stroke-dashoffset: 1;
+  }
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes wrapped-grow {
+  0% {
+    opacity: 0;
+    transform: scaleY(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+
+@keyframes wrapped-fade-in {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes wrapped-fade-up {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, -6px, 0);
+  }
+}
+
+@keyframes wrapped-stack {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 14px, 0) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes wrapped-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.75);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes gen-orb-float {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(0, -10px, 0);
+  }
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes gen-orb-spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes gen-orb-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.85;
+  }
+  50% {
+    transform: scale(1.08);
+    opacity: 1;
+  }
+}
+
+@keyframes gen-orb-orbit {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.gen-orb-glow {
+  background: radial-gradient(circle at 30% 30%, rgba(59, 130, 246, 0.35), transparent 65%);
+  filter: blur(20px);
+  animation: gen-orb-pulse 3.2s ease-in-out infinite;
+}
+
+.gen-orb-core {
+  background: radial-gradient(circle at 30% 30%, #ffffff 0%, #93c5fd 45%, #3b82f6 100%);
+  box-shadow: 0 18px 45px rgba(59, 130, 246, 0.35);
+  animation: gen-orb-pulse 2.6s ease-in-out infinite, gen-orb-float 4.5s ease-in-out infinite;
+}
+
+.gen-orb-ring {
+  border: 1px solid rgba(59, 130, 246, 0.4);
+  animation: gen-orb-spin 12s linear infinite;
+}
+
+.gen-orb-ring--slow {
+  border: 1px dashed rgba(59, 130, 246, 0.25);
+  animation-duration: 18s;
+}
+
+.gen-orb-orbit {
+  animation: gen-orb-orbit 7s linear infinite;
+}
+
+.gen-orb-orbit--two {
+  animation-duration: 10s;
+}
+
+.gen-orb-orbit--three {
+  animation-duration: 14s;
+}
+
+.gen-orb-dot {
+  position: absolute;
+  top: -5px;
+  left: 50%;
+  width: 12px;
+  height: 12px;
+  border-radius: 9999px;
+  transform: translateX(-50%);
+  background: #60a5fa;
+  box-shadow: 0 0 12px rgba(59, 130, 246, 0.6);
+  animation: gen-orb-pulse 2.4s ease-in-out infinite;
+}
+
+.gen-orb-dot--small {
+  width: 9px;
+  height: 9px;
+  background: #93c5fd;
+  animation-duration: 2.8s;
+}
+
+.gen-orb-dot--tiny {
+  width: 6px;
+  height: 6px;
+  background: #bfdbfe;
+  animation-duration: 3.2s;
+}
+
+.wrapped-share-freeze *,
+.wrapped-share-freeze *::before,
+.wrapped-share-freeze *::after {
+  animation: none !important;
+  transition: none !important;
+}
+
+.wix-grid {
+  background-image: linear-gradient(rgba(73, 124, 255, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(73, 124, 255, 0.08) 1px, transparent 1px);
+  background-size: 48px 48px;
+  background-position: center;
+}
+
+.wix-soft-shadow {
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.12);
+}
+
+.admin-theme {
+  --adm-bg: #0b0f14;
+  --adm-surface: #121821;
+  --adm-surface-2: #171f2a;
+  --adm-border: rgba(140, 153, 176, 0.22);
+  --adm-text: #f2f7ff;
+  --adm-muted: #95a4bb;
+  --adm-accent: #55ff95;
+  --adm-warning: #ffc547;
+  --adm-danger: #ff5d7a;
+  color-scheme: dark;
+}
+
+.admin-grid-bg {
+  background-image: linear-gradient(rgba(85, 255, 149, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(85, 255, 149, 0.06) 1px, transparent 1px),
+    radial-gradient(circle at 15% 10%, rgba(85, 255, 149, 0.12), transparent 40%),
+    radial-gradient(circle at 85% 10%, rgba(66, 224, 255, 0.09), transparent 45%);
+  background-size: 38px 38px, 38px 38px, 100% 100%, 100% 100%;
+  background-position: center;
+}
+
+.admin-glow {
+  box-shadow: 0 0 0 1px rgba(85, 255, 149, 0.16), 0 24px 45px rgba(0, 0, 0, 0.35), 0 0 45px rgba(85, 255, 149, 0.12);
+}
+
+@keyframes admin-live-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+
+.admin-live-dot {
+  animation: admin-live-pulse 1.45s ease-in-out infinite;
+}

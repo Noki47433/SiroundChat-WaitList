@@ -1,0 +1,739 @@
+import Link from "next/link";
+import { Card } from "@/components/ui/card";
+import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { getTenantFromSession } from "@/lib/utils/tenant";
+import dynamicImport from "next/dynamic";
+import { OverviewHeader } from "@/components/dashboard/OverviewHeader";
+import { RecentTable } from "@/components/dashboard/RecentTable";
+import { ActivityFeed } from "@/components/dashboard/ActivityFeed";
+import { ImpactSummaryGate } from "@/app/(dashboard)/dashboard/_components/ImpactSummaryGate";
+import { buildHealthSuggestions } from "@/lib/health/weekly";
+import { logActivity } from "@/lib/activity/log";
+
+const KpiCard = dynamicImport(() => import("@/components/dashboard/KpiCard").then((mod) => mod.KpiCard), { ssr: false });
+const ConversationsTrend = dynamicImport(
+  () => import("@/components/dashboard/Charts/ConversationsTrend").then((mod) => mod.ConversationsTrend),
+  { ssr: false }
+);
+const ConversionDonut = dynamicImport(
+  () => import("@/components/dashboard/Charts/ConversionDonut").then((mod) => mod.ConversionDonut),
+  { ssr: false }
+);
+
+export const dynamic = "force-dynamic";
+
+const RANGE_OPTIONS = {
+  "7d": 7,
+  "30d": 30,
+  "90d": 90
+} as const;
+
+type RangeKey = keyof typeof RANGE_OPTIONS;
+
+type DailyPoint = {
+  label: string;
+  value: number;
+};
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+const formatNumber = (value: number) => new Intl.NumberFormat("en-US").format(value);
+
+const buildDailySeries = (
+  items: Array<{ created_at?: string | null; timestamp?: string | null }>,
+  rangeStart: Date,
+  rangeDays: number,
+  timeZone: string,
+  field: "created_at" | "timestamp" = "created_at"
+): DailyPoint[] => {
+  const keyFormatter = new Intl.DateTimeFormat("en-CA", { timeZone });
+  const labelFormatter = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    month: "short",
+    day: "2-digit"
+  });
+  const buckets: Record<string, number> = {};
+
+  items.forEach((item) => {
+    const stamp = field === "timestamp" ? item.timestamp : item.created_at;
+    if (!stamp) return;
+    const key = keyFormatter.format(new Date(stamp));
+    buckets[key] = (buckets[key] ?? 0) + 1;
+  });
+
+  return Array.from({ length: rangeDays }, (_, index) => {
+    const date = new Date(rangeStart.getTime() + index * DAY_MS);
+    const key = keyFormatter.format(date);
+    return {
+      label: labelFormatter.format(date),
+      value: buckets[key] ?? 0
+    };
+  });
+};
+
+const computeDelta = (current: number, previous: number) => {
+  if (!previous) return null;
+  return ((current - previous) / previous) * 100;
+};
+
+const activityTone = (type?: string): "success" | "danger" | "warning" | "info" => {
+  switch (type) {
+    case "reservation_created":
+    case "lead_created":
+      return "success";
+    case "reservation_failed":
+      return "danger";
+    case "fallback_triggered":
+    case "fallback_occurred":
+      return "warning";
+    default:
+      return "info";
+  }
+};
+
+export default async function DashboardOverviewPage({
+  searchParams
+}: {
+  searchParams?: Record<string, string | string[] | undefined>;
+}) {
+  const rangeParam = (searchParams?.range ?? "30d") as RangeKey;
+  const rangeKey: RangeKey = RANGE_OPTIONS[rangeParam] ? rangeParam : "30d";
+  const rangeDays = RANGE_OPTIONS[rangeKey];
+
+  const tenant = await getTenantFromSession();
+  const supabase = getSupabaseServerClient();
+
+  if (!tenant.businessId) {
+    return (
+      <div className="space-y-4">
+        <p className="text-xs uppercase tracking-[0.2em] text-white/40">Overview</p>
+        <h2 className="text-3xl font-semibold">Welcome back</h2>
+        <p className="text-sm text-white/60">Log in to review your dashboard activity.</p>
+      </div>
+    );
+  }
+
+  await logActivity({
+    businessId: tenant.businessId,
+    userId: tenant.userId,
+    actorType: "business_user",
+    eventType: "dashboard_view",
+    summary: "Opened dashboard overview",
+    meta: { range: rangeKey }
+  });
+
+  const { data: business } = await (supabase as any)
+    .from("businesses")
+    .select("id, business_name, timezone, industry")
+    .eq("id", tenant.businessId)
+    .maybeSingle();
+
+  const businessName = business?.business_name ?? "Your business";
+  const timeZone = business?.timezone ?? "UTC";
+
+  const now = new Date();
+  const rangeStart = new Date(now.getTime() - rangeDays * DAY_MS);
+  const prevStart = new Date(rangeStart.getTime() - rangeDays * DAY_MS);
+
+  const rangeStartIso = rangeStart.toISOString();
+  const rangeEndIso = now.toISOString();
+  const prevStartIso = prevStart.toISOString();
+
+  const [
+    conversationsResult,
+    leadsResult,
+    reservationsResult,
+    eventsResult,
+    recentEventsResult,
+    messagesResult,
+    weeklyMetricsResult
+  ] =
+    await Promise.all([
+      (supabase as any)
+        .from("chat_conversations")
+        .select("id, user_name, is_lead, created_at")
+        .eq("business_id", tenant.businessId)
+        .gte("created_at", prevStartIso)
+        .lt("created_at", rangeEndIso),
+      (supabase as any)
+        .from("leads")
+        .select("id, conversation_id, name, email, created_at")
+        .eq("business_id", tenant.businessId)
+        .gte("created_at", prevStartIso)
+        .lt("created_at", rangeEndIso),
+      (supabase as any)
+        .from("reservations")
+        .select("id, conversation_id, customer_name, status, created_at")
+        .eq("business_id", tenant.businessId)
+        .gte("created_at", prevStartIso)
+        .lt("created_at", rangeEndIso),
+      (supabase as any)
+        .from("analytics_events")
+        .select("type, timestamp, metadata")
+        .eq("business_id", tenant.businessId)
+        .gte("timestamp", rangeStartIso)
+        .lt("timestamp", rangeEndIso),
+      (supabase as any)
+        .from("analytics_events")
+        .select("type, timestamp, metadata")
+        .eq("business_id", tenant.businessId)
+        .order("timestamp", { ascending: false })
+        .limit(20),
+      (supabase as any)
+        .from("chat_messages")
+        .select("conversation_id, sender, created_at, chat_conversations!inner(business_id)")
+        .eq("chat_conversations.business_id", tenant.businessId)
+        .gte("created_at", rangeStartIso)
+        .lt("created_at", rangeEndIso)
+        .order("created_at", { ascending: true })
+      ,
+      (supabase as any)
+        .from("business_weekly_metrics")
+        .select("*")
+        .eq("business_id", tenant.businessId)
+        .order("week_start", { ascending: false })
+        .limit(2)
+    ]);
+
+  const conversations = (conversationsResult.data ?? []) as Array<{
+    id: string;
+    user_name?: string | null;
+    is_lead?: boolean | null;
+    created_at: string;
+  }>;
+  const leads = (leadsResult.data ?? []) as Array<{
+    id: string;
+    conversation_id?: string | null;
+    name?: string | null;
+    email?: string | null;
+    created_at: string;
+  }>;
+  const reservations = (reservationsResult.data ?? []) as Array<{
+    id: string;
+    conversation_id?: string | null;
+    customer_name?: string | null;
+    status?: string | null;
+    created_at: string;
+  }>;
+  const events = (eventsResult.data ?? []) as Array<{ type?: string; timestamp?: string; metadata?: any }>;
+  const recentEvents = (recentEventsResult.data ?? []) as Array<{
+    type?: string;
+    timestamp?: string;
+    metadata?: any;
+  }>;
+  const messages = (messagesResult.data ?? []) as Array<{
+    conversation_id: string;
+    sender: string;
+    created_at: string;
+  }>;
+  const weeklyMetrics = (weeklyMetricsResult.data ?? []) as Array<{
+    week_start: string;
+    conversations_count: number;
+    leads_count: number;
+    bookings_count: number;
+    missed_intents_count: number;
+    avg_response_time_sec: number;
+    error_events_count: number;
+    health_score: number;
+  }>;
+
+  const currentWeeklyMetric = weeklyMetrics[0] ?? null;
+  const previousWeeklyMetric = weeklyMetrics[1] ?? null;
+
+  const { data: benchmarkRowsRaw } = currentWeeklyMetric
+    ? await (supabase as any)
+        .from("industry_benchmarks_weekly")
+        .select("*")
+        .eq("week_start", currentWeeklyMetric.week_start)
+        .in("industry", [business?.industry ?? "general", "general"])
+    : { data: [] as any[] };
+  const benchmarkRows = (benchmarkRowsRaw ?? []) as Array<{
+    industry: string;
+    conversion_p50: number;
+    bookings_p50: number;
+    health_p50: number;
+  }>;
+  const benchmarkByIndustry = new Map<string, (typeof benchmarkRows)[number]>(
+    benchmarkRows.map((row) => [row.industry, row])
+  );
+  const selectedBenchmark =
+    benchmarkByIndustry.get((business?.industry ?? "general").trim() || "general") ??
+    benchmarkByIndustry.get("general") ??
+    null;
+
+  const currentConversations = conversations.filter((row) => row.created_at >= rangeStartIso);
+  const previousConversations = conversations.filter(
+    (row) => row.created_at >= prevStartIso && row.created_at < rangeStartIso
+  );
+  const currentLeads = leads.filter((row) => row.created_at >= rangeStartIso);
+  const previousLeads = leads.filter((row) => row.created_at >= prevStartIso && row.created_at < rangeStartIso);
+  const currentReservations = reservations.filter((row) => row.created_at >= rangeStartIso);
+  const previousReservations = reservations.filter(
+    (row) => row.created_at >= prevStartIso && row.created_at < rangeStartIso
+  );
+
+  const conversationIds = new Set(currentConversations.map((row) => row.id));
+  const leadConversationIds = new Set(currentLeads.map((row) => row.conversation_id).filter(Boolean) as string[]);
+  const reservationConversationIds = new Set(
+    currentReservations.map((row) => row.conversation_id).filter(Boolean) as string[]
+  );
+  const convertedConversationIds = new Set<string>([
+    ...Array.from(leadConversationIds),
+    ...Array.from(reservationConversationIds)
+  ]);
+
+  const eventCounts: Record<string, number> = {};
+  events.forEach((row) => {
+    const type = row?.type ?? "";
+    if (!type) return;
+    eventCounts[type] = (eventCounts[type] ?? 0) + 1;
+  });
+
+  const rawChatOpened = eventCounts.chat_opened ?? 0;
+  const rawWidgetOpened = eventCounts.widget_opened ?? 0;
+  const chatOpenedCount = rawChatOpened > 0 ? rawChatOpened : rawWidgetOpened;
+  const firstMessageCount = eventCounts.first_message_sent ?? 0;
+  const fallbackCount = eventCounts.fallback_triggered ?? eventCounts.fallback_occurred ?? 0;
+
+  const userMessageCounts = new Map<string, number>();
+  const responseTimes: number[] = [];
+  const lastUserMessageAt = new Map<string, Date>();
+
+  for (const row of messages) {
+    const date = new Date(row.created_at);
+    if (row.sender === "user") {
+      userMessageCounts.set(row.conversation_id, (userMessageCounts.get(row.conversation_id) ?? 0) + 1);
+      lastUserMessageAt.set(row.conversation_id, date);
+    } else if (row.sender === "assistant") {
+      const lastUser = lastUserMessageAt.get(row.conversation_id);
+      if (lastUser) {
+        const diff = date.getTime() - lastUser.getTime();
+        if (diff >= 0) responseTimes.push(diff);
+        lastUserMessageAt.delete(row.conversation_id);
+      }
+    }
+  }
+
+  const meaningfulConversations = Array.from(conversationIds).filter(
+    (id) => (userMessageCounts.get(id) ?? 0) >= 3
+  ).length;
+
+  const responseTimesSorted = responseTimes.slice().sort((a, b) => a - b);
+  const avgResponseMs =
+    responseTimes.length > 0 ? responseTimes.reduce((sum, value) => sum + value, 0) / responseTimes.length : null;
+  const p95ResponseMs =
+    responseTimesSorted.length > 0
+      ? responseTimesSorted[Math.max(0, Math.ceil(responseTimesSorted.length * 0.95) - 1)]
+      : null;
+
+  const dailyConversations = buildDailySeries(currentConversations, rangeStart, rangeDays, timeZone, "created_at");
+  const dailyLeads = buildDailySeries(currentLeads, rangeStart, rangeDays, timeZone, "created_at");
+  const dailyReservations = buildDailySeries(currentReservations, rangeStart, rangeDays, timeZone, "created_at");
+  const dailyFallbacks = buildDailySeries(
+    events.filter((row) => row?.type === "fallback_triggered" || row?.type === "fallback_occurred"),
+    rangeStart,
+    rangeDays,
+    timeZone,
+    "timestamp"
+  );
+
+  const avgResponseSeconds = avgResponseMs ? Math.round(avgResponseMs / 1000) : 0;
+  const responseSeries = Array.from({ length: rangeDays }, () => avgResponseSeconds);
+
+  const kpiCards = [
+    {
+      label: "Conversations",
+      value: currentConversations.length,
+      delta: computeDelta(currentConversations.length, previousConversations.length),
+      series: dailyConversations.map((point) => point.value),
+      icon: "conversations" as const
+    },
+    {
+      label: "Leads",
+      value: currentLeads.length,
+      delta: computeDelta(currentLeads.length, previousLeads.length),
+      series: dailyLeads.map((point) => point.value),
+      icon: "leads" as const
+    },
+    {
+      label: "Reservations",
+      value: currentReservations.length,
+      delta: computeDelta(currentReservations.length, previousReservations.length),
+      series: dailyReservations.map((point) => point.value),
+      icon: "reservations" as const
+    },
+    {
+      label: "Avg response (s)",
+      value: avgResponseSeconds,
+      delta: null,
+      series: responseSeries,
+      icon: "response" as const
+    }
+  ];
+
+  const openedBase = chatOpenedCount || firstMessageCount || currentConversations.length;
+  const convertedCount = convertedConversationIds.size;
+  const openedNotMessaged = Math.max(openedBase - firstMessageCount, 0);
+  const messagedNotMeaningful = Math.max(firstMessageCount - meaningfulConversations, 0);
+  const meaningfulNotConverted = Math.max(meaningfulConversations - convertedCount, 0);
+
+  const conversionSegments = [
+    { name: "Opened only", value: openedNotMessaged, color: "#94A3B8" },
+    { name: "Messaged", value: messagedNotMeaningful, color: "#38BDF8" },
+    { name: "Meaningful", value: meaningfulNotConverted, color: "#818CF8" },
+    { name: "Converted", value: convertedCount, color: "#34D399" }
+  ];
+
+  const recentItems = [
+    ...currentConversations.map((row) => ({
+      id: `conversation-${row.id}`,
+      type: "conversation" as const,
+      title: row.user_name ?? `Visitor ${row.id.slice(0, 4)}`,
+      status: row.is_lead ? "Lead" : "New",
+      timestamp: row.created_at,
+      href: `/dashboard/conversations/${row.id}`
+    })),
+    ...currentLeads.map((row) => ({
+      id: `lead-${row.id}`,
+      type: "lead" as const,
+      title: row.name ?? row.email ?? `Lead ${row.id.slice(0, 4)}`,
+      status: "Lead",
+      timestamp: row.created_at,
+      href: "/dashboard/leads"
+    })),
+    ...currentReservations.map((row) => ({
+      id: `reservation-${row.id}`,
+      type: "reservation" as const,
+      title: row.customer_name ?? `Reservation ${row.id.slice(0, 4)}`,
+      status: row.status ?? "Pending",
+      timestamp: row.created_at,
+      href: "/dashboard/reservations"
+    }))
+  ]
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+    .slice(0, 5)
+    .map((item) => ({
+      ...item,
+      timestamp: new Date(item.timestamp).toLocaleString("en-US", {
+        timeZone,
+        month: "short",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit"
+      })
+    }));
+
+  const activityItems = recentEvents.map((event, index) => {
+    const meta = event?.metadata ?? {};
+    const label = event?.type
+      ? event.type
+          .replace(/_/g, " ")
+          .replace(/\b\w/g, (char) => char.toUpperCase())
+      : "Event";
+    const time = event?.timestamp
+      ? new Date(event.timestamp).toLocaleString("en-US", {
+          timeZone,
+          month: "short",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit"
+        })
+      : "";
+
+    let href: string | null = null;
+    if (meta?.conversation_id) href = `/dashboard/conversations/${meta.conversation_id}`;
+    if (event?.type?.startsWith("reservation")) href = "/dashboard/reservations";
+    if (event?.type === "lead_created") href = "/dashboard/leads";
+
+    return {
+      id: `${event?.type ?? "event"}-${index}`,
+      label,
+      time,
+      tone: activityTone(event?.type),
+      href
+    };
+  });
+
+  const fallbackRate = firstMessageCount ? Math.round((fallbackCount / firstMessageCount) * 100) : 0;
+  const uptime = "99.9%";
+
+  const healthDelta =
+    currentWeeklyMetric && previousWeeklyMetric
+      ? currentWeeklyMetric.health_score - previousWeeklyMetric.health_score
+      : null;
+  const healthSuggestions = currentWeeklyMetric
+    ? buildHealthSuggestions({
+        conversationsCount: currentWeeklyMetric.conversations_count,
+        bookingsCount: currentWeeklyMetric.bookings_count,
+        missedIntentsCount: currentWeeklyMetric.missed_intents_count,
+        avgResponseTimeSec: currentWeeklyMetric.avg_response_time_sec,
+        errorEventsCount: currentWeeklyMetric.error_events_count
+      })
+    : [];
+
+  const currentConversion =
+    currentWeeklyMetric && currentWeeklyMetric.conversations_count > 0
+      ? currentWeeklyMetric.bookings_count / currentWeeklyMetric.conversations_count
+      : 0;
+  const benchmarkConversion = selectedBenchmark?.conversion_p50 ?? 0;
+  const conversionDeltaPercent = benchmarkConversion > 0 ? ((currentConversion - benchmarkConversion) / benchmarkConversion) * 100 : null;
+
+  const funnelSteps = [
+    { label: "Opened", value: openedBase, helper: "chat_opened" },
+    { label: "Messaged", value: firstMessageCount, helper: "first_message_sent" },
+    { label: "Meaningful", value: meaningfulConversations, helper: "3+ messages" },
+    { label: "Converted", value: convertedCount, helper: "lead/reservation" }
+  ];
+
+  return (
+    <div className="space-y-6">
+      <ImpactSummaryGate />
+      <OverviewHeader
+        title="Welcome back"
+        subtitle={`Here is what ${businessName} looked like over the past ${rangeDays} days.`}
+      />
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {kpiCards.map((card) => (
+          <KpiCard
+            key={card.label}
+            label={card.label}
+            value={card.value}
+            delta={card.delta}
+            series={card.series}
+            icon={card.icon}
+          />
+        ))}
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[2fr,1fr]">
+        <div className="min-w-0 space-y-4">
+          <Card className="min-w-0 rounded-3xl border border-white/10 bg-white/5 p-5 backdrop-blur">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold">Conversations over time</p>
+                <p className="text-xs text-white/60">{formatNumber(currentConversations.length)} total in range</p>
+              </div>
+              <div className="flex items-center gap-1 rounded-full border border-white/10 bg-white/5 p-1 text-[11px]">
+                {(["7d", "30d", "90d"] as RangeKey[]).map((range) => (
+                  <Link
+                    key={range}
+                    href={`/dashboard?range=${range}`}
+                    className={[
+                      "rounded-full px-3 py-1 transition",
+                      rangeKey === range ? "bg-white/10 text-white" : "text-white/60 hover:text-white"
+                    ].join(" ")}
+                  >
+                    {range}
+                  </Link>
+                ))}
+              </div>
+            </div>
+            <div className="mt-4">
+              <ConversationsTrend data={dailyConversations} />
+            </div>
+          </Card>
+
+          <div className="grid gap-4 lg:grid-cols-[1.2fr,1fr]">
+            <Card className="min-w-0 rounded-3xl border border-white/10 bg-white/5 p-5 backdrop-blur">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-semibold">Conversion breakdown</p>
+                  <p className="text-xs text-white/60">Opened → Messaged → Meaningful → Converted</p>
+                </div>
+              </div>
+              <ConversionDonut segments={conversionSegments} />
+              <div className="mt-4 grid grid-cols-2 gap-2 text-xs text-white/60">
+                {conversionSegments.map((segment) => (
+                  <div key={segment.name} className="flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full" style={{ background: segment.color }} />
+                    <span>{segment.name}</span>
+                    <span className="ml-auto text-white/80">{formatNumber(segment.value)}</span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+
+            <Card className="rounded-3xl border border-white/10 bg-white/5 p-5 backdrop-blur">
+              <p className="text-sm font-semibold">Bot health</p>
+              <p className="text-xs text-white/60">Operational quality and recovery</p>
+              <div className="mt-4 space-y-3 text-sm">
+                <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
+                  <span className="text-white/60">Uptime</span>
+                  <span className="text-white/80">{uptime}</span>
+                </div>
+                <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
+                  <span className="text-white/60">Avg response</span>
+                  <span className="text-white/80">{avgResponseMs ? `${avgResponseSeconds}s` : "-"}</span>
+                </div>
+                <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
+                  <span className="text-white/60">Fallback rate</span>
+                  <span className="text-white/80">{fallbackRate}%</span>
+                </div>
+              </div>
+              <div className="mt-4">
+                <div className="h-2 w-full rounded-full bg-white/5">
+                  <div
+                    className="h-2 rounded-full bg-emerald-400"
+                    style={{ width: `${Math.max(100 - fallbackRate, 5)}%` }}
+                  />
+                </div>
+                <p className="mt-2 text-[11px] text-white/40">Lower fallback rates keep conversations on track.</p>
+              </div>
+            </Card>
+          </div>
+
+          <RecentTable items={recentItems} />
+        </div>
+
+        <div className="lg:sticky lg:top-4">
+          <ActivityFeed items={activityItems} />
+          <Card className="mt-4 rounded-3xl border border-white/10 bg-white/5 p-5 backdrop-blur">
+            <p className="text-sm font-semibold">Health Score</p>
+            <p className="text-xs text-white/60">Weekly performance snapshot</p>
+            {currentWeeklyMetric ? (
+              <>
+                <div className="mt-3 flex items-end justify-between gap-3">
+                  <p className="text-3xl font-semibold text-white">{currentWeeklyMetric.health_score}</p>
+                  <p className="text-xs text-white/60">
+                    {healthDelta === null ? "No prior week" : `${healthDelta >= 0 ? "+" : ""}${healthDelta} vs last week`}
+                  </p>
+                </div>
+                <div className="mt-3 space-y-2 text-xs text-white/70">
+                  <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] px-2 py-1.5">
+                    <span>Errors</span>
+                    <span>{currentWeeklyMetric.error_events_count}</span>
+                  </div>
+                  <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] px-2 py-1.5">
+                    <span>Missed intents</span>
+                    <span>{currentWeeklyMetric.missed_intents_count}</span>
+                  </div>
+                  <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] px-2 py-1.5">
+                    <span>Avg response</span>
+                    <span>{currentWeeklyMetric.avg_response_time_sec}s</span>
+                  </div>
+                  <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] px-2 py-1.5">
+                    <span>Bookings</span>
+                    <span>{currentWeeklyMetric.bookings_count}</span>
+                  </div>
+                </div>
+                <div className="mt-3 space-y-1 text-[11px] text-white/65">
+                  {healthSuggestions.map((item) => (
+                    <p key={item}>• {item}</p>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <p className="mt-3 text-xs text-white/60">No weekly score yet. It appears after the first weekly computation.</p>
+            )}
+          </Card>
+
+          <Card className="mt-4 rounded-3xl border border-white/10 bg-white/5 p-5 backdrop-blur">
+            <p className="text-sm font-semibold">Compared to similar businesses</p>
+            <p className="text-xs text-white/60">Platform median for your industry this week</p>
+            {currentWeeklyMetric && selectedBenchmark ? (
+              <>
+                <p className="mt-3 text-xs text-white/75">
+                  {conversionDeltaPercent === null
+                    ? "Benchmark conversion unavailable."
+                    : `You're ${conversionDeltaPercent >= 0 ? "+" : ""}${conversionDeltaPercent.toFixed(0)}% ${
+                        conversionDeltaPercent >= 0 ? "above" : "below"
+                      } typical businesses in ${(business?.industry ?? "general").trim() || "general"} this week.`}
+                </p>
+                <div className="mt-3 space-y-2">
+                  <div>
+                    <div className="flex items-center justify-between text-xs text-white/60">
+                      <span>Conversion</span>
+                      <span>
+                        {(currentConversion * 100).toFixed(1)}% vs {(selectedBenchmark.conversion_p50 * 100).toFixed(1)}%
+                      </span>
+                    </div>
+                    <div className="mt-1 h-2 w-full rounded-full bg-white/10">
+                      <div
+                        className="h-2 rounded-full bg-sky-400"
+                        style={{
+                          width: `${Math.min(100, Math.max(2, selectedBenchmark.conversion_p50 > 0 ? (currentConversion / selectedBenchmark.conversion_p50) * 50 : 0))}%`
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between text-xs text-white/60">
+                      <span>Bookings</span>
+                      <span>
+                        {currentWeeklyMetric.bookings_count} vs {selectedBenchmark.bookings_p50}
+                      </span>
+                    </div>
+                    <div className="mt-1 h-2 w-full rounded-full bg-white/10">
+                      <div
+                        className="h-2 rounded-full bg-emerald-400"
+                        style={{
+                          width: `${Math.min(
+                            100,
+                            Math.max(
+                              2,
+                              selectedBenchmark.bookings_p50 > 0
+                                ? (currentWeeklyMetric.bookings_count / selectedBenchmark.bookings_p50) * 50
+                                : 0
+                            )
+                          )}%`
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between text-xs text-white/60">
+                      <span>Health score</span>
+                      <span>
+                        {currentWeeklyMetric.health_score} vs {selectedBenchmark.health_p50}
+                      </span>
+                    </div>
+                    <div className="mt-1 h-2 w-full rounded-full bg-white/10">
+                      <div
+                        className="h-2 rounded-full bg-indigo-400"
+                        style={{
+                          width: `${Math.min(
+                            100,
+                            Math.max(
+                              2,
+                              selectedBenchmark.health_p50 > 0
+                                ? (currentWeeklyMetric.health_score / selectedBenchmark.health_p50) * 50
+                                : 0
+                            )
+                          )}%`
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <p className="mt-3 text-xs text-white/60">Not enough data yet — check back soon.</p>
+            )}
+          </Card>
+
+          <Card className="mt-4 rounded-3xl border border-white/10 bg-white/5 p-5 backdrop-blur">
+            <p className="text-sm font-semibold">Funnel snapshot</p>
+            <p className="text-xs text-white/60">Current conversion momentum</p>
+            <div className="mt-4 space-y-2">
+              {funnelSteps.map((step) => (
+                <div key={step.label}>
+                  <div className="flex items-center justify-between text-xs text-white/60">
+                    <span>{step.label}</span>
+                    <span>{formatNumber(step.value)}</span>
+                  </div>
+                  <div className="h-2 w-full rounded-full bg-white/5">
+                    <div
+                      className="h-2 rounded-full bg-sky-400"
+                      style={{ width: `${openedBase ? (step.value / openedBase) * 100 : 0}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+}

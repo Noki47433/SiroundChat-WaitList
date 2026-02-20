@@ -1,0 +1,24 @@
+{
+  "name": "Restaurant",
+  "blocks": [
+    {
+      "type": "hero",
+      "position": 0,
+      "data": {
+        "title": "Taste Kosovo",
+        "subtitle": "Family recipes cooked fresh every day.",
+        "cta": "Reserve table"
+      }
+    },
+    {
+      "type": "menu",
+      "position": 1,
+      "data": {
+        "items": [
+          { "name": "Flija", "price": "€5" },
+          { "name": "Pite me spinaq", "price": "€4" }
+        ]
+      }
+    }
+  ]
+}

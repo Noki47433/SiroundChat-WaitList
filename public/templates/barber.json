@@ -1,0 +1,24 @@
+{
+  "name": "Barber",
+  "blocks": [
+    {
+      "type": "hero",
+      "position": 0,
+      "data": {
+        "title": "Fresh cuts in Prishtina",
+        "subtitle": "Walk-ins welcome. Book on chat.",
+        "cta": "Book appointment"
+      }
+    },
+    {
+      "type": "pricing",
+      "position": 1,
+      "data": {
+        "plans": [
+          { "name": "Basic", "price": "€8" },
+          { "name": "Premium", "price": "€12" }
+        ]
+      }
+    }
+  ]
+}

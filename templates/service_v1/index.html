@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{{seo_title}}</title>
+    <meta name="description" content="{{seo_description}}" />
+    <meta property="og:title" content="{{og_title}}" />
+    <meta property="og:description" content="{{og_description}}" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body style="--primary-color: {{primary_color}}; --secondary-color: {{secondary_color}}; --font-family: {{font_family}};">
+    <header class="site-header">
+      <div class="container header-inner">
+        <div class="brand">
+          <img class="site-logo" src="{{logo_url}}" alt="{{business_name}} logo" />
+          <span class="site-name">{{business_name}}</span>
+        </div>
+        <nav class="nav">
+          <a href="#services">Services</a>
+          <a href="#contact">Contact</a>
+        </nav>
+        <a class="btn primary" href="{{hero_cta_href}}">{{hero_cta_label}}</a>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="container hero-inner">
+          <div class="hero-copy">
+            <p class="eyebrow">Service Studio</p>
+            <h1>{{hero_headline}}</h1>
+            <p class="lead">{{hero_subheadline}}</p>
+            <div class="hero-actions">
+              <a class="btn primary" href="{{hero_cta_href}}">{{hero_cta_label}}</a>
+              <a class="btn ghost" href="#services">View services</a>
+            </div>
+          </div>
+          <div class="hero-panel">
+            <div class="hero-card">
+              <h3>{{about_title}}</h3>
+              <p>{{about_body}}</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="about">
+        <div class="container about-inner">
+          <div>
+            <h2>{{about_title}}</h2>
+            <p>{{about_body}}</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="services" id="services">
+        <div class="container">
+          <h2>{{services_title}}</h2>
+          <div class="services-grid">{{services_items}}</div>
+        </div>
+      </section>
+
+      {{gallery_block}}
+      {{menu_block}}
+      {{reservation_block}}
+
+      <section class="contact" id="contact">
+        <div class="container contact-inner">
+          <div class="contact-copy">
+            <h2>{{contact_title}}</h2>
+            <p>{{contact_body}}</p>
+            <div class="contact-info">{{contact_info}}</div>
+          </div>
+          <form class="contact-form" method="post" action="/api/site/forms/submit">
+            <input type="hidden" name="slug" value="{{site_slug}}" />
+            <input type="hidden" name="form_type" value="contact" />
+            <label>
+              Name
+              <input name="name" placeholder="Your name" required />
+            </label>
+            <label>
+              Email or phone
+              <input name="contact" placeholder="Email or phone" required />
+            </label>
+            <label>
+              Message
+              <textarea name="message" rows="4" placeholder="How can we help?" required></textarea>
+            </label>
+            <button type="submit" class="btn primary">Send message</button>
+          </form>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container">
+        <p>{{footer_text}}</p>
+      </div>
+    </footer>
+  </body>
+</html>

@@ -1,0 +1,14 @@
+:host {
+  all: initial;
+}
+
+#promptly-widget,
+#promptly-widget iframe,
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: transparent !important;
+  border: none;
+  font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont;
+}

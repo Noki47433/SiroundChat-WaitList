@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{{seo_title}}</title>
+    <meta name="description" content="{{seo_description}}" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body style="--brand-color: {{brand_color}};">
+    <header class="site-header">
+      <div class="container header-inner">
+        <div class="brand">
+          <img class="site-logo" src="{{logo_url}}" alt="{{business_name}} logo" />
+          <span class="site-name">{{business_name}}</span>
+        </div>
+        <a class="btn ghost" href="#contact">{{hero_cta}}</a>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="container hero-inner">
+          <div class="hero-copy">
+            <p class="eyebrow">Welcome</p>
+            <h1>{{hero_headline}}</h1>
+            <p class="lead">{{hero_subheadline}}</p>
+            <a class="btn primary" href="#contact">{{hero_cta}}</a>
+          </div>
+          <div class="hero-panel">
+            <div class="hero-card">
+              <h3>{{about_title}}</h3>
+              <p>{{about_body}}</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="about">
+        <div class="container about-inner">
+          <div>
+            <h2>{{about_title}}</h2>
+            <p>{{about_body}}</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="services">
+        <div class="container">
+          <h2>Services</h2>
+          <div class="services-grid">
+            {{services_items}}
+          </div>
+        </div>
+      </section>
+
+      {{reservation_block}}
+
+      <section class="contact" id="contact">
+        <div class="container contact-inner">
+          <div>
+            <h2>{{contact_headline}}</h2>
+            <p>{{contact_body}}</p>
+          </div>
+          <div class="contact-cards">
+            <div class="contact-card">
+              {{contact_email_html}}
+            </div>
+            <div class="contact-card">
+              {{contact_phone_html}}
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container">
+        <p>{{business_name}}</p>
+      </div>
+    </footer>
+  </body>
+</html>

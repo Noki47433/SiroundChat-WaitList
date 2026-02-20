@@ -1,0 +1,24 @@
+{
+  "name": "Gym",
+  "blocks": [
+    {
+      "type": "hero",
+      "position": 0,
+      "data": {
+        "title": "Train with energy",
+        "subtitle": "24/7 gym with Albanian trainers.",
+        "cta": "Start free week"
+      }
+    },
+    {
+      "type": "pricing",
+      "position": 1,
+      "data": {
+        "plans": [
+          { "name": "Monthly", "price": "€25" },
+          { "name": "Yearly", "price": "€220" }
+        ]
+      }
+    }
+  ]
+}

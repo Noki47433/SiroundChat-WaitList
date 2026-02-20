@@ -1,0 +1,24 @@
+{
+  "name": "Clinic",
+  "blocks": [
+    {
+      "type": "hero",
+      "position": 0,
+      "data": {
+        "title": "Care that understands you",
+        "subtitle": "Dental + medical services with Albanian support.",
+        "cta": "Book checkup"
+      }
+    },
+    {
+      "type": "faq",
+      "position": 1,
+      "data": {
+        "items": [
+          { "question": "Do you take emergencies?", "answer": "Yes, call us anytime." },
+          { "question": "Do you speak Albanian?", "answer": "Po, gjithmonë." }
+        ]
+      }
+    }
+  ]
+}

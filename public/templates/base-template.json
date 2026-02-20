@@ -1,0 +1,22 @@
+{
+  "name": "Base",
+  "blocks": [
+    {
+      "type": "hero",
+      "position": 0,
+      "data": {
+        "title": "We launch your website in 5 minutes",
+        "subtitle": "SiroundChat builds beautiful sites and AI chat for Kosovo & Albania.",
+        "cta": "Start now"
+      }
+    },
+    {
+      "type": "text",
+      "position": 1,
+      "data": {
+        "title": "Why SiroundChat",
+        "copy": "We install everything for you. No code, no stress."
+      }
+    }
+  ]
+}
