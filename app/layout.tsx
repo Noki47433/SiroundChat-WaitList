@@ -10,10 +10,44 @@ const inter = Inter({
   display: "swap"
 });
 
+const googleVerification = "BHFvsACrgww4TItleStGj7tu2SPHj9DqmqEOdCP9BnM";
+
 export const metadata: Metadata = {
-  title: "SiroundChat - AI support that feels human",
+  metadataBase: new URL("https://siroundchat.com"),
+  title: {
+    default: "SiroundChat — AI Chatbot for Leads & Bookings",
+    template: "%s — SiroundChat"
+  },
   description:
-    "SiroundChat is the AI chat assistant that helps support teams deliver fast, on-brand answers trained on your docs, tickets, and CRM."
+    "SiroundChat helps businesses capture leads, answer questions, and increase bookings with an AI-powered chat system.",
+  alternates: {
+    canonical: "/"
+  },
+  openGraph: {
+    title: "SiroundChat — AI Chatbot for Leads & Bookings",
+    description:
+      "SiroundChat helps businesses capture leads, answer questions, and increase bookings with an AI-powered chat system.",
+    url: "https://siroundchat.com",
+    siteName: "SiroundChat",
+    type: "website",
+    images: ["/og-image.png"]
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "SiroundChat — AI Chatbot for Leads & Bookings",
+    description:
+      "SiroundChat helps businesses capture leads, answer questions, and increase bookings with an AI-powered chat system.",
+    images: ["/og-image.png"]
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true
+    }
+  },
+  verification: { google: googleVerification }
 };
 
 export default function RootLayout({
