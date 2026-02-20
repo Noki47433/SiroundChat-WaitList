@@ -3,13 +3,24 @@ import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { log } from "@/lib/utils/log";
 
 const EMBEDDING_MODEL = "text-embedding-3-small";
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 type RetrievedChunk = {
   content: string;
   documentId: string;
   score: number;
 };
+
+let openaiClient: OpenAI | null = null;
+
+function getOpenAIClient() {
+  if (openaiClient) return openaiClient;
+
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return null;
+
+  openaiClient = new OpenAI({ apiKey });
+  return openaiClient;
+}
 
 export async function retrieveRelevantChunks(params: {
   businessId: string;
@@ -18,6 +29,12 @@ export async function retrieveRelevantChunks(params: {
 }): Promise<{ chunks: RetrievedChunk[] }> {
   const { businessId, query, limit = 5 } = params;
   if (!businessId || !query.trim()) return { chunks: [] };
+
+  const openai = getOpenAIClient();
+  if (!openai) {
+    log("warn", "OPENAI_API_KEY missing, skipping retrieveRelevantChunks");
+    return { chunks: [] };
+  }
 
   try {
     const embeddingRes = await openai.embeddings.create({

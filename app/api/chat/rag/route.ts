@@ -6,7 +6,6 @@ import { retrieveRelevantChunks } from "@/lib/ai/retrieve";
 import { log } from "@/lib/utils/log";
 
 const CHAT_MODEL = "gpt-4o-mini";
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 type Message = { role: "system" | "user" | "assistant"; content: string };
 
@@ -32,6 +31,13 @@ export async function POST(req: Request) {
   if (!last || last.role !== "user") {
     return NextResponse.json({ error: "Last message must be user" }, { status: 400 });
   }
+
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    return NextResponse.json({ error: "Missing OPENAI_API_KEY" }, { status: 500 });
+  }
+
+  const openai = new OpenAI({ apiKey });
 
   try {
     const { chunks } = await retrieveRelevantChunks({ businessId, query: last.content, limit: 5 });
