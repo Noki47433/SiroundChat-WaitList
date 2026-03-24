@@ -51,7 +51,10 @@ export const metadata: Metadata = {
       follow: true
     }
   },
-  verification: { google: googleVerification }
+  verification: { google: googleVerification },
+  other: {
+    "verify-paysera": "e57ddd313672437b7412647ce176205b"
+  }
 };
 
 export default function RootLayout({
