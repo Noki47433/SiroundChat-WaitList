@@ -54,8 +54,8 @@ export async function POST(req: Request) {
     orderid: orderId,
     amount: amount.toString(),
     currency: "EUR",
-    accepturl: "https://siroundchat.com/dashboard/billing/success",
-    cancelurl: "https://siroundchat.com/dashboard/billing/cancel",
+    accepturl: "https://siroundchat.com",
+    cancelurl: "https://siroundchat.com",
     callbackurl: "https://siroundchat.com/api/paysera/callback",
     test: "1"
   });
