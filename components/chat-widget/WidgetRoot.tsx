@@ -17,6 +17,8 @@ interface WidgetRootProps {
   logoUrl?: string;
   iconId?: string;
   businessName?: string;
+  defaultOpen?: boolean;
+  disableAnalytics?: boolean;
 }
 
 export function WidgetRoot({
@@ -28,9 +30,11 @@ export function WidgetRoot({
   launcherVariant = "iconWithLabel",
   logoUrl,
   iconId,
-  businessName
+  businessName,
+  defaultOpen = false,
+  disableAnalytics = false
 }: WidgetRootProps) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(defaultOpen);
 
   const chatSize = { width: 360, height: 640 };
   const launcherSize = { width: 56, height: 56 };
@@ -60,12 +64,13 @@ export function WidgetRoot({
   }, [open, siteId, openSize.width, openSize.height, closedSize.width, closedSize.height, closedSize, openSize]);
 
   useEffect(() => {
+    if (disableAnalytics) return;
     if (!open) return;
     const activeKey = widgetKey ?? siteId;
     if (activeKey) {
       analytics.trackWidgetOpened(activeKey, siteId);
     }
-  }, [open, siteId, widgetKey]);
+  }, [disableAnalytics, open, siteId, widgetKey]);
 
   return (
     <div className="relative h-screen w-screen">

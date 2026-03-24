@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { SiteDocument } from "@/lib/website-builder/types";
+import { renderButtonClass, resolveSiteRenderDNA } from "@/lib/website-builder/rendering/dna";
 import { renderSection } from "@/lib/website-builder/sections/registry";
 import { themeToCssVars } from "@/lib/website-builder/theme/vars";
 import { trackPageView } from "@/lib/analytics/track";
@@ -26,6 +27,7 @@ export function TemplateRenderer({ site, analytics, preview = false }: TemplateP
   const [glowActive, setGlowActive] = useState(false);
 
   const themeVars = useMemo(() => themeToCssVars(site.theme), [site.theme]);
+  const renderDNA = useMemo(() => resolveSiteRenderDNA(site), [site]);
 
   const resolvePageFromSearch = useCallback(() => {
     if (typeof window === "undefined") return site.pages?.[0]?.slug ?? "home";
@@ -73,6 +75,23 @@ export function TemplateRenderer({ site, analytics, preview = false }: TemplateP
   }, [activePageSlug, site.pages]);
 
   const sections = activePage?.sections ?? [];
+  const contactSection = sections.find((section) => section.type === "contact");
+  const contactPhoneRaw =
+    contactSection && contactSection.content && typeof (contactSection.content as any).phone === "string"
+      ? ((contactSection.content as any).phone as string).trim()
+      : "";
+  const contactPhoneHref = contactPhoneRaw ? `tel:${contactPhoneRaw.replace(/[^\d+]/g, "")}` : null;
+  const primaryHeaderCtaLabel =
+    site.templateId.includes("clinic") || site.templateId.includes("dental")
+      ? "Book a Visit"
+      : site.templateId.includes("real-estate")
+        ? "Inquire"
+        : "Get Started";
+  const brandLogoUrl = site.siteBrief?.logoUrl?.trim() || null;
+  const activeNavClass = renderDNA.industryKey === "barbershop" ? "text-white opacity-100" : "text-[color:var(--site-text)] opacity-100";
+  const inactiveNavClass = renderDNA.industryKey === "barbershop" ? "text-white/72 opacity-100" : "opacity-75";
+  const phoneClassName =
+    renderDNA.industryKey === "barbershop" ? "text-sm font-medium text-white/72" : "text-sm font-medium text-[color:var(--site-muted)]";
 
   const menuPages = useMemo(() => {
     const pages = site.pages.filter((page) => page.showInMenu !== false && !page.isSystem);
@@ -432,12 +451,29 @@ export function TemplateRenderer({ site, analytics, preview = false }: TemplateP
         ctaLabel={site.chat_prompt_topbar_cta}
         onOpenChat={openChat}
       />
-      <header className="border-b border-[color:var(--site-border)] bg-[color:var(--site-surface)]">
-        <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-4 px-6 py-4">
-          <div className="text-sm font-semibold text-[color:var(--site-text)]">
-            {site.siteBrief?.businessName ?? site.pages?.[0]?.name ?? "Site"}
-          </div>
-          <nav className="flex flex-wrap items-center gap-4 text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--site-muted)]">
+      <header className={renderDNA.chrome.headerClassName}>
+        <div className={renderDNA.chrome.containerClassName}>
+          <button
+            type="button"
+            onClick={() => handleNavigate(site.pages?.[0]?.slug ?? "home")}
+            className={renderDNA.chrome.brandClassName}
+            style={{ fontFamily: "var(--site-fontHeading)" }}
+          >
+            {brandLogoUrl ? (
+              <span className={`mr-3 inline-flex h-10 w-10 items-center justify-center overflow-hidden rounded-full ${renderDNA.chrome.badgeClassName}`}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={brandLogoUrl}
+                  alt={`${site.siteBrief?.businessName ?? "Business"} logo`}
+                  className="h-10 w-10 object-contain"
+                />
+              </span>
+            ) : null}
+            <span className="inline-flex items-center">
+              {site.siteBrief?.businessName ?? site.pages?.[0]?.name ?? "Site"}
+            </span>
+          </button>
+          <nav className={renderDNA.chrome.navClassName}>
             {(menuTree.get(null) ?? []).map((page) => {
               const children = menuTree.get(page.id) ?? [];
               return (
@@ -445,9 +481,7 @@ export function TemplateRenderer({ site, analytics, preview = false }: TemplateP
                   <button
                     type="button"
                     onClick={() => handleNavigate(page.slug)}
-                    className={`transition ${
-                      page.slug === activePage?.slug ? "text-[color:var(--site-text)]" : ""
-                    }`}
+                    className={`transition ${page.slug === activePage?.slug ? activeNavClass : inactiveNavClass}`}
                   >
                     {page.menuTitle ?? page.name}
                   </button>
@@ -469,15 +503,31 @@ export function TemplateRenderer({ site, analytics, preview = false }: TemplateP
               );
             })}
           </nav>
+          <div className="flex items-center justify-start gap-3 md:justify-end">
+            {contactPhoneRaw && contactPhoneHref ? (
+              <a
+                href={contactPhoneHref}
+                className={phoneClassName}
+              >
+                {contactPhoneRaw}
+              </a>
+            ) : null}
+            <a
+              href="#contact"
+              className={renderButtonClass(site, "solid")}
+            >
+              {primaryHeaderCtaLabel}
+            </a>
+          </div>
         </div>
       </header>
       <div key={activePage?.id} className={transitionClass}>
         {sections
           .filter((section) => section.enabled)
           .map((section) => (
-            <section key={section.id} id={section.id} data-section-id={section.id}>
+            <div key={section.id} data-section-shell-id={section.id}>
               {renderSection(section, { theme: site.theme, site, analytics: analyticsContext, preview })}
-            </section>
+            </div>
           ))}
       </div>
     </div>

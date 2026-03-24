@@ -9,6 +9,7 @@ import { selectActivePage } from "@/lib/website-builder/editor/selectors";
 import { renderSection } from "@/lib/website-builder/sections/registry";
 import { themeToCssVars } from "@/lib/website-builder/theme/vars";
 import type { SiteDocument, SiteSection } from "@/lib/website-builder/types";
+import { renderButtonClass, resolveSiteRenderDNA } from "@/lib/website-builder/rendering/dna";
 
 type CanvasStageProps = {
   onSelectionRect?: (rect: {
@@ -40,7 +41,7 @@ type RenderContext = {
 
 export function CanvasStage({ onSelectionRect }: CanvasStageProps) {
   const state = useEditorState();
-  const { setSelectedNode, setRightPanelOpen, updateDocument } = useEditorActions();
+  const { setActivePage, setSelectedNode, setRightPanelOpen, updateDocument } = useEditorActions();
   const activePage = selectActivePage(state);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [previewScale, setPreviewScale] = useState(1);
@@ -149,6 +150,13 @@ export function CanvasStage({ onSelectionRect }: CanvasStageProps) {
   );
 
   const sections = activePage?.sections ?? [];
+  const renderDNA = state.document ? resolveSiteRenderDNA(state.document) : null;
+  const contactSection = sections.find((section) => section.type === "contact");
+  const contactPhone =
+    contactSection && typeof (contactSection.content as any)?.phone === "string"
+      ? String((contactSection.content as any).phone).trim()
+      : "";
+  const brandLogoUrl = state.document?.siteBrief?.logoUrl?.trim() || null;
 
   const handleDragEnd = (event: DragEndEvent) => {
     if (!activePage || !event.over) return;
@@ -393,7 +401,88 @@ export function CanvasStage({ onSelectionRect }: CanvasStageProps) {
               <div className="pointer-events-none absolute inset-y-0 right-[10%] w-px border-l border-dashed border-sc-border" />
             </>
           ) : null}
-          <div className="relative" style={themeToCssVars(state.document?.theme ?? ({} as any))}>
+          <div
+            className="relative"
+            style={{
+              ...themeToCssVars(state.document?.theme ?? ({} as any)),
+              fontFamily: "var(--site-fontBody)"
+            }}
+          >
+            {state.document && renderDNA ? (() => {
+              const document = state.document;
+              return (
+              <header className={renderDNA.chrome.headerClassName}>
+                <div className={renderDNA.chrome.containerClassName}>
+                  <button
+                    type="button"
+                    onClick={() => setActivePage(document.pages?.[0]?.id ?? activePage?.id ?? "")}
+                    className={`${renderDNA.chrome.brandClassName} min-w-0`}
+                    style={{ fontFamily: "var(--site-fontHeading)" }}
+                  >
+                    {brandLogoUrl ? (
+                      <span
+                        className={`mr-3 inline-flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full ${renderDNA.chrome.badgeClassName}`}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={brandLogoUrl}
+                          alt={`${state.document.siteBrief?.businessName ?? "Business"} logo`}
+                          className="h-10 w-10 object-contain"
+                        />
+                      </span>
+                    ) : null}
+                    <span className="truncate">
+                      {document.siteBrief?.businessName ?? activePage?.name ?? "Site"}
+                    </span>
+                  </button>
+                  <nav className={renderDNA.chrome.navClassName}>
+                    {document.pages
+                      .filter((page) => page.showInMenu !== false && !page.isSystem)
+                      .map((page) => (
+                        <button
+                          key={page.id}
+                          type="button"
+                          onClick={() => setActivePage(page.id)}
+                          className={`transition ${
+                            page.id === activePage?.id
+                              ? renderDNA.industryKey === "barbershop"
+                                ? "text-white opacity-100"
+                                : "text-[color:var(--site-text)] opacity-100"
+                              : renderDNA.industryKey === "barbershop"
+                                ? "text-white/72"
+                                : "text-[color:var(--site-muted)]"
+                          }`}
+                        >
+                          {page.menuTitle ?? page.name}
+                        </button>
+                      ))}
+                  </nav>
+                  <div className="flex items-center justify-start gap-3 md:justify-end">
+                    {contactPhone ? (
+                      <span
+                        className={
+                          renderDNA.industryKey === "barbershop"
+                            ? "text-sm font-medium text-white/72"
+                            : "text-sm font-medium text-[color:var(--site-muted)]"
+                        }
+                      >
+                        {contactPhone}
+                      </span>
+                    ) : null}
+                    <span className={renderButtonClass(document, "solid")}>
+                      {document.templateId.includes("restaurant")
+                        ? "Reserve"
+                        : document.templateId.includes("dental")
+                          ? "Book a visit"
+                          : document.templateId.includes("real-estate")
+                            ? "Inquire"
+                            : "Get started"}
+                    </span>
+                  </div>
+                </div>
+              </header>
+              );
+            })() : null}
             <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
               <SortableContext items={sections.map((section) => section.id)} strategy={verticalListSortingStrategy}>
                 <div>

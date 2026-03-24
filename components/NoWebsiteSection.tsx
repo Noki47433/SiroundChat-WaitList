@@ -2,7 +2,6 @@
 
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { useAuth } from "@/hooks/useAuth";
 import { NoWebsiteVisual } from "./SectionVisuals";
 
 const arrowVariants = {
@@ -16,15 +15,9 @@ const arrowVariants = {
 
 export function NoWebsiteSection() {
   const router = useRouter();
-  const { user, loading } = useAuth();
 
   const handleCtaClick = () => {
-    if (loading) return;
-    if (user) {
-      router.push("/builder/onboarding");
-      return;
-    }
-    router.push("/signup?redirect=/builder/onboarding");
+    router.push("/build/website");
   };
 
   return (
@@ -60,9 +53,8 @@ export function NoWebsiteSection() {
               initial="rest"
               whileHover="hover"
               animate="rest"
-              disabled={loading}
               onClick={handleCtaClick}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-yellow-500 px-6 py-3 text-base font-semibold text-white shadow-md transition hover:bg-yellow-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F7C948]/70 focus-visible:ring-offset-2 focus-visible:ring-offset-white disabled:cursor-not-allowed disabled:opacity-70"
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-yellow-500 px-6 py-3 text-base font-semibold text-white shadow-md transition hover:bg-yellow-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#F7C948]/70 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
             >
               <span>Get Started</span>
               <motion.span variants={arrowVariants} className="text-lg leading-none">
@@ -99,7 +91,7 @@ export function NoWebsiteSection() {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, amount: 0.3 }}
           transition={{ duration: 0.7, ease: "easeOut", delay: 0.05 }}
-          className="lg:hidden"
+          className="md:hidden"
         >
           <NoWebsiteVisual />
         </motion.div>

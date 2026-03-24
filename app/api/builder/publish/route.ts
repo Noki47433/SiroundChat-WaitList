@@ -10,12 +10,48 @@ import { getBaseUrl } from "@/lib/utils/base-url";
 import { getBuilderPlanForRoute } from "@/lib/builder/plan";
 import { themeToCssVars } from "@/lib/website-builder/theme/vars";
 import { logActivity } from "@/lib/activity/log";
+import { getOwnedBuilderSite } from "@/lib/builder/site-access";
+import { resolveLiveChat } from "@/lib/website-builder/live-chat";
 
 export const runtime = "nodejs";
 
 const PayloadSchema = z.object({
   siteId: z.string().uuid()
 });
+
+const getMissingBuilderColumnName = (error: unknown) => {
+  if (!error || typeof error !== "object") return null;
+  const code = "code" in error ? (error as { code?: unknown }).code : "";
+  const message = "message" in error ? (error as { message?: unknown }).message : "";
+  if (code !== "PGRST204" || typeof message !== "string") return null;
+  const match = message.match(/Could not find the '([^']+)' column/i);
+  return match?.[1] ?? null;
+};
+
+const updateBuilderSiteWithCompatibleColumns = async (
+  adminClient: any,
+  siteId: string,
+  values: Record<string, unknown>
+) => {
+  const nextValues = { ...values };
+
+  while (Object.keys(nextValues).length > 0) {
+    const { error } = await adminClient.from("builder_sites").update(nextValues).eq("id", siteId);
+    if (!error) {
+      return null;
+    }
+
+    const missingColumn = getMissingBuilderColumnName(error);
+    if (missingColumn && Object.prototype.hasOwnProperty.call(nextValues, missingColumn)) {
+      delete nextValues[missingColumn];
+      continue;
+    }
+
+    return error;
+  }
+
+  return new Error("No compatible builder_sites columns available for publish");
+};
 
 const escapeHtml = (value: string) =>
   value
@@ -58,7 +94,7 @@ const buildBackgroundStyle = (section: SiteSection) => {
   }
 
   if (background.type === "image" && background.value) {
-    const overlay = typeof background.overlay === "number" ? background.overlay : 0.35;
+    const overlay = Math.max(typeof background.overlay === "number" ? background.overlay : 0.35, 0.45);
     const overlayColor = `rgba(0,0,0,${overlay})`;
     const imageUrl = escapeHtml(background.value);
     parts.push(
@@ -85,7 +121,7 @@ const buildSectionShell = (section: SiteSection, innerHtml: string) => {
   const classes = ["section", `section--${spacing}`, `section--${alignment}`];
   const styleAttr = buildBackgroundStyle(section);
   const styleTag = styleAttr ? ` style=\"${styleAttr}\"` : "";
-  return `\n<section class=\"${classes.join(" ")}\" id=\"${section.type}\"${styleTag}>\n  <div class=\"section-inner\">${innerHtml}</div>\n</section>`;
+  return `\n<section class=\"${classes.join(" ")}\" id=\"${section.id}\"${styleTag}>\n  <div class=\"section-inner\">${innerHtml}</div>\n</section>`;
 };
 
 const renderElements = (section: SiteSection) => {
@@ -145,7 +181,9 @@ const renderHero = (section: SiteSection) => {
   const content = section.content ?? {};
   const image = section.images?.[0];
   const imageHtml = image
-    ? `<div class=\"hero-media\"><img src=\"${escapeHtml(image.src)}\" alt=\"${escapeHtml(
+    ? `<div class=\"hero-media\"><img src=\"${escapeHtml(image.src)}\" width=\"${image.width ?? 1600}\" height=\"${
+        image.height ?? 1000
+      }\" alt=\"${escapeHtml(
         image.alt ?? ""
       )}\" /></div>`
     : "";
@@ -211,7 +249,9 @@ const renderGallery = (section: SiteSection) => {
       ${images
         .map(
           (image) =>
-            `<div class=\"gallery-item\"><img src=\"${escapeHtml(image.src)}\" alt=\"${escapeHtml(
+            `<div class=\"gallery-item\"><img src=\"${escapeHtml(image.src)}\" width=\"${image.width ?? 1200}\" height=\"${
+              image.height ?? 900
+            }\" alt=\"${escapeHtml(
               image.alt ?? ""
             )}\" /></div>`
         )
@@ -412,9 +452,9 @@ body{margin:0;font-family:var(--site-fontBody);color:var(--site-text);background
 img{max-width:100%;height:auto;border-radius:var(--site-radius);}
 a{text-decoration:none;color:inherit;}
 .section{position:relative;}
-.section--compact{padding:64px 0;}
-.section--normal{padding:96px 0;}
-.section--airy{padding:140px 0;}
+.section--compact{padding:32px 0;}
+.section--normal{padding:48px 0;}
+.section--airy{padding:64px 0;}
 .section--center{text-align:center;}
 .section-inner{width:min(1100px,92%);margin:0 auto;}
 .eyebrow{text-transform:uppercase;letter-spacing:0.2em;font-size:0.75rem;color:var(--site-muted);}
@@ -582,7 +622,37 @@ const buildAnalyticsScript = (params: { businessId: string; siteId: string }) =>
 </script>`;
 };
 
-const buildHtml = (site: SiteDocument, slug: string, widgetKey: string | null, businessId: string, siteId: string) => {
+const buildStructuredData = (site: SiteDocument, canonicalUrl: string) => {
+  const industry = site.siteBrief?.industry?.toLowerCase() ?? "";
+  const type = industry.includes("barber")
+    ? "Barbershop"
+    : industry.includes("restaurant")
+      ? "Restaurant"
+      : industry.includes("dental") || industry.includes("dentist")
+        ? "Dentist"
+        : industry.includes("real estate") || industry.includes("real-estate") || industry.includes("realty")
+          ? "RealEstateAgent"
+          : "LocalBusiness";
+
+  return safeJson({
+    "@context": "https://schema.org",
+    "@type": type,
+    name: site.siteBrief?.businessName ?? "Business",
+    image: site.siteBrief?.logoUrl ?? site.seo?.ogImage ?? undefined,
+    description: site.seo?.description ?? undefined,
+    url: canonicalUrl
+  });
+};
+
+const buildHtml = (
+  site: SiteDocument,
+  slug: string,
+  liveChatScriptSrc: string | null,
+  liveChatInlineScript: string | null,
+  businessId: string,
+  siteId: string,
+  canonicalUrl: string
+) => {
   const hero = site.pages?.[0]?.sections?.find((section) => section.type === "hero");
   const heroHeadline = (hero?.content as { headline?: string } | undefined)?.headline ?? site.siteBrief?.businessName ?? "";
   const seoTitle = site.seo?.title ?? (heroHeadline ? `${heroHeadline}` : "SiroundChat Site");
@@ -603,9 +673,11 @@ const buildHtml = (site: SiteDocument, slug: string, widgetKey: string | null, b
   const customHead = site.customCode?.head ?? "";
   const customBody = site.customCode?.body ?? "";
   const analyticsScript = buildAnalyticsScript({ businessId, siteId });
-  const widgetScript = widgetKey
-    ? `<script src=\"/api/widget/loader?key=${escapeHtml(widgetKey)}\" async></script>`
+  const widgetScript = liveChatScriptSrc
+    ? `<script src=\"${escapeHtml(liveChatScriptSrc)}\" async></script>`
     : "";
+  const inlineChatScript = liveChatInlineScript ? `<script>${liveChatInlineScript}</script>` : "";
+  const structuredData = buildStructuredData(site, canonicalUrl);
 
   const pagerScript = `
 <script>
@@ -628,9 +700,13 @@ const buildHtml = (site: SiteDocument, slug: string, widgetKey: string | null, b
   <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
   <title>${escapeHtml(seoTitle)}</title>
   <meta name=\"description\" content=\"${escapeHtml(seoDescription)}\" />
+  <link rel=\"canonical\" href=\"${escapeHtml(canonicalUrl)}\" />
+  <meta name=\"robots\" content=\"index,follow\" />
   ${ogImage ? `<meta property=\"og:image\" content=\"${escapeHtml(ogImage)}\" />` : ""}
   <meta property=\"og:title\" content=\"${escapeHtml(seoTitle)}\" />
   <meta property=\"og:description\" content=\"${escapeHtml(seoDescription)}\" />
+  <meta property=\"og:url\" content=\"${escapeHtml(canonicalUrl)}\" />
+  <script type=\"application/ld+json\">${structuredData}</script>
   <link rel=\"stylesheet\" href=\"/published/${escapeHtml(slug)}/styles.css\" />
   ${customHead}
 </head>
@@ -640,6 +716,7 @@ const buildHtml = (site: SiteDocument, slug: string, widgetKey: string | null, b
   ${customBody}
   ${analyticsScript}
   ${widgetScript}
+  ${inlineChatScript}
   ${pagerScript}
 </body>
 </html>`;
@@ -692,11 +769,21 @@ export async function POST(request: Request) {
 
   const { siteId } = parsed.data;
 
-  const { data: site } = await (supabase as any)
-    .from("builder_sites")
-    .select("id,business_id,slug,path,status,site_document,business_name,industry,logo_url")
-    .eq("id", siteId)
-    .maybeSingle();
+  const site = await getOwnedBuilderSite<{
+    id: string;
+    business_id: string;
+    slug: string | null;
+    path: string | null;
+    status: string | null;
+    site_document: unknown;
+    business_name: string | null;
+    industry: string | null;
+    logo_url: string | null;
+  }>(
+    siteId,
+    userData.user.id,
+    "id,business_id,slug,path,status,site_document,business_name,industry,logo_url"
+  );
 
   if (!site) {
     return NextResponse.json({ error: "Site not found" }, { status: 404 });
@@ -709,7 +796,7 @@ export async function POST(request: Request) {
         error: "Your current plan does not include website publishing.",
         code: "PLAN_UPGRADE_REQUIRED",
         blocked: "publish_website",
-        upgradeUrl: "/dashboard/billing?blocked=publish_website"
+        upgradeUrl: "/billing?blocked=publish_website"
       },
       { status: 403 }
     );
@@ -732,7 +819,7 @@ export async function POST(request: Request) {
   let slug = site.slug as string | null;
   if (!slug) {
     try {
-      slug = await ensureSlug(supabase, siteId, site.business_name);
+      slug = await ensureSlug(supabase, siteId, site.business_name ?? "site");
     } catch (error) {
       console.error("[BUILDER_SLUG_ERROR]", error);
       return NextResponse.json({ error: "Failed to reserve slug" }, { status: 500 });
@@ -747,13 +834,39 @@ export async function POST(request: Request) {
     .eq("id", site.business_id)
     .maybeSingle();
 
-  const widgetKey = business?.widget_key ?? siteId;
-  const cssContent = buildCss(document);
-  const htmlContent = buildHtml(document, slug, widgetKey, site.business_id as string, site.id as string);
+  const liveChat = resolveLiveChat(
+    {
+      ...document,
+      siteBrief: {
+        ...document.siteBrief,
+        businessName: document.siteBrief?.businessName ?? site.business_name ?? undefined,
+        logoUrl: document.siteBrief?.logoUrl ?? site.logo_url ?? undefined,
+        industry: document.siteBrief?.industry ?? site.industry ?? undefined
+      }
+    },
+    { widgetKey: business?.widget_key ?? siteId }
+  );
+
+  if (liveChat.error) {
+    return NextResponse.json({ error: liveChat.error }, { status: 400 });
+  }
+
+  const cssContent = buildCss(liveChat.document);
+  const baseUrl = getBaseUrl(request);
+  const publishedUrl = `${baseUrl}${resolvedPath}`;
+  const htmlContent = buildHtml(
+    liveChat.document,
+    slug,
+    liveChat.scriptSrc,
+    liveChat.inlineScript,
+    site.business_id as string,
+    site.id as string,
+    publishedUrl
+  );
 
   try {
-    const admin = getSupabaseAdminClient();
-    const storage = admin.storage.from(BUILDER_SITES_BUCKET);
+    const adminClient = getSupabaseAdminClient();
+    const storage = adminClient.storage.from(BUILDER_SITES_BUCKET);
     const indexPath = `published/${slug}/index.html`;
     const cssPath = `published/${slug}/styles.css`;
     const historyStamp = new Date().toISOString().replace(/[:.]/g, "-");
@@ -782,18 +895,21 @@ export async function POST(request: Request) {
       upsert: true
     });
 
-    const baseUrl = getBaseUrl(request);
-    const publishedUrl = `${baseUrl}${resolvedPath}`;
+    const baseUpdate = {
+      status: "published",
+      slug,
+      path: resolvedPath,
+      published_url: publishedUrl,
+      site_document: liveChat.document
+    };
 
-    const { error: updateError } = await (supabase as any)
-      .from("builder_sites")
-      .update({
-        status: "published",
-        slug,
-        path: resolvedPath,
-        published_url: publishedUrl
-      })
-      .eq("id", siteId);
+    const seoUpdate = {
+      ...baseUpdate,
+      seo_title: liveChat.document.seo?.title ?? null,
+      seo_description: liveChat.document.seo?.description ?? null
+    };
+
+    const updateError = await updateBuilderSiteWithCompatibleColumns(adminClient as any, siteId, seoUpdate);
 
     if (updateError) {
       throw updateError;
@@ -811,7 +927,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ url: publishedUrl });
   } catch (error) {
     console.error("[BUILDER_PUBLISH_ERROR]", error);
-    await (supabase as any)
+    await (getSupabaseAdminClient() as any)
       .from("builder_sites")
       .update({ status: "error" })
       .eq("id", siteId);

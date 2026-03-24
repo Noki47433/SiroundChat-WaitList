@@ -10,9 +10,8 @@ export async function requireUser(redirectTo?: string) {
   const { data, error } = await supabase.auth.getUser();
 
   if (error || !data?.user) {
-    const safeRedirect = resolveRedirectPath(redirectTo, "/");
-    const loginUrl = safeRedirect === "/" ? "/login" : `/login?redirect=${encodeURIComponent(safeRedirect)}`;
-    redirect(loginUrl);
+    const safeRedirect = resolveRedirectPath(redirectTo, "/dashboard");
+    redirect(`/auth?next=${encodeURIComponent(safeRedirect)}`);
   }
 
   return { user: data.user };

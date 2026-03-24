@@ -32,10 +32,10 @@ const chatbotDemoConfig: ChatbotConfig = {
   businessType: "restaurant",
   greeting: "Hi! I'm your restaurant assistant. How can I help today?",
   theme: {
-    primaryColor: "#6366F1",
-    accentColor: "#22D3EE",
-    backgroundColor: "#0F172A",
-    textColor: "#E5E7EB"
+    primaryColor: "#F59E0B",
+    accentColor: "#F97316",
+    backgroundColor: "#FFF8E5",
+    textColor: "#1F2937"
   },
   logoUrl: null,
   iconId: "restaurant-1",
@@ -134,28 +134,30 @@ const panelMap = panels.reduce<Record<string, Panel>>((acc, panel) => {
 export function ShowcaseRail({ activeSection }: { activeSection: string }) {
   const panel = panelMap[activeSection] ?? panelMap.hero;
   return (
-    <div className="relative hidden lg:block">
-      <div className="sticky top-28">
-        <div className="pointer-events-none absolute -inset-10 bg-gradient-to-b from-brand/20 via-transparent to-accent-blue/30 blur-3xl" />
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={panel.id}
-            initial={{ opacity: 0, y: 60, scale: 0.97 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -40, scale: 0.97 }}
-            transition={{ duration: 0.6, ease: "easeOut" }}
-            className="relative overflow-hidden rounded-[40px] border border-white/30 bg-white/80 p-8 shadow-[0_50px_180px_rgba(15,23,42,0.25)] backdrop-blur-xl"
-          >
-            
-            <div className="mb-6 space-y-2 text-center">
-              <span className="text-xs font-semibold uppercase tracking-[0.3em] text-brand">{panel.badge}</span>
-              <h4 className="text-2xl font-semibold text-brand-dark">{panel.title}</h4>
-              <p className="text-sm text-muted">{panel.description}</p>
-            </div>
-            <div>{panel.content}</div>
-          </motion.div>
-        </AnimatePresence>
-      </div>
+    <div className="relative w-full">
+      <div className="pointer-events-none absolute -inset-10 bg-gradient-to-b from-amber-300/30 via-transparent to-yellow-300/25 blur-3xl" />
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.div
+          layout
+          key={panel.id}
+          initial={{ opacity: 0, y: 14, scale: 0.985 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: -10, scale: 0.985 }}
+          transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+          className="relative min-h-[520px] overflow-hidden rounded-[46px] border border-amber-100/80 bg-gradient-to-br from-white/95 via-[#FFF8E5]/95 to-[#FFEFC8]/90 p-8 shadow-[0_50px_180px_rgba(245,158,11,0.2)] backdrop-blur-xl"
+        >
+          <div className="pointer-events-none absolute inset-0">
+            <div className="absolute -right-14 top-14 h-40 w-40 rounded-full bg-amber-200/35 blur-3xl" />
+            <div className="absolute -left-12 bottom-10 h-44 w-44 rounded-full bg-yellow-100/45 blur-3xl" />
+          </div>
+          <div className="mb-6 space-y-2 text-center">
+            <span className="text-xs font-semibold uppercase tracking-[0.3em] text-amber-600">{panel.badge}</span>
+            <h4 className="text-2xl font-semibold text-slate-800">{panel.title}</h4>
+            <p className="text-sm text-slate-500">{panel.description}</p>
+          </div>
+          <div className="relative">{panel.content}</div>
+        </motion.div>
+      </AnimatePresence>
     </div>
   );
 }

@@ -36,13 +36,13 @@ export function KpiCard({ label, value, delta, series, icon }: KpiCardProps) {
   const chartData = safeSeries.map((point, index) => ({ index, value: point }));
 
   return (
-    <Card className="min-w-0 rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+    <Card className="min-w-0 rounded-[1.6rem] p-4">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 text-xs text-white/60">
-          <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/5">
+        <div className="flex items-center gap-2 text-xs text-white/70">
+          <span className="dashboard-chip flex h-9 w-9 items-center justify-center rounded-xl">
             <Icon className="h-4 w-4" />
           </span>
-          <span className="uppercase tracking-[0.2em] text-white/40">{label}</span>
+          <span className="uppercase tracking-[0.2em] text-white/45">{label}</span>
         </div>
         <span
           className={`flex items-center gap-1 text-[11px] ${
@@ -53,7 +53,7 @@ export function KpiCard({ label, value, delta, series, icon }: KpiCardProps) {
           {formatDelta(delta)}
         </span>
       </div>
-      <p className="mt-3 text-2xl font-semibold text-white">{formatNumber(value)}</p>
+      <p className="dashboard-heading mt-3 text-3xl font-semibold text-white">{formatNumber(value)}</p>
       <div className="relative mt-3 h-10 w-full min-w-0">
         <SafeChartContainer className={`h-10 ${hasSeries ? "" : "opacity-0"}`}>
           <ResponsiveContainer width="100%" height="100%">
@@ -61,7 +61,7 @@ export function KpiCard({ label, value, delta, series, icon }: KpiCardProps) {
               <Line
                 type="monotone"
                 dataKey="value"
-                stroke="#7DD3FC"
+                stroke="#f1c451"
                 strokeWidth={2}
                 dot={false}
                 isAnimationActive={false}

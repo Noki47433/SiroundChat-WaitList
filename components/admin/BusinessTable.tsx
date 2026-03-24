@@ -24,7 +24,15 @@ const statusBadge = (status: string) => {
 };
 
 const money = (value: number, currency: "EUR" | "USD") =>
-  new Intl.NumberFormat("en-US", { style: "currency", currency, maximumFractionDigits: 0 }).format(value);
+  new Intl.NumberFormat("en-US", { style: "currency", currency, maximumFractionDigits: currency === "USD" ? 2 : 0 }).format(
+    value
+  );
+
+const compact = (value: number) =>
+  new Intl.NumberFormat("en-US", {
+    notation: value >= 1000 ? "compact" : "standard",
+    maximumFractionDigits: 1
+  }).format(value);
 
 const copyToClipboard = async (value: string) => {
   try {
@@ -54,8 +62,8 @@ export function BusinessTable({ rows }: { rows: AdminBusinessRow[] }) {
     <GlassCard accent="green">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-sm font-semibold text-[var(--adm-text)]">Businesses</p>
-          <p className="text-xs text-[var(--adm-muted)]">Plan, usage, profitability, and risk in one place</p>
+          <p className="text-sm font-semibold text-[var(--adm-text)]">Performance</p>
+          <p className="text-xs text-[var(--adm-muted)]">Website demand, outcomes, AI usage, and health score by business</p>
         </div>
         <Input
           placeholder="Search business, industry, phone, plan"
@@ -71,12 +79,13 @@ export function BusinessTable({ rows }: { rows: AdminBusinessRow[] }) {
             <TableHead>Business</TableHead>
             <TableHead>Plan</TableHead>
             <TableHead>Status</TableHead>
-            <TableHead>Conversations</TableHead>
-            <TableHead>Messages</TableHead>
+            <TableHead>Sessions</TableHead>
             <TableHead>Leads</TableHead>
-            <TableHead>Visitors</TableHead>
-            <TableHead>AI Cost</TableHead>
-            <TableHead>Profit Est.</TableHead>
+            <TableHead>Reservations</TableHead>
+            <TableHead>Conversations</TableHead>
+            <TableHead>AI Usage</TableHead>
+            <TableHead>Trend</TableHead>
+            <TableHead>Health</TableHead>
             <TableHead>Phone</TableHead>
             <TableHead />
           </TableRow>
@@ -94,13 +103,26 @@ export function BusinessTable({ rows }: { rows: AdminBusinessRow[] }) {
                 </TableCell>
                 <TableCell className="capitalize">{row.plan}</TableCell>
                 <TableCell>{statusBadge(row.status)}</TableCell>
-                <TableCell>{row.conversations}</TableCell>
-                <TableCell>{row.messages}</TableCell>
-                <TableCell>{row.leads}</TableCell>
-                <TableCell>{row.visitors}</TableCell>
-                <TableCell>{money(row.aiCostUsd, "USD")}</TableCell>
-                <TableCell className={row.profitEstimate >= 0 ? "text-emerald-300" : "text-rose-300"}>
-                  {money(row.profitEstimate, "EUR")}
+                <TableCell>{compact(row.websiteSessions)}</TableCell>
+                <TableCell>{compact(row.leads)}</TableCell>
+                <TableCell>{compact(row.reservations)}</TableCell>
+                <TableCell>{compact(row.conversations)}</TableCell>
+                <TableCell>
+                  <div className="space-y-0.5">
+                    <p>{money(row.aiCostUsd, "USD")}</p>
+                    <p className="text-[11px] text-white/45">{compact(row.aiTokens)} tokens</p>
+                  </div>
+                </TableCell>
+                <TableCell className={row.trendPct != null && row.trendPct >= 0 ? "text-emerald-300" : "text-rose-300"}>
+                  {row.trendPct == null ? "0%" : `${row.trendPct > 0 ? "+" : ""}${row.trendPct}%`}
+                </TableCell>
+                <TableCell>
+                  <div className="inline-flex min-w-[58px] items-center justify-center rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-sm font-semibold text-white">
+                    {row.healthScore}/100
+                  </div>
+                  <p className="mt-1 text-[11px] text-white/45">
+                    D {row.scoreBreakdown.demand} • C {row.scoreBreakdown.conversions} • O {row.scoreBreakdown.operations}
+                  </p>
                 </TableCell>
                 <TableCell>
                   {row.phone ? (
@@ -119,7 +141,7 @@ export function BusinessTable({ rows }: { rows: AdminBusinessRow[] }) {
                 <TableCell>
                   <div className="flex items-center gap-2 text-xs">
                     <Link href={`/admin/businesses/${row.id}`} className="text-[#8FFFB8] hover:underline">
-                      View
+                      View ROI
                     </Link>
                     {row.phone ? (
                       <a href={`tel:${row.phone}`} className="text-white/70 hover:text-white" title="Call">
@@ -137,7 +159,7 @@ export function BusinessTable({ rows }: { rows: AdminBusinessRow[] }) {
             ))
           ) : (
             <TableRow>
-              <TableCell colSpan={11} className="text-center text-white/55">
+              <TableCell colSpan={12} className="text-center text-white/55">
                 No businesses found.
               </TableCell>
             </TableRow>

@@ -75,7 +75,7 @@ export default async function BadgesPage() {
         <p className="mt-2 text-sm text-white/60">Celebrate progress as your bot helps more customers.</p>
       </div>
 
-      <Card className="space-y-4">
+      <Card className="space-y-4" data-tutorial-target="badges-earned">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-semibold">Earned badges</h3>
           <p className="text-xs text-white/50">{earnedBadges.length} earned</p>

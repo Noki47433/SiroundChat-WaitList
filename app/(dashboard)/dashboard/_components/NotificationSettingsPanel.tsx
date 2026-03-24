@@ -147,7 +147,13 @@ export function NotificationSettingsPanel({
       </div>
 
       <div className="flex justify-end">
-        <Button variant="primary" onClick={handleSave} disabled={saving} type="button">
+        <Button
+          variant="primary"
+          onClick={handleSave}
+          disabled={saving}
+          type="button"
+          data-tutorial-target="settings-save-notifications"
+        >
           {saving ? "Saving..." : "Save settings"}
         </Button>
       </div>

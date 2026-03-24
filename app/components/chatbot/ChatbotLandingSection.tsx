@@ -9,10 +9,10 @@ import { ChatbotConfig, ThemeConfig } from "./chatbotTypes";
 import { FAQ_PRESETS } from "./chatbotFaqPresets";
 
 const LANDING_THEME: ThemeConfig = {
-  primaryColor: "#6366F1",
-  accentColor: "#22D3EE",
-  backgroundColor: "#0F172A",
-  textColor: "#E5E7EB"
+  primaryColor: "#F59E0B",
+  accentColor: "#F97316",
+  backgroundColor: "#FFF8E5",
+  textColor: "#1F2937"
 };
 
 const landingDemoConfig: ChatbotConfig = {
@@ -39,10 +39,10 @@ export function ChatbotLandingSection() {
   ];
 
   return (
-    <section className="relative w-full bg-gradient-to-br from-white via-slate-50 to-sky-50 py-24 px-4 md:px-8 lg:px-16 text-slate-900">
+    <section className="relative w-full overflow-hidden rounded-[36px] border border-white/70 bg-gradient-to-br from-white via-[#FFF9EA] to-[#FFEFC2] px-4 py-20 text-slate-900 shadow-[0_24px_70px_rgba(15,23,42,0.1)] md:px-8 lg:px-16">
       <div className="pointer-events-none absolute inset-0">
-        <div className="absolute -left-16 top-20 h-64 w-64 rounded-full bg-sky-400/20 blur-3xl" />
-        <div className="absolute right-0 top-10 h-72 w-72 rounded-full bg-indigo-400/20 blur-3xl" />
+        <div className="absolute -left-16 top-20 h-64 w-64 rounded-full bg-amber-300/30 blur-3xl" />
+        <div className="absolute right-0 top-10 h-72 w-72 rounded-full bg-yellow-200/35 blur-3xl" />
       </div>
       <div className="relative mx-auto flex max-w-6xl flex-col gap-12">
         <div className="space-y-6 max-w-3xl">
@@ -51,7 +51,7 @@ export function ChatbotLandingSection() {
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true, amount: 0.3 }}
             transition={{ duration: 0.5, ease: "easeOut" }}
-            className="text-4xl font-semibold md:text-5xl lg:text-6xl bg-gradient-to-r from-sky-400 via-indigo-400 to-fuchsia-500 bg-clip-text text-transparent"
+            className="bg-gradient-to-r from-amber-500 via-yellow-500 to-orange-500 bg-clip-text text-4xl font-semibold text-transparent md:text-5xl lg:text-6xl"
           >
             No chatbot? No problem.
           </motion.h2>
@@ -75,7 +75,7 @@ export function ChatbotLandingSection() {
                 transition={{ duration: 0.5, ease: "easeOut" }}
                 className="flex items-start gap-2"
               >
-                <span className="mt-1 h-2 w-2 rounded-full bg-sky-400" />
+                <span className="mt-1 h-2 w-2 rounded-full bg-amber-500" />
                 <span>{feature}</span>
               </motion.li>
             ))}
@@ -85,7 +85,7 @@ export function ChatbotLandingSection() {
               whileHover={{ scale: 1.03 }}
               whileTap={{ scale: 0.97 }}
               onClick={handleBuilderCta}
-              className="group inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-sky-500 to-indigo-500 px-6 py-3 text-sm font-medium text-white shadow-lg shadow-sky-500/30 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 focus:ring-offset-slate-950"
+              className="group inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-yellow-400 to-amber-500 px-6 py-3 text-sm font-semibold text-slate-900 shadow-lg shadow-amber-500/30 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-2 focus:ring-offset-[#FFF9EA]"
             >
               <span>Get started</span>
               <motion.span
@@ -99,14 +99,14 @@ export function ChatbotLandingSection() {
             <button
               type="button"
               onClick={handleBuilderCta}
-              className="rounded-full px-2 py-1 text-sm font-semibold text-slate-700 underline underline-offset-4 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 focus:ring-offset-white"
+              className="rounded-full px-2 py-1 text-sm font-semibold text-slate-700 underline underline-offset-4 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-2 focus:ring-offset-[#FFF9EA]"
             >
               See how it works
             </button>
           </div>
         </div>
 
-        <div className="lg:hidden">
+        <div className="md:hidden">
           <ChatbotPreview config={landingDemoConfig} showChrome autoPlayDemo interactive={false} />
         </div>
       </div>

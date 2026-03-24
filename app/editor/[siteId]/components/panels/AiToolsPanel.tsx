@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowRight, Sparkles, Wand2 } from "lucide-react";
+import { ArrowRight, FilePenLine, Type } from "lucide-react";
 import { useToast } from "@/components/ui/toast";
 import { useEditorActions, useEditorState } from "@/lib/website-builder/editor/EditorProvider";
 import { selectActivePage, selectSelectedSection } from "@/lib/website-builder/editor/selectors";
@@ -22,7 +22,10 @@ export function AiToolsPanel() {
   const activePage = selectActivePage(state);
   const selectedSection = selectSelectedSection(state);
   const [prompt, setPrompt] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [busyAction, setBusyAction] = useState<"section" | "theme" | "page" | "selected" | null>(null);
+  const trimmedPrompt = prompt.trim();
+  const defaultSectionPrompt = trimmedPrompt || "Add a more premium, better structured section that matches this site.";
+  const defaultRewritePrompt = trimmedPrompt || "Rewrite the copy to feel more polished, more specific, and better matched to the site tone.";
 
   const insertSection = (section: SiteSection) => {
     if (!activePage) return;
@@ -42,14 +45,50 @@ export function AiToolsPanel() {
     setSelectedNode({ type: "section", id: nextSection.id, parentId: activePage.id });
   };
 
+  const replaceSection = (nextSection: SiteSection) => {
+    if (!activePage) return;
+    updateDocument((doc) => ({
+      ...doc,
+      pages: doc.pages.map((page) =>
+        page.id !== activePage.id
+          ? page
+          : {
+              ...page,
+              sections: page.sections.map((section) => (section.id === nextSection.id ? nextSection : section))
+            }
+      )
+    }));
+  };
+
+  const regenerateSection = async (section: SiteSection, promptValue: string) => {
+    const response = await fetch("/api/builder/regenerate-section-v2", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        siteId: state.siteId,
+        sectionId: section.id,
+        sectionType: section.type,
+        prompt: promptValue
+      })
+    });
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      throw new Error(payload?.error ?? "Section regeneration failed");
+    }
+    const data = await response.json();
+    if (data?.section) {
+      replaceSection(data.section as SiteSection);
+    }
+  };
+
   const handleGenerateSection = async () => {
-    if (!prompt.trim() || !state.document) return;
-    setLoading(true);
+    if (!state.document) return;
+    setBusyAction("section");
     try {
       const response = await fetch("/api/builder/section-generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: prompt.trim(), theme: state.document.theme })
+        body: JSON.stringify({ prompt: defaultSectionPrompt, theme: state.document.theme })
       });
       if (!response.ok) throw new Error("Section generation failed");
       const data = await response.json();
@@ -61,18 +100,18 @@ export function AiToolsPanel() {
       console.error("[EDITOR_AI_SECTION]", error);
       pushToast({ title: "AI error", message: "Try again in a moment.", variant: "error" });
     } finally {
-      setLoading(false);
+      setBusyAction(null);
     }
   };
 
   const handleThemeAssistant = async () => {
-    if (!prompt.trim() || !state.document) return;
-    setLoading(true);
+    if (!state.document) return;
+    setBusyAction("theme");
     try {
       const response = await fetch("/api/builder/theme-assistant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: prompt.trim(), theme: state.document.theme })
+        body: JSON.stringify({ prompt: trimmedPrompt || "Refresh the site theme to feel more refined and on-brand.", theme: state.document.theme })
       });
       if (!response.ok) throw new Error("Theme assistant failed");
       const data = await response.json();
@@ -90,63 +129,113 @@ export function AiToolsPanel() {
       console.error("[EDITOR_AI_THEME]", error);
       pushToast({ title: "AI error", message: "Try again in a moment.", variant: "error" });
     } finally {
-      setLoading(false);
+      setBusyAction(null);
+    }
+  };
+
+  const handleRewriteSelected = async () => {
+    if (!selectedSection) {
+      pushToast({ title: "Select a section", message: "Pick a section first, then rewrite it.", variant: "info" });
+      return;
+    }
+    setBusyAction("selected");
+    try {
+      await regenerateSection(selectedSection, defaultRewritePrompt);
+      pushToast({ title: "Section updated", message: "Selected section copy was refreshed.", variant: "success" });
+    } catch (error) {
+      console.error("[EDITOR_AI_REWRITE_SELECTED]", error);
+      pushToast({ title: "AI error", message: "Could not rewrite the selected section.", variant: "error" });
+    } finally {
+      setBusyAction(null);
+    }
+  };
+
+  const handleRewritePage = async () => {
+    if (!activePage) return;
+    const supportedSections = activePage.sections.filter((section) =>
+      ["hero", "about", "services", "testimonials", "gallery", "pricing", "faq", "cta", "contact", "footer"].includes(section.type)
+    );
+    if (!supportedSections.length) {
+      pushToast({ title: "Nothing to rewrite", message: "This page has no rewriteable sections yet.", variant: "info" });
+      return;
+    }
+    setBusyAction("page");
+    try {
+      for (const section of supportedSections) {
+        await regenerateSection(section, defaultRewritePrompt);
+      }
+      pushToast({ title: "Page copy refreshed", message: "The current page copy was updated.", variant: "success" });
+    } catch (error) {
+      console.error("[EDITOR_AI_REWRITE_PAGE]", error);
+      pushToast({ title: "AI error", message: "Could not refresh the whole page copy.", variant: "error" });
+    } finally {
+      setBusyAction(null);
     }
   };
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border border-sc-border bg-sc-surface p-3">
-        <label className="text-xs font-semibold uppercase tracking-[0.2em] text-sc-muted">Describe your goal</label>
+      <div className="rounded-[24px] border border-[#eadfcd] bg-[linear-gradient(180deg,rgba(255,255,255,0.94),rgba(255,247,235,0.88))] p-4 shadow-[0_18px_50px_rgba(84,62,23,0.06)]">
+        <label className="text-xs font-semibold uppercase tracking-[0.24em] text-sc-muted">Describe your goal</label>
         <textarea
-          className="mt-2 min-h-[90px] w-full rounded-xl border border-sc-border bg-sc-surface px-3 py-2 text-sm text-sc-text placeholder:text-sc-muted"
+          className="mt-3 min-h-[120px] w-full rounded-[22px] border border-[#eadfcd] bg-white px-4 py-3 text-sm text-sc-text placeholder:text-sc-muted shadow-inner"
           value={prompt}
           onChange={(event) => setPrompt(event.target.value)}
-          placeholder="e.g. Add a premium services section for a boutique studio"
+          placeholder="e.g. Add a premium gallery section with more editorial spacing"
         />
-        <div className="mt-3 grid gap-2">
+        <div className="mt-4 grid gap-2">
           <button
             type="button"
             onClick={handleGenerateSection}
-            disabled={loading}
-            className="inline-flex items-center justify-between rounded-xl border border-sc-border px-3 py-2 text-xs font-semibold text-sc-text"
+            disabled={busyAction !== null}
+            className="inline-flex items-center justify-between rounded-[18px] border border-[#e1d5c0] bg-white px-4 py-3 text-sm font-semibold text-sc-text shadow-sm disabled:opacity-50"
           >
-            Create a full section
+            {busyAction === "section" ? "Creating section..." : "Create a full section"}
             <ArrowRight className="h-4 w-4" />
           </button>
           <button
             type="button"
             onClick={handleThemeAssistant}
-            disabled={loading}
-            className="inline-flex items-center justify-between rounded-xl border border-sc-border px-3 py-2 text-xs font-semibold text-sc-text"
+            disabled={busyAction !== null}
+            className="inline-flex items-center justify-between rounded-[18px] border border-[#e1d5c0] bg-white px-4 py-3 text-sm font-semibold text-sc-text shadow-sm disabled:opacity-50"
           >
-            Redesign your site theme
+            {busyAction === "theme" ? "Refreshing theme..." : "Redesign your site theme"}
             <ArrowRight className="h-4 w-4" />
           </button>
         </div>
       </div>
 
       <div className="space-y-3">
-        <div className="rounded-xl border border-sc-border bg-sc-surface p-3">
+        <button
+          type="button"
+          onClick={handleRewritePage}
+          disabled={busyAction !== null}
+          className="w-full rounded-[22px] border border-[#eadfcd] bg-white p-4 text-left shadow-sm transition hover:border-[#d9c49f] disabled:opacity-50"
+        >
           <div className="flex items-start gap-3">
-            <Sparkles className="mt-1 h-5 w-5 text-sc-text" />
+            <FilePenLine className="mt-1 h-5 w-5 text-sc-text" />
             <div>
               <p className="text-sm font-semibold text-sc-text">Get new text for your whole page</p>
               <p className="text-xs text-sc-muted">
-                Instantly replace copy from a short description.
+                Refresh every section on the current page from one prompt.
               </p>
             </div>
           </div>
-        </div>
-        <div className="rounded-xl border border-sc-border bg-sc-surface p-3">
+        </button>
+        <button
+          type="button"
+          onClick={handleRewriteSelected}
+          disabled={busyAction !== null}
+          className="w-full rounded-[22px] border border-[#eadfcd] bg-white p-4 text-left shadow-sm transition hover:border-[#d9c49f] disabled:opacity-50"
+        >
           <div className="flex items-start gap-3">
-            <Wand2 className="mt-1 h-5 w-5 text-sc-text" />
+            <Type className="mt-1 h-5 w-5 text-sc-text" />
             <div>
-              <p className="text-sm font-semibold text-sc-text">Add or edit any text you want</p>
-              <p className="text-xs text-sc-muted">Improve the words you already have.</p>
+              <p className="text-sm font-semibold text-sc-text">Rewrite the selected section</p>
+              <p className="text-xs text-sc-muted">Use the current prompt to improve the section you picked.</p>
             </div>
           </div>
-        </div>
+        </button>
       </div>
     </div>
   );

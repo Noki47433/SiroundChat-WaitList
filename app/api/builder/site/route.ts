@@ -1,7 +1,14 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
+import { getSupabaseServerAdminClient } from "@/lib/supabase/serverAdmin";
 import { buildFallbackContent } from "@/lib/builder/ai";
+import {
+  CTA_GOALS,
+  CONTENT_LANGUAGES,
+  createEmptyGenerationBrief,
+  sanitizeGenerationBrief
+} from "@/lib/builder/generation-config";
 import { buildSeoFields, buildSitePath, selectTemplateKey, slugify } from "@/lib/builder/utils";
 
 const selectTemplateId = (industry: string, templateId?: string | null) => {
@@ -70,6 +77,23 @@ const SocialsSchema = z
   .optional()
   .nullable();
 
+const ContentLanguageSchema = z
+  .enum(CONTENT_LANGUAGES.map((item) => item.value) as [string, ...string[]])
+  .optional()
+  .nullable();
+
+const GenerationBriefSchema = z
+  .object({
+    audience: z.string().optional().nullable(),
+    coreOffer: z.string().optional().nullable(),
+    primaryCtaGoal: z.enum(CTA_GOALS).optional().nullable(),
+    topServices: z.array(z.string()).optional().nullable(),
+    proofPoints: z.array(z.string()).optional().nullable(),
+    tone: z.string().optional().nullable()
+  })
+  .optional()
+  .nullable();
+
 const CreateSchema = z.object({
   businessId: z.string().uuid(),
   businessName: z.string().min(1),
@@ -86,7 +110,9 @@ const CreateSchema = z.object({
   openingHours: z.string().optional().nullable(),
   socials: SocialsSchema,
   features: FeaturesSchema,
-  hasOwnPhotos: z.boolean().optional()
+  hasOwnPhotos: z.boolean().optional(),
+  contentLanguage: ContentLanguageSchema,
+  generationBrief: GenerationBriefSchema
 });
 
 const UpdateSchema = z.object({
@@ -105,12 +131,67 @@ const UpdateSchema = z.object({
   openingHours: z.string().optional().nullable(),
   socials: SocialsSchema,
   features: FeaturesSchema,
-  hasOwnPhotos: z.boolean().optional()
+  hasOwnPhotos: z.boolean().optional(),
+  contentLanguage: ContentLanguageSchema,
+  generationBrief: GenerationBriefSchema
 });
+
+const getOwnedBusiness = async (admin: any, businessId: string, userId: string) => {
+  const { data, error } = await (admin as any)
+    .from("businesses")
+    .select("id")
+    .eq("id", businessId)
+    .or(`owner_id.eq.${userId},owner_user_id.eq.${userId}`)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[BUILDER_BUSINESS_LOOKUP_ERROR]", error);
+    return null;
+  }
+
+  return data as { id?: string } | null;
+};
+
+const getOwnedSite = async (admin: any, siteId: string, userId: string, select: string) => {
+  const selectFields = new Set(
+    select
+      .split(",")
+      .map((field) => field.trim())
+      .filter(Boolean)
+  );
+  selectFields.add("owner_user_id");
+  selectFields.add("business_id");
+
+  const { data, error } = await (admin as any)
+    .from("builder_sites")
+    .select(Array.from(selectFields).join(","))
+    .eq("id", siteId)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[BUILDER_SITE_LOOKUP_ERROR]", error);
+    return null;
+  }
+
+  const site = data as { owner_user_id?: string | null; business_id?: string | null } | null;
+  if (!site) return null;
+
+  if (site.owner_user_id === userId) {
+    return data;
+  }
+
+  if (!site.business_id) {
+    return null;
+  }
+
+  const business = await getOwnedBusiness(admin, site.business_id, userId);
+  return business?.id ? data : null;
+};
 
 
 export async function GET(request: Request) {
   const supabase = getSupabaseRouteClient();
+  const admin = getSupabaseServerAdminClient();
   const { data: userData } = await supabase.auth.getUser();
 
   if (!userData?.user) {
@@ -128,13 +209,12 @@ export async function GET(request: Request) {
     return NextResponse.json({ id: null }, { status: 200 });
   }
 
-  const { data: site } = await (supabase as any)
-    .from("builder_sites")
-    .select(
-      "id,business_id,status,template_key,template_id,tone,pages_mode,opening_hours,socials,has_own_photos,site_document,slug,path,primary_color,secondary_color,font_family,logo_url,business_name,industry,description,contact_email,contact_phone,contact_address,include_services,include_testimonials,include_pricing,include_faq,include_contact,include_reservation,include_gallery"
-    )
-    .eq("id", siteId)
-    .maybeSingle();
+  const site = await getOwnedSite(
+    admin,
+    siteId,
+    userData.user.id,
+    "id,business_id,status,template_key,template_id,tone,pages_mode,opening_hours,socials,has_own_photos,site_document,slug,path,primary_color,secondary_color,font_family,logo_url,business_name,industry,description,contact_email,contact_phone,contact_address,include_services,include_testimonials,include_pricing,include_faq,include_contact,include_reservation,include_gallery,content_language,generation_brief"
+  );
 
   if (!site) {
     return NextResponse.json({ error: "Site not found" }, { status: 404 });
@@ -145,6 +225,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const supabase = getSupabaseRouteClient();
+  const admin = getSupabaseServerAdminClient();
   const { data: userData } = await supabase.auth.getUser();
 
   if (!userData?.user) {
@@ -159,11 +240,7 @@ export async function POST(request: Request) {
 
   const input = parsed.data;
 
-  const { data: business } = await (supabase as any)
-    .from("businesses")
-    .select("id")
-    .eq("id", input.businessId)
-    .maybeSingle();
+  const business = await getOwnedBusiness(admin, input.businessId, userData.user.id);
 
   if (!business?.id) {
     return NextResponse.json({ error: "Business not found" }, { status: 404 });
@@ -172,6 +249,11 @@ export async function POST(request: Request) {
   const templateId = selectTemplateId(input.industry, input.templateId);
   const templateKey = selectTemplateKey(input.industry, templateId);
   const baseSlug = slugify(input.businessName);
+  const contentLanguage = input.contentLanguage ?? "en";
+  const generationBrief = sanitizeGenerationBrief(
+    input.generationBrief,
+    input.tone ?? "professional"
+  );
 
   let siteRow: { id?: string } | null = null;
   let insertError: any = null;
@@ -181,7 +263,7 @@ export async function POST(request: Request) {
     const slug = `${baseSlug}${suffix}`;
     const path = buildSitePath(slug);
 
-    const result = await (supabase as any)
+    const result = await (admin as any)
       .from("builder_sites")
       .insert({
         business_id: input.businessId,
@@ -212,7 +294,9 @@ export async function POST(request: Request) {
         pages_mode: input.pagesMode ?? "one",
         has_own_photos: Boolean(input.hasOwnPhotos),
         opening_hours: input.openingHours ?? null,
-        socials: input.socials ?? null
+        socials: input.socials ?? null,
+        content_language: contentLanguage,
+        generation_brief: generationBrief
       })
       .select("id")
       .single();
@@ -250,7 +334,8 @@ export async function POST(request: Request) {
       includeReservation: Boolean(input.features?.includeReservation),
       includeGallery: Boolean(input.features?.includeGallery),
       includeMenu
-    }
+    },
+    brief: generationBrief
   });
 
   const { seoTitle, seoDescription } = buildSeoFields({
@@ -260,7 +345,7 @@ export async function POST(request: Request) {
     content
   });
 
-  const { error: contentError } = await (supabase as any)
+  const { error: contentError } = await (admin as any)
     .from("builder_site_content")
     .insert({
       site_id: siteRow.id,
@@ -275,11 +360,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Failed to create content" }, { status: 500 });
   }
 
-  return NextResponse.json({ siteId: siteRow.id });
+  return NextResponse.json({
+    siteId: siteRow.id,
+    id: siteRow.id
+  });
 }
 
 export async function PATCH(request: Request) {
   const supabase = getSupabaseRouteClient();
+  const admin = getSupabaseServerAdminClient();
   const { data: userData } = await supabase.auth.getUser();
 
   if (!userData?.user) {
@@ -294,6 +383,12 @@ export async function PATCH(request: Request) {
 
   const input = parsed.data;
   const updates: Record<string, unknown> = {};
+
+  const existingSite = await getOwnedSite(admin, input.siteId, userData.user.id, "id");
+
+  if (!existingSite?.id) {
+    return NextResponse.json({ error: "Site not found" }, { status: 404 });
+  }
 
   if (input.businessName) updates.business_name = input.businessName;
   if (input.industry) {
@@ -319,6 +414,13 @@ export async function PATCH(request: Request) {
   if (input.hasOwnPhotos !== undefined) updates.has_own_photos = input.hasOwnPhotos;
   if (input.openingHours !== undefined) updates.opening_hours = input.openingHours;
   if (input.socials !== undefined) updates.socials = input.socials;
+  if (input.contentLanguage !== undefined) updates.content_language = input.contentLanguage ?? "en";
+  if (input.generationBrief !== undefined) {
+    updates.generation_brief = sanitizeGenerationBrief(
+      input.generationBrief,
+      input.tone ?? "professional"
+    );
+  }
   if (input.contact) {
     updates.contact_email = input.contact.email ?? null;
     updates.contact_phone = input.contact.phone ?? null;
@@ -348,7 +450,7 @@ export async function PATCH(request: Request) {
     }
   }
 
-  const { error } = await (supabase as any)
+  const { error } = await (admin as any)
     .from("builder_sites")
     .update(updates)
     .eq("id", input.siteId);

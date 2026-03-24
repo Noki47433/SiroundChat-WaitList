@@ -1,10 +1,9 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/require-user";
-import { getSupabaseServerClient } from "@/lib/supabase/server";
-import { getTenantFromSession } from "@/lib/utils/tenant";
 import { SiteDocumentSchema } from "@/lib/website-builder/schema";
 import { getBuilderPlanForBusiness } from "@/lib/builder/plan";
 import { EditorShell } from "@/app/editor/[siteId]/EditorShell";
+import { getOwnedBuilderSite } from "@/lib/builder/site-access";
 
 export const dynamic = "force-dynamic";
 
@@ -13,33 +12,52 @@ type PageProps = {
 };
 
 export default async function EditorPage({ params }: PageProps) {
-  await requireUser("/dashboard/builder");
-  const tenant = await getTenantFromSession();
-  const supabase = getSupabaseServerClient();
-
-  if (!tenant.businessId) {
+  const { user } = await requireUser("/dashboard/builder");
+  if (!user?.id) {
     notFound();
   }
 
-  const { data: site } = await (supabase as any)
-    .from("builder_sites")
-    .select(
-      "id,status,slug,business_name,site_document,published_url,primary_color,secondary_color,font_family,logo_url"
-    )
-    .eq("id", params.siteId)
-    .eq("business_id", tenant.businessId)
-    .maybeSingle();
+  const site = await getOwnedBuilderSite<{
+    id: string;
+    business_id: string;
+    status: string | null;
+    slug: string | null;
+    business_name: string | null;
+    site_document: unknown;
+    published_url: string | null;
+    primary_color: string | null;
+    secondary_color: string | null;
+    font_family: string | null;
+    logo_url: string | null;
+  }>(
+    params.siteId,
+    user.id,
+    "id,business_id,status,slug,business_name,site_document,published_url,primary_color,secondary_color,font_family,logo_url"
+  );
 
-  if (!site?.site_document) {
+  if (!site) {
     notFound();
+  }
+
+  if (!site.site_document) {
+    redirect(`/editor/${params.siteId}/generate`);
   }
 
   const parsedDoc = SiteDocumentSchema.safeParse(site.site_document);
   if (!parsedDoc.success) {
-    notFound();
+    redirect(`/editor/${params.siteId}/generate`);
   }
 
-  const { flags } = await getBuilderPlanForBusiness(tenant.businessId);
+  const hydratedDocument = {
+    ...parsedDoc.data,
+    siteBrief: {
+      ...parsedDoc.data.siteBrief,
+      businessName: parsedDoc.data.siteBrief?.businessName ?? site.business_name ?? undefined,
+      logoUrl: parsedDoc.data.siteBrief?.logoUrl ?? site.logo_url ?? undefined
+    }
+  };
+
+  const { flags } = await getBuilderPlanForBusiness(site.business_id);
 
   return (
     <EditorShell
@@ -47,7 +65,7 @@ export default async function EditorPage({ params }: PageProps) {
         id: site.id as string,
         slug: site.slug as string,
         businessName: site.business_name as string,
-        siteDocument: parsedDoc.data,
+        siteDocument: hydratedDocument,
         publishedUrl: site.published_url as string | null
       }}
       canPublish={flags.canPublish}

@@ -1,0 +1,78 @@
+{
+  "template": "service",
+  "service_niche": "barbershop",
+  "motion_level": "none",
+  "brand": {
+    "business_name": "No.95 Cut House",
+    "city": "Riga",
+    "accent_hex": "#111111"
+  },
+  "header": {
+    "nav_items": ["Services", "Prices", "Gallery", "Contact"],
+    "primary_cta_label": "Book now",
+    "primary_cta_url": "https://example.com/book"
+  },
+  "hero": {
+    "headline": "Modern classic cuts",
+    "tagline": "Sharp fades, beard care, and no-wait booking.",
+    "primary_cta_label": "Book now",
+    "primary_cta_url": "https://example.com/book",
+    "hero_image": {
+      "src": "https://cdn.example.com/barber-hero.jpg",
+      "alt": "Barber chair",
+      "crop_desktop": "16:9",
+      "crop_mobile": "4:5"
+    }
+  },
+  "services": {
+    "items": [
+      { "title": "Fade", "description": "Precision fade and finish." },
+      { "title": "Beard trim", "description": "Shape and line cleanup." },
+      { "title": "Scissor cut", "description": "Classic layered cut." }
+    ]
+  },
+  "pricing": {
+    "variant": "list",
+    "items": [
+      { "label": "Fade", "amount": "$35" },
+      { "label": "Beard trim", "amount": "$20" }
+    ]
+  },
+  "staff": {
+    "enabled": true,
+    "members": [
+      {
+        "name": "Alek",
+        "role": "Senior barber",
+        "image": {
+          "src": "https://cdn.example.com/staff-1.jpg",
+          "alt": "Alek portrait",
+          "crop": "1:1"
+        }
+      }
+    ]
+  },
+  "gallery": {
+    "variant": "masonry",
+    "items": []
+  },
+  "reviews": {
+    "items": [],
+    "fallback_hygiene_bullets": [
+      "Tools sanitized after every appointment.",
+      "Fresh cape and neck strip each visit.",
+      "Skin-safe products only."
+    ]
+  },
+  "contact": {
+    "hours": ["Mon-Fri 9-8", "Sat 9-6", "Sun 10-4"],
+    "address": "12 Brivibas iela, Riga",
+    "phone": "+371 555-1122",
+    "booking_cta_label": "Book now",
+    "booking_cta_url": "https://example.com/book"
+  },
+  "footer": {
+    "instagram_url": "https://instagram.com/no95",
+    "email": "hello@no95.example"
+  }
+}

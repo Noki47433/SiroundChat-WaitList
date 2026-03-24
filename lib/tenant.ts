@@ -14,6 +14,7 @@ type BusinessRow = {
   business_name?: string | null;
   industry?: string | null;
   widget_key?: string | null;
+  timezone?: string | null;
 };
 
 const generateFallbackUuid = () =>
@@ -28,6 +29,39 @@ const generateWidgetKey = () => {
     return randomUUID();
   } catch {
     return generateFallbackUuid();
+  }
+};
+
+const syncRestaurantAccess = async (
+  supabase: ReturnType<typeof getSupabaseServerClient>,
+  businessId: string,
+  userId: string
+) => {
+  try {
+    const { data: businessRow } = await (supabase as any)
+      .from("businesses")
+      .select("id, timezone")
+      .eq("id", businessId)
+      .maybeSingle();
+
+    const timezone = businessRow?.timezone ?? "Europe/Belgrade";
+
+    await (supabase as any).from("restaurants").insert({
+      id: businessId,
+      timezone,
+      total_capacity: 40
+    });
+
+    await (supabase as any).from("restaurant_members").upsert(
+      {
+        restaurant_id: businessId,
+        user_id: userId,
+        role: "owner"
+      },
+      { onConflict: "restaurant_id,user_id" }
+    );
+  } catch {
+    // Reservations migration may not be applied in every environment yet.
   }
 };
 
@@ -56,7 +90,9 @@ export async function getTenantFromSession(userId?: string): Promise<Tenant> {
   const { data, error } = await (supabase as any)
     .from("businesses")
     .select("id, widget_key")
-    .eq("owner_id", resolvedUserId)
+    .or(`owner_id.eq.${resolvedUserId},owner_user_id.eq.${resolvedUserId}`)
+    .order("created_at", { ascending: false })
+    .limit(1)
     .maybeSingle();
 
   if (error) {
@@ -74,6 +110,9 @@ export async function getTenantFromSession(userId?: string): Promise<Tenant> {
     if (widgetError) {
       console.error("[WIDGET_KEY_BACKFILL_ERROR]", widgetError);
     }
+  }
+  if (row?.id) {
+    await syncRestaurantAccess(supabase, row.id, resolvedUserId);
   }
   return { userId: resolvedUserId, businessId: row?.id ?? "" };
 }
@@ -93,7 +132,9 @@ export async function ensureBusinessRow(args: {
   const { data: existing, error: existingError } = await (supabase as any)
     .from("businesses")
     .select("id, widget_key")
-    .eq("owner_id", args.userId)
+    .or(`owner_id.eq.${args.userId},owner_user_id.eq.${args.userId}`)
+    .order("created_at", { ascending: false })
+    .limit(1)
     .maybeSingle();
 
   if (existingError) {
@@ -112,6 +153,7 @@ export async function ensureBusinessRow(args: {
         console.error("[WIDGET_KEY_UPDATE_ERROR]", widgetError);
       }
     }
+    await syncRestaurantAccess(supabase, existingRow.id, args.userId);
     return { userId: args.userId, businessId: existingRow.id };
   }
 
@@ -138,6 +180,8 @@ export async function ensureBusinessRow(args: {
   if (!createdRow?.id) {
     throw new Error("Failed to create business row (missing id)");
   }
+
+  await syncRestaurantAccess(supabase, createdRow.id, args.userId);
 
   return { userId: args.userId, businessId: createdRow.id };
 }

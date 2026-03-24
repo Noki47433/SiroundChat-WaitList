@@ -6,7 +6,15 @@ import { enforceRateLimit, RateLimitError } from "@/lib/utils/rate-limit";
 
 export const runtime = "nodejs";
 
-const EventTypeSchema = z.enum(["page_view", "cta_click", "lead_submitted", "chat_open", "chat_started"]);
+const EventTypeSchema = z.enum([
+  "page_view",
+  "cta_click",
+  "lead_submitted",
+  "chat_open",
+  "chat_started",
+  "reservation_started",
+  "reservation_completed"
+]);
 const ChannelSchema = z.enum(["website", "chatbot", "form"]);
 const CtaTypeSchema = z.enum(["call", "whatsapp", "email", "directions", "booking", "other"]);
 const LeadTypeSchema = z.enum(["form", "chat"]);
@@ -37,6 +45,18 @@ const IngestSchema = z
 
     if ((value.eventType === "chat_open" || value.eventType === "chat_started") && value.channel !== "chatbot") {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: "chat events must use chatbot channel", path: ["channel"] });
+    }
+
+    if (
+      (value.eventType === "reservation_started" || value.eventType === "reservation_completed") &&
+      value.channel !== "form" &&
+      value.channel !== "chatbot"
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "reservation events must use form or chatbot channel",
+        path: ["channel"]
+      });
     }
 
     if (value.eventType === "lead_submitted") {

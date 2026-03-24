@@ -103,6 +103,9 @@ export async function awardBadgeIfNew(
     .select("id, earned_at");
 
   if (insertError) {
+    if (isDuplicateError(insertError)) {
+      return null;
+    }
     throw insertError;
   }
 

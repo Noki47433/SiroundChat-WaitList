@@ -51,7 +51,7 @@
         "text": "#E5E7EB",
         "shape": "rounded"
       },
-      "greeting": "pershendetje",
+      "greeting": "pershendetje une jam AI asistenti i restaurantit Rikoli",
       "launcherVariant": "iconWithLabel",
       "logoUrl": "https://jevqmewqvgcrrjrponwe.supabase.co/storage/v1/object/public/business-logos/logos/b63c1359-e2f5-4e95-9e84-e2070465a0ab/logo.png",
       "iconId": "restaurant-1",
@@ -78,7 +78,39 @@
           "answer": "Yes, free Wi-Fi is available for all guests."
         }
       ],
-      "updatedAt": "2026-02-16T16:02:31.491Z"
+      "updatedAt": "2026-03-11T21:14:54.412Z"
+    },
+    "8e1ebe5b-1064-43a1-a3f0-c2cdfd4c9377": {
+      "siteId": "8e1ebe5b-1064-43a1-a3f0-c2cdfd4c9377",
+      "greeting": "Pershendetje. Jam asistenti virtual i biznesit tone dhe jam gati t'ju ndihmoj.",
+      "businessName": "test43 Business",
+      "theme": {
+        "primary": "#EC4899",
+        "accent": "#F97316",
+        "secondary": "#F97316",
+        "background": "#FFF1F2",
+        "text": "#1F2937",
+        "shape": "rounded"
+      },
+      "logoUrl": "https://jevqmewqvgcrrjrponwe.supabase.co/storage/v1/object/public/business-logos/logos/c4960103-2a6a-4408-8aac-056367a79076/logo.png",
+      "iconId": null,
+      "updatedAt": "2026-03-15T21:58:29.035Z"
+    },
+    "908e5851-0d27-40d9-97f3-65387707c04c": {
+      "siteId": "908e5851-0d27-40d9-97f3-65387707c04c",
+      "greeting": "Pershendetje. Jam asistenti virtual i MARCOS ITALIANO dhe jam gati t'ju ndihmoj.",
+      "businessName": "MARCOS ITALIANO",
+      "theme": {
+        "primary": "#4F46E5",
+        "accent": "#A855F7",
+        "secondary": "#A855F7",
+        "background": "#EEF2FF",
+        "text": "#0F172A",
+        "shape": "rounded"
+      },
+      "logoUrl": "https://jevqmewqvgcrrjrponwe.supabase.co/storage/v1/object/public/business-logos/logos/78c61a52-25d4-4a93-a9c5-d53ba9363e8d/logo.png",
+      "iconId": null,
+      "updatedAt": "2026-03-21T20:56:14.067Z"
     }
   },
   "embeddings": [],

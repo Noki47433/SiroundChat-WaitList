@@ -68,13 +68,25 @@ export type AdminBusinessRow = {
   industry: string | null;
   plan: string;
   status: string;
+  websiteSessions: number;
+  reservations: number;
   conversations: number;
   messages: number;
   leads: number;
   visitors: number;
   aiCostUsd: number;
+  aiTokens: number;
   mrrEur: number;
   profitEstimate: number;
+  trendPct: number | null;
+  healthScore: number;
+  scoreBreakdown: {
+    demand: number;
+    conversions: number;
+    operations: number;
+    efficiency: number;
+    trend: number;
+  };
   phone: string | null;
   websiteUrl: string | null;
   risk: "at_risk" | "healthy" | "high_performer";
@@ -114,15 +126,35 @@ export type BusinessDetailData = {
     cost: number;
   }>;
   snapshot: {
+    websiteSessions: number;
+    reservations: number;
     conversations: number;
     messages: number;
     leads: number;
     visitors: number;
     aiCostUsd: number;
+    aiTokens: number;
     avgCostPerConversation: number;
     responseMinutes: number | null;
+    trendPct: number | null;
+    healthScore: number;
+    scoreBreakdown: {
+      demand: number;
+      conversions: number;
+      operations: number;
+      efficiency: number;
+      trend: number;
+    };
     topLeadTypes: Array<{ name: string; value: number }>;
   };
+  reservations: Array<{
+    id: string;
+    createdAt: string;
+    dateTime: string;
+    customerName: string | null;
+    partySize: number | null;
+    status: string;
+  }>;
   leads: Array<{
     id: string;
     createdAt: string;
@@ -285,6 +317,24 @@ type MessageRow = {
   created_at: string;
 };
 
+type WebsiteAnalyticsRow = {
+  business_id: string;
+  event_type: string | null;
+  session_id: string | null;
+  channel: string | null;
+  occurred_at: string | null;
+};
+
+type ReservationMetricRow = {
+  id: string;
+  business_id: string;
+  status: string | null;
+  created_at: string | null;
+  datetime: string | null;
+  customer_name: string | null;
+  party_size: number | null;
+};
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 const pctDelta = (current: number, previous: number) => {
@@ -331,6 +381,70 @@ const toNumber = (value: unknown) => {
     return Number.isFinite(parsed) ? parsed : 0;
   }
   return 0;
+};
+
+const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
+
+const AI_INPUT_COST_PER_MILLION = Number(process.env.ADMIN_AI_INPUT_COST_PER_MILLION_USD ?? "0.15");
+const AI_OUTPUT_COST_PER_MILLION = Number(process.env.ADMIN_AI_OUTPUT_COST_PER_MILLION_USD ?? "0.6");
+
+const deriveAiCostUsd = (tokensIn: number, tokensOut: number, recordedCostUsd: number) => {
+  if (recordedCostUsd > 0) return Number(recordedCostUsd.toFixed(2));
+  const derived = (tokensIn / 1_000_000) * AI_INPUT_COST_PER_MILLION + (tokensOut / 1_000_000) * AI_OUTPUT_COST_PER_MILLION;
+  return Number(derived.toFixed(2));
+};
+
+const percentChange = (current: number, previous: number) => {
+  if (previous <= 0) return current > 0 ? 100 : 0;
+  return Number((((current - previous) / previous) * 100).toFixed(1));
+};
+
+const toDayKey = (value: string | null | undefined) => {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return toYmd(date);
+};
+
+const isReservationCountable = (status: string | null) => {
+  const normalized = (status ?? "").toLowerCase();
+  return normalized !== "canceled" && normalized !== "cancelled" && normalized !== "no_show";
+};
+
+const buildHealthScore = (input: {
+  websiteSessions: number;
+  leads: number;
+  reservations: number;
+  conversations: number;
+  messages: number;
+  aiCostUsd: number;
+  trendPct: number | null;
+  responseMinutes?: number | null;
+}) => {
+  const demand = Math.round(clamp((input.websiteSessions + input.conversations * 3) / 250, 0, 1) * 20);
+  const conversions = Math.round(clamp((input.leads * 4 + input.reservations * 7) / 60, 0, 1) * 30);
+  const conversationDepth = input.conversations > 0 ? input.messages / input.conversations : 0;
+  const depthSignal = clamp(conversationDepth / 8, 0, 1);
+  const responseSignal =
+    input.responseMinutes == null ? 0.55 : clamp((20 - Math.min(input.responseMinutes, 20)) / 20, 0, 1);
+  const operations = Math.round(clamp(depthSignal * 0.55 + responseSignal * 0.45, 0, 1) * 20);
+  const outcomeValue = input.leads * 12 + input.reservations * 18 + input.conversations * 1.5;
+  const efficiencyRatio = input.aiCostUsd > 0 ? outcomeValue / input.aiCostUsd : outcomeValue > 0 ? 20 : 0;
+  const efficiency = Math.round(clamp(efficiencyRatio / 20, 0, 1) * 15);
+  const normalizedTrend = clamp(((input.trendPct ?? 0) + 50) / 100, 0, 1);
+  const trend = Math.round(normalizedTrend * 15);
+  const total = demand + conversions + operations + efficiency + trend;
+
+  return {
+    total: clamp(total, 0, 100),
+    breakdown: {
+      demand,
+      conversions,
+      operations,
+      efficiency,
+      trend
+    }
+  };
 };
 
 const sumRows = (rows: DailyMetricRow[], field: keyof DailyMetricRow, predicate: (row: DailyMetricRow) => boolean) =>
@@ -810,27 +924,67 @@ export async function getAdminBusinessesData(rangeInput?: string | null): Promis
   const today = toDateOnly(new Date());
   const currentStart = toYmd(addDays(today, -(rangeDays - 1)));
   const previousStart = toYmd(addDays(today, -(rangeDays * 2 - 1)));
+  const previousEnd = toYmd(addDays(today, -rangeDays));
+  const currentEnd = toYmd(today);
 
   const { supabase, businesses, subscriptions, metrics } = await getBaseData({ metricsFromDay: previousStart });
+  if (!businesses.length) {
+    return { range, rows: [] };
+  }
   const latestSubs = latestByBusiness(subscriptions);
   const risk = buildRiskLists(businesses, latestSubs, metrics, today);
   const riskMap = new Map(risk.scored.map((item) => [item.businessId, item]));
+  const businessIds = businesses.map((business) => business.id);
 
-  const { data: conversationsResult } = await (supabase as any)
-    .from("conversations")
-    .select("id, business_id, last_message_at")
-    .order("last_message_at", { ascending: false })
-    .limit(1500);
+  const [conversationsResult, reservationsResult, websiteEventsResult] = await Promise.all([
+    (supabase as any)
+      .from("conversations")
+      .select("id, business_id, last_message_at")
+      .in("business_id", businessIds)
+      .order("last_message_at", { ascending: false })
+      .limit(1500),
+    (supabase as any)
+      .from("reservations")
+      .select("id, business_id, status, created_at, datetime, customer_name, party_size")
+      .in("business_id", businessIds)
+      .gte("created_at", `${previousStart}T00:00:00.000Z`)
+      .order("created_at", { ascending: false })
+      .limit(Math.max(500, businessIds.length * rangeDays * 4)),
+    (supabase as any)
+      .from("website_analytics_events")
+      .select("business_id, event_type, session_id, channel, occurred_at")
+      .in("business_id", businessIds)
+      .gte("occurred_at", `${previousStart}T00:00:00.000Z`)
+      .order("occurred_at", { ascending: false })
+      .limit(Math.max(1000, businessIds.length * rangeDays * 12))
+  ]);
 
   const lastMessageMap = new Map<string, string>();
-  ((conversationsResult ?? []) as Array<{ business_id: string; last_message_at: string }>).forEach((row) => {
+  (((conversationsResult as any)?.data ?? []) as Array<{ business_id: string; last_message_at: string }>).forEach((row) => {
     if (!lastMessageMap.has(row.business_id)) {
       lastMessageMap.set(row.business_id, row.last_message_at);
     }
   });
 
+  const reservationsByBusiness = new Map<string, ReservationMetricRow[]>();
+  ((reservationsResult?.data ?? []) as ReservationMetricRow[]).forEach((row) => {
+    const list = reservationsByBusiness.get(row.business_id) ?? [];
+    list.push(row);
+    reservationsByBusiness.set(row.business_id, list);
+  });
+
+  const websiteEventsByBusiness = new Map<string, WebsiteAnalyticsRow[]>();
+  ((websiteEventsResult?.data ?? []) as WebsiteAnalyticsRow[]).forEach((row) => {
+    const list = websiteEventsByBusiness.get(row.business_id) ?? [];
+    list.push(row);
+    websiteEventsByBusiness.set(row.business_id, list);
+  });
+
   const rows = businesses.map((business) => {
     const businessRows = metrics.filter((row) => row.business_id === business.id && row.day >= currentStart && row.day <= toYmd(today));
+    const previousBusinessRows = metrics.filter(
+      (row) => row.business_id === business.id && row.day >= previousStart && row.day <= previousEnd
+    );
     const subscription = latestSubs.get(business.id);
     const mrrEur = toNumber(subscription?.mrr_eur);
 
@@ -840,11 +994,66 @@ export async function getAdminBusinessesData(rangeInput?: string | null): Promis
         acc.messages += toNumber(row.messages_count);
         acc.leads += toNumber(row.leads_count);
         acc.visitors += toNumber(row.visitors_count);
+        acc.tokensIn += toNumber(row.tokens_in);
+        acc.tokensOut += toNumber(row.tokens_out);
         acc.aiCostUsd += toNumber(row.ai_cost_usd);
         return acc;
       },
-      { conversations: 0, messages: 0, leads: 0, visitors: 0, aiCostUsd: 0 }
+      { conversations: 0, messages: 0, leads: 0, visitors: 0, tokensIn: 0, tokensOut: 0, aiCostUsd: 0 }
     );
+    const previousAggregate = previousBusinessRows.reduce(
+      (acc, row) => {
+        acc.conversations += toNumber(row.conversations_count);
+        acc.leads += toNumber(row.leads_count);
+        return acc;
+      },
+      { conversations: 0, leads: 0 }
+    );
+
+    const reservationRows = reservationsByBusiness.get(business.id) ?? [];
+    const currentReservations = reservationRows.filter((row) => {
+      const day = toDayKey(row.created_at);
+      return day != null && day >= currentStart && day <= currentEnd && isReservationCountable(row.status);
+    }).length;
+    const previousReservations = reservationRows.filter((row) => {
+      const day = toDayKey(row.created_at);
+      return day != null && day >= previousStart && day <= previousEnd && isReservationCountable(row.status);
+    }).length;
+
+    const websiteRows = websiteEventsByBusiness.get(business.id) ?? [];
+    const currentSessionIds = new Set(
+      websiteRows
+        .filter((row) => {
+          const day = toDayKey(row.occurred_at);
+          return row.event_type === "page_view" && row.session_id && day != null && day >= currentStart && day <= currentEnd;
+        })
+        .map((row) => row.session_id as string)
+    );
+    const previousSessionIds = new Set(
+      websiteRows
+        .filter((row) => {
+          const day = toDayKey(row.occurred_at);
+          return row.event_type === "page_view" && row.session_id && day != null && day >= previousStart && day <= previousEnd;
+        })
+        .map((row) => row.session_id as string)
+    );
+    const currentWebsiteSessions = currentSessionIds.size;
+    const previousWebsiteSessions = previousSessionIds.size;
+    const aiCostUsd = deriveAiCostUsd(aggregate.tokensIn, aggregate.tokensOut, aggregate.aiCostUsd);
+    const aiTokens = aggregate.tokensIn + aggregate.tokensOut;
+    const trendCurrent = currentWebsiteSessions + aggregate.leads * 6 + currentReservations * 8 + aggregate.conversations * 2;
+    const trendPrevious =
+      previousWebsiteSessions + previousAggregate.leads * 6 + previousReservations * 8 + previousAggregate.conversations * 2;
+    const trendPct = percentChange(trendCurrent, trendPrevious);
+    const health = buildHealthScore({
+      websiteSessions: currentWebsiteSessions,
+      leads: aggregate.leads,
+      reservations: currentReservations,
+      conversations: aggregate.conversations,
+      messages: aggregate.messages,
+      aiCostUsd,
+      trendPct
+    });
 
     const riskEntry = riskMap.get(business.id);
     const riskState: AdminBusinessRow["risk"] = riskEntry?.atRisk
@@ -859,13 +1068,19 @@ export async function getAdminBusinessesData(rangeInput?: string | null): Promis
       industry: business.industry,
       plan: subscription?.plan ?? business.plan ?? "trial",
       status: subscription?.status ?? business.status ?? "active",
+      websiteSessions: currentWebsiteSessions,
+      reservations: currentReservations,
       conversations: aggregate.conversations,
       messages: aggregate.messages,
       leads: aggregate.leads,
       visitors: aggregate.visitors,
-      aiCostUsd: Number(aggregate.aiCostUsd.toFixed(2)),
+      aiCostUsd,
+      aiTokens,
       mrrEur,
-      profitEstimate: Number((mrrEur - aggregate.aiCostUsd).toFixed(2)),
+      profitEstimate: Number((mrrEur - aiCostUsd).toFixed(2)),
+      trendPct,
+      healthScore: health.total,
+      scoreBreakdown: health.breakdown,
       phone: business.phone,
       websiteUrl: business.website_url,
       risk: riskState,
@@ -874,7 +1089,7 @@ export async function getAdminBusinessesData(rangeInput?: string | null): Promis
     } satisfies AdminBusinessRow;
   });
 
-  rows.sort((a, b) => b.messages - a.messages);
+  rows.sort((a, b) => b.healthScore - a.healthScore || b.websiteSessions - a.websiteSessions);
 
   return {
     range,
@@ -889,11 +1104,24 @@ export async function getAdminBusinessDetailData(
   const range = normalizeRange(rangeInput ?? "90d");
   const rangeDays = ADMIN_RANGE_DAYS[range];
   const today = toDateOnly(new Date());
-  const fromDay = toYmd(addDays(today, -(rangeDays - 1)));
+  const currentStart = toYmd(addDays(today, -(rangeDays - 1)));
+  const previousStart = toYmd(addDays(today, -(rangeDays * 2 - 1)));
+  const previousEnd = toYmd(addDays(today, -rangeDays));
+  const currentEnd = toYmd(today);
 
   const supabase = getSupabaseServerClient();
 
-  const [businessResult, subscriptionsResult, metricsResult, leadsResult, conversationsResult, messagesResult, eventsResult] =
+  const [
+    businessResult,
+    subscriptionsResult,
+    metricsResult,
+    leadsResult,
+    conversationsResult,
+    messagesResult,
+    eventsResult,
+    reservationsResult,
+    websiteEventsResult
+  ] =
     await Promise.all([
       (supabase as any)
         .from("businesses")
@@ -912,7 +1140,7 @@ export async function getAdminBusinessDetailData(
           "business_id, day, conversations_count, messages_count, ai_messages_count, human_messages_count, leads_count, visitors_count, tokens_in, tokens_out, ai_cost_usd"
         )
         .eq("business_id", businessId)
-        .gte("day", fromDay)
+        .gte("day", previousStart)
         .order("day", { ascending: true }),
       (supabase as any)
         .from("leads")
@@ -938,7 +1166,21 @@ export async function getAdminBusinessDetailData(
         .select("id, business_id, type, title, body, severity, created_at")
         .eq("business_id", businessId)
         .order("created_at", { ascending: false })
-        .limit(40)
+        .limit(40),
+      (supabase as any)
+        .from("reservations")
+        .select("id, business_id, status, created_at, datetime, customer_name, party_size")
+        .eq("business_id", businessId)
+        .gte("created_at", `${previousStart}T00:00:00.000Z`)
+        .order("created_at", { ascending: false })
+        .limit(120),
+      (supabase as any)
+        .from("website_analytics_events")
+        .select("business_id, event_type, session_id, channel, occurred_at")
+        .eq("business_id", businessId)
+        .gte("occurred_at", `${previousStart}T00:00:00.000Z`)
+        .order("occurred_at", { ascending: false })
+        .limit(rangeDays * 200)
     ]);
 
   const business = businessResult.data as BusinessRow | null;
@@ -947,6 +1189,7 @@ export async function getAdminBusinessDetailData(
   const subscriptions = (subscriptionsResult.data ?? []) as SubscriptionRow[];
   const latestSub = subscriptions[0];
   const metrics = (metricsResult.data ?? []) as DailyMetricRow[];
+  const currentMetrics = metrics.filter((row) => row.day >= currentStart && row.day <= currentEnd);
   const leads = (leadsResult.data ?? []) as Array<{
     id: string;
     created_at: string;
@@ -958,9 +1201,11 @@ export async function getAdminBusinessDetailData(
   const conversations = (conversationsResult.data ?? []) as ConversationRow[];
   const messages = (messagesResult.data ?? []) as MessageRow[];
   const events = (eventsResult.data ?? []) as EventRow[];
+  const reservations = (reservationsResult.data ?? []) as ReservationMetricRow[];
+  const websiteEvents = (websiteEventsResult.data ?? []) as WebsiteAnalyticsRow[];
 
   const dayKeys = buildDayKeys(today, rangeDays);
-  const metricsByDay = new Map(metrics.map((row) => [row.day, row]));
+  const metricsByDay = new Map(currentMetrics.map((row) => [row.day, row]));
 
   const usageSeries = dayKeys.map((day) => {
     const row = metricsByDay.get(day);
@@ -980,6 +1225,7 @@ export async function getAdminBusinessDetailData(
 
   const totals = usageSeries.reduce(
     (acc, row) => {
+      acc.conversations += row.conversations;
       acc.messages += row.messages;
       acc.leads += row.leads;
       acc.cost += row.cost;
@@ -987,10 +1233,59 @@ export async function getAdminBusinessDetailData(
       acc.tokensOut += row.tokensOut;
       return acc;
     },
-    { messages: 0, leads: 0, cost: 0, tokensIn: 0, tokensOut: 0 }
+    { conversations: 0, messages: 0, leads: 0, cost: 0, tokensIn: 0, tokensOut: 0 }
   );
 
-  const conversationsCount = usageSeries.reduce((sum, row) => sum + row.conversations, 0);
+  const previousMetrics = metrics.filter((row) => row.day >= previousStart && row.day <= previousEnd);
+  const previousTotals = previousMetrics.reduce(
+    (acc, row) => {
+      acc.conversations += toNumber(row.conversations_count);
+      acc.leads += toNumber(row.leads_count);
+      acc.tokensIn += toNumber(row.tokens_in);
+      acc.tokensOut += toNumber(row.tokens_out);
+      acc.cost += toNumber(row.ai_cost_usd);
+      return acc;
+    },
+    { conversations: 0, leads: 0, tokensIn: 0, tokensOut: 0, cost: 0 }
+  );
+
+  const currentReservations = reservations.filter((row) => {
+    const day = toDayKey(row.created_at);
+    return day != null && day >= currentStart && day <= currentEnd && isReservationCountable(row.status);
+  });
+  const previousReservations = reservations.filter((row) => {
+    const day = toDayKey(row.created_at);
+    return day != null && day >= previousStart && day <= previousEnd && isReservationCountable(row.status);
+  });
+
+  const currentSessionIds = new Set(
+    websiteEvents
+      .filter((row) => {
+        const day = toDayKey(row.occurred_at);
+        return row.event_type === "page_view" && row.session_id && day != null && day >= currentStart && day <= currentEnd;
+      })
+      .map((row) => row.session_id as string)
+  );
+  const previousSessionIds = new Set(
+    websiteEvents
+      .filter((row) => {
+        const day = toDayKey(row.occurred_at);
+        return row.event_type === "page_view" && row.session_id && day != null && day >= previousStart && day <= previousEnd;
+      })
+      .map((row) => row.session_id as string)
+  );
+
+  const aiCostUsd = deriveAiCostUsd(totals.tokensIn, totals.tokensOut, totals.cost);
+  const aiTokens = totals.tokensIn + totals.tokensOut;
+  const conversationsCount = totals.conversations;
+  const trendCurrent =
+    currentSessionIds.size + totals.leads * 6 + currentReservations.length * 8 + conversationsCount * 2;
+  const trendPrevious =
+    previousSessionIds.size +
+    previousTotals.leads * 6 +
+    previousReservations.length * 8 +
+    previousTotals.conversations * 2;
+  const trendPct = percentChange(trendCurrent, trendPrevious);
 
   const leadTypeMap = new Map<string, number>();
   leads.forEach((lead) => {
@@ -1025,6 +1320,16 @@ export async function getAdminBusinessDetailData(
     responseTimes.length > 0
       ? Number((responseTimes.reduce((sum, value) => sum + value, 0) / responseTimes.length).toFixed(2))
       : null;
+  const health = buildHealthScore({
+    websiteSessions: currentSessionIds.size,
+    leads: totals.leads,
+    reservations: currentReservations.length,
+    conversations: conversationsCount,
+    messages: totals.messages,
+    aiCostUsd,
+    trendPct,
+    responseMinutes
+  });
 
   const latestMessageByConversation = new Map<string, MessageRow>();
   const messageCountByConversation = new Map<string, number>();
@@ -1052,19 +1357,32 @@ export async function getAdminBusinessDetailData(
     },
     usageSeries,
     snapshot: {
-      conversations: usageSeries.reduce((sum, row) => sum + row.conversations, 0),
+      websiteSessions: currentSessionIds.size,
+      reservations: currentReservations.length,
+      conversations: conversationsCount,
       messages: totals.messages,
       leads: totals.leads,
       visitors: usageSeries.reduce((sum, row) => sum + row.visitors, 0),
-      aiCostUsd: Number(totals.cost.toFixed(2)),
-      avgCostPerConversation:
-        conversationsCount > 0 ? Number((totals.cost / conversationsCount).toFixed(4)) : Number(totals.cost.toFixed(4)),
+      aiCostUsd,
+      aiTokens,
+      avgCostPerConversation: conversationsCount > 0 ? Number((aiCostUsd / conversationsCount).toFixed(4)) : aiCostUsd,
       responseMinutes,
+      trendPct,
+      healthScore: health.total,
+      scoreBreakdown: health.breakdown,
       topLeadTypes: Array.from(leadTypeMap.entries())
         .sort((a, b) => b[1] - a[1])
         .slice(0, 5)
         .map(([name, value]) => ({ name, value }))
     },
+    reservations: currentReservations.map((reservation) => ({
+      id: reservation.id,
+      createdAt: reservation.created_at ?? reservation.datetime ?? "",
+      dateTime: reservation.datetime ?? reservation.created_at ?? "",
+      customerName: reservation.customer_name,
+      partySize: reservation.party_size,
+      status: reservation.status ?? "unknown"
+    })),
     leads: leads.map((lead) => ({
       id: lead.id,
       createdAt: lead.created_at,

@@ -21,11 +21,17 @@ const resolveFlags = (planId: PlanId): PlanFlags => {
 export async function getBuilderPlanForBusiness(businessId: string) {
   const subscription = await getWorkspaceSubscription(businessId);
   const plan = (subscription.plan_id ?? "website") as PlanId;
+  if (!subscription.is_access_active) {
+    return { plan, flags: { canPublish: false, canRegenerate: false } };
+  }
   return { plan, flags: resolveFlags(plan) };
 }
 
 export async function getBuilderPlanForRoute(businessId: string) {
   const subscription = await getWorkspaceSubscription(businessId);
   const plan = (subscription.plan_id ?? "website") as PlanId;
+  if (!subscription.is_access_active) {
+    return { plan, flags: { canPublish: false, canRegenerate: false } };
+  }
   return { plan, flags: resolveFlags(plan) };
 }

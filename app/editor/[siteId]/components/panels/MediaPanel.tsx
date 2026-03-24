@@ -5,7 +5,7 @@ import { ChevronDown, ChevronUp, Trash2, Upload } from "lucide-react";
 import type { NormalizedImage } from "@/lib/website-builder/images/pexels";
 import type { SiteImage } from "@/lib/website-builder/types";
 import { useEditorActions, useEditorState } from "@/lib/website-builder/editor/EditorProvider";
-import { selectSelectedElement, selectSelectedSection } from "@/lib/website-builder/editor/selectors";
+import { selectActivePage, selectSelectedElement, selectSelectedSection } from "@/lib/website-builder/editor/selectors";
 
 const supportsImages = (type: string) => ["hero", "about", "gallery", "cta"].includes(type);
 
@@ -17,14 +17,23 @@ const getSlotForType = (type: string, index: number) => {
 export function MediaPanel() {
   const state = useEditorState();
   const { updateDocument } = useEditorActions();
+  const activePage = selectActivePage(state);
   const selectedSection = selectSelectedSection(state);
   const selectedElement = selectSelectedElement(state);
   const [searchQuery, setSearchQuery] = useState("");
   const [results, setResults] = useState<NormalizedImage[]>([]);
   const [loading, setLoading] = useState(false);
   const [replaceSlot, setReplaceSlot] = useState<string | null>(null);
+  const [targetSectionId, setTargetSectionId] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const mediaLibrary = state.document?.mediaLibrary ?? [];
+  const imageTargets = (activePage?.sections ?? []).filter((section) => supportsImages(section.type));
+  const targetSection =
+    imageTargets.find((section) => section.id === targetSectionId) ??
+    (selectedSection && supportsImages(selectedSection.type)
+      ? selectedSection
+      : imageTargets[0] ?? null);
 
   const storeMediaAsset = (image: SiteImage) => {
     updateDocument((doc) => {
@@ -59,13 +68,13 @@ export function MediaPanel() {
       return;
     }
 
-    if (selectedSection && supportsImages(selectedSection.type)) {
+    if (targetSection && supportsImages(targetSection.type)) {
       updateDocument((doc) => ({
         ...doc,
         pages: doc.pages.map((page) => ({
           ...page,
           sections: page.sections.map((section) => {
-            if (section.id !== selectedSection.id) return section;
+            if (section.id !== targetSection.id) return section;
             const nextImages = section.images ? [...section.images] : [];
             const targetSlot =
               replaceSlot ?? (section.type === "gallery" ? null : section.type);
@@ -86,28 +95,34 @@ export function MediaPanel() {
         }))
       }));
       setReplaceSlot(null);
+      setErrorMessage(null);
+      return;
     }
+    setErrorMessage("Select a hero, about, gallery, or CTA section first so the image has somewhere to go.");
   };
 
   useEffect(() => {
     setReplaceSlot(null);
-  }, [selectedSection?.id]);
+    if (selectedSection && supportsImages(selectedSection.type)) {
+      setTargetSectionId(selectedSection.id);
+    }
+  }, [selectedSection?.id, selectedSection?.type]);
 
   const galleryImages =
-    selectedSection?.type === "gallery" ? selectedSection.images ?? [] : [];
+    targetSection?.type === "gallery" ? targetSection.images ?? [] : [];
 
   const normalizeGallerySlots = (images: SiteImage[]) =>
     images.map((asset, index) => ({ ...asset, slot: `gallery-${index + 1}` }));
 
   const moveGalleryImage = (fromIndex: number, toIndex: number) => {
-    if (!selectedSection || selectedSection.type !== "gallery") return;
+    if (!targetSection || targetSection.type !== "gallery") return;
     if (toIndex < 0 || toIndex >= galleryImages.length) return;
     updateDocument((doc) => ({
       ...doc,
       pages: doc.pages.map((page) => ({
         ...page,
         sections: page.sections.map((section) => {
-          if (section.id !== selectedSection.id) return section;
+          if (section.id !== targetSection.id) return section;
           const images = [...(section.images ?? [])];
           const [moved] = images.splice(fromIndex, 1);
           images.splice(toIndex, 0, moved);
@@ -118,13 +133,13 @@ export function MediaPanel() {
   };
 
   const removeGalleryImage = (slot: string) => {
-    if (!selectedSection || selectedSection.type !== "gallery") return;
+    if (!targetSection || targetSection.type !== "gallery") return;
     updateDocument((doc) => ({
       ...doc,
       pages: doc.pages.map((page) => ({
         ...page,
         sections: page.sections.map((section) => {
-          if (section.id !== selectedSection.id) return section;
+          if (section.id !== targetSection.id) return section;
           const filtered = (section.images ?? []).filter((image) => image.slot !== slot);
           return { ...section, images: normalizeGallerySlots(filtered) };
         })
@@ -138,6 +153,7 @@ export function MediaPanel() {
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
     setLoading(true);
+    setErrorMessage(null);
     try {
       const response = await fetch(`/api/images/search?q=${encodeURIComponent(searchQuery.trim())}`);
       if (!response.ok) throw new Error("Search failed");
@@ -146,6 +162,7 @@ export function MediaPanel() {
     } catch (error) {
       console.error("[EDITOR_IMAGE_SEARCH]", error);
       setResults([]);
+      setErrorMessage("Search could not load right now. Try uploading instead.");
     } finally {
       setLoading(false);
     }
@@ -158,9 +175,9 @@ export function MediaPanel() {
     formData.append("siteId", state.siteId);
     formData.append(
       "kind",
-      selectedSection?.type === "hero"
+      targetSection?.type === "hero"
         ? "hero"
-        : selectedSection?.type === "gallery"
+        : targetSection?.type === "gallery"
           ? "gallery"
           : "other"
     );
@@ -174,6 +191,7 @@ export function MediaPanel() {
       applyImageToSelection(asset);
     } catch (error) {
       console.error("[EDITOR_MEDIA_UPLOAD]", error);
+      setErrorMessage("Upload failed. Try another image or check your connection.");
     }
   };
 
@@ -184,6 +202,24 @@ export function MediaPanel() {
           Replacing image slot <span className="font-semibold text-sc-text">{replaceSlot}</span>. Select an image below.
         </div>
       ) : null}
+      <div className="rounded-[20px] border border-[#eadfcd] bg-[rgba(255,255,255,0.9)] p-3">
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sc-muted">Target section</p>
+        {imageTargets.length ? (
+          <select
+            className="mt-2 h-10 w-full rounded-xl border border-sc-border bg-white px-3 text-sm text-sc-text"
+            value={targetSection?.id ?? ""}
+            onChange={(event) => setTargetSectionId(event.target.value)}
+          >
+            {imageTargets.map((section, index) => (
+              <option key={section.id} value={section.id}>
+                {section.name ?? `${section.type} section ${index + 1}`}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <p className="mt-2 text-xs text-sc-muted">Select a hero, about, gallery, or CTA section to place images.</p>
+        )}
+      </div>
       <div>
         <label className="text-xs font-semibold uppercase tracking-[0.2em] text-sc-muted">Search</label>
         <div className="mt-2 flex gap-2">
@@ -202,6 +238,11 @@ export function MediaPanel() {
           </button>
         </div>
       </div>
+      {errorMessage ? (
+        <div className="rounded-xl border border-[#eadfcd] bg-[#fff7ed] px-3 py-2 text-xs text-[#9a5a12]">
+          {errorMessage}
+        </div>
+      ) : null}
 
       <div className="rounded-xl border border-sc-border bg-sc-surface p-3">
         <label className="text-xs font-semibold uppercase tracking-[0.2em] text-sc-muted">Upload</label>
@@ -220,7 +261,7 @@ export function MediaPanel() {
         </label>
       </div>
 
-      {selectedSection?.type === "gallery" ? (
+      {targetSection?.type === "gallery" ? (
         <div className="space-y-2">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sc-muted">Gallery images</p>
           {galleryImages.length ? (

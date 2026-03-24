@@ -28,13 +28,13 @@ export function LeftPanel() {
 
   return (
     <aside
-      className={`builder-panel flex h-full min-w-0 flex-col overflow-hidden rounded-r-[24px] border-r border-[#e5e1d8] bg-white/95 shadow-xl backdrop-blur transition-all duration-200 ${
+      className={`builder-panel flex h-full min-w-0 flex-col overflow-hidden rounded-r-[28px] border-r border-[#e8dfcf] bg-[rgba(255,251,244,0.98)] shadow-[0_24px_80px_rgba(55,43,20,0.08)] backdrop-blur transition-all duration-200 ${
         state.isLeftPanelOpen
-          ? "w-[340px] translate-x-0 opacity-100 pointer-events-auto"
+          ? "w-[360px] translate-x-0 opacity-100 pointer-events-auto"
           : "w-0 -translate-x-full opacity-0 pointer-events-none"
       }`}
     >
-      <div className="flex items-center justify-between border-b border-[#efeae0] px-4 py-3">
+      <div className="flex items-center justify-between border-b border-[#efeae0] bg-[linear-gradient(180deg,rgba(255,255,255,0.9),rgba(255,248,238,0.75))] px-5 py-4">
         <div>
           <p className="text-sm font-semibold text-neutral-900">{titleMap[state.leftTool]}</p>
           <p className="text-xs text-neutral-500">Manage your site content.</p>
@@ -42,13 +42,13 @@ export function LeftPanel() {
         <button
           type="button"
           onClick={() => setLeftPanelOpen(false)}
-          className="flex h-8 w-8 items-center justify-center rounded-full border border-[#e5e1d8] text-neutral-500 hover:bg-[#f5f2ec]"
+          className="flex h-10 w-10 items-center justify-center rounded-full border border-[#e5e1d8] bg-white text-neutral-500 shadow-sm hover:bg-[#f5f2ec]"
         >
           <X className="h-4 w-4" />
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-4">
+      <div className="flex-1 overflow-y-auto px-5 py-5">
         {state.leftTool === "add" ? <AddSectionPanel /> : null}
         {state.leftTool === "structure" ? <StructurePanel /> : null}
         {state.leftTool === "elements" ? <ElementsPanel /> : null}

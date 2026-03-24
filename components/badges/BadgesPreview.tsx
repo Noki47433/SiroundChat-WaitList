@@ -11,23 +11,23 @@ type BadgeSummary = {
 };
 
 const rarityStyles: Record<BadgeSummary["rarity"], string> = {
-  common: "border-white/10 text-white/70",
-  rare: "border-sky-500/30 text-sky-200",
-  epic: "border-amber-500/30 text-amber-200",
-  legendary: "border-emerald-500/30 text-emerald-200"
+  common: "border-[#ffd87240] text-[#dbc891]",
+  rare: "border-[#95c9ff55] text-[#bfe0ff]",
+  epic: "border-[#ffd87266] text-[#ffe3a2]",
+  legendary: "border-[#7ae8bf66] text-[#bdfadf]"
 };
 
 export function BadgesPreview({ badges }: { badges: BadgeSummary[] }) {
   if (!badges.length) return null;
 
   return (
-    <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 p-3">
-      <p className="text-xs uppercase tracking-[0.2em] text-white/40">Latest badges</p>
+    <div className="dashboard-inset mt-3 rounded-2xl border border-[#ffd87242] p-3">
+      <p className="text-xs uppercase tracking-[0.2em] text-[#b6a47a]">Latest badges</p>
       <div className="mt-2 flex flex-wrap gap-2">
         {badges.map((badge) => (
           <div
             key={badge.key}
-            className={cn("flex items-center gap-2 rounded-full border px-3 py-1 text-xs", rarityStyles[badge.rarity])}
+            className={cn("dashboard-pill flex items-center gap-2 rounded-full border px-3 py-1 text-xs", rarityStyles[badge.rarity])}
           >
             <span className="text-sm">{badge.icon}</span>
             <span>{badge.name}</span>

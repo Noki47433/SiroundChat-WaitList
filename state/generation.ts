@@ -1,6 +1,7 @@
 "use client";
 
 import { create } from "zustand";
+import type { ContentLanguage, GenerationBriefData, QualityMode } from "@/lib/builder/generation-config";
 
 export type GenerationStatus = "idle" | "generating" | "done" | "error";
 export type ProgressStatus = "running" | "completed";
@@ -10,6 +11,9 @@ export type GenerationBrief = {
   businessId: string;
   businessName: string;
   industry: string;
+  contentLanguage: ContentLanguage;
+  qualityMode: QualityMode;
+  generationBrief: GenerationBriefData;
   tone?: string;
   pagesMode?: string;
   templateId?: string;
@@ -41,6 +45,7 @@ export type GenerationBrief = {
     includeGallery?: boolean;
   };
   hasOwnPhotos?: boolean;
+  chatbotEmbedSnippet?: string | null;
   goal?: string;
   pages?: string[];
 };

@@ -89,12 +89,12 @@ export function ChatbotPreview({
         viewport={{ once: true, amount: 0.2 }}
         animate={isOpen ? { opacity: 1, scale: 1 } : { opacity: 0, scale: 0.9 }}
         transition={{ duration: 0.35, ease: "easeOut" }}
-        className="w-full rounded-[30px] border bg-white/10 p-4 shadow-[0_30px_80px_rgba(15,23,42,0.25)] backdrop-blur-xl"
+        className="w-full rounded-[34px] border p-4 shadow-[0_30px_80px_rgba(15,23,42,0.25)]"
         style={{
           backgroundColor: config.theme.backgroundColor,
           color: config.theme.textColor,
           display: isOpen ? "block" : "none",
-          borderColor: config.theme.primaryColor + "33"
+          borderColor: config.theme.primaryColor + "40"
         }}
       >
         {startCollapsed ? (
@@ -102,15 +102,22 @@ export function ChatbotPreview({
             <button
               type="button"
               onClick={() => setIsOpen(false)} // Close back to the launcher state
-              className="inline-flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:ring-offset-2 focus:ring-offset-white"
+              className="inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold focus:outline-none focus:ring-2"
+              style={{
+                border: `1px solid ${config.theme.primaryColor}55`,
+                background: `${config.theme.primaryColor}26`,
+                color: config.theme.textColor
+              }}
             >
               Back to launcher
             </button>
-            <span className="text-[11px] font-semibold text-slate-600">Preview open</span>
+            <span className="text-[11px] font-semibold" style={{ color: `${config.theme.textColor}B3` }}>
+              Preview open
+            </span>
           </div>
         ) : null}
         {showChrome ? (
-          <div className="mb-3 flex items-center gap-2 rounded-2xl bg-black/10 px-3 py-2">
+          <div className="mb-3 flex items-center gap-2 rounded-[20px] px-3 py-2" style={{ background: `${config.theme.primaryColor}18` }}>
             <span className="h-3 w-3 rounded-full bg-red-400" />
             <span className="h-3 w-3 rounded-full bg-amber-300" />
             <span className="h-3 w-3 rounded-full bg-emerald-400" />
@@ -118,14 +125,14 @@ export function ChatbotPreview({
         ) : null}
 
         <div
-          className="rounded-2xl border border-white/10 px-4 py-3 shadow-inner"
+          className="rounded-[26px] border border-white/10 px-4 py-3 shadow-inner"
           style={{
             background: `linear-gradient(135deg, ${config.theme.primaryColor}, ${config.theme.accentColor || config.theme.primaryColor})`,
             color: "#ffffff"
           }}
         >
           <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-2xl border border-white/20 bg-white/10 shadow-inner">
+            <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-[20px] border border-white/20 bg-white/10 shadow-inner">
               {config.logoUrl ? (
                 <>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -147,7 +154,13 @@ export function ChatbotPreview({
           </div>
         </div>
 
-        <div className="mt-4 h-[440px] overflow-hidden rounded-2xl border border-white/10 bg-black/10 shadow-inner">
+        <div
+          className="mt-4 h-[440px] overflow-hidden rounded-[30px] border"
+          style={{
+            borderColor: `${config.theme.primaryColor}33`,
+            background: config.theme.backgroundColor
+          }}
+        >
           <ChatbotConversationWindow config={config} interactive={interactive} autoPlayDemo={autoPlayDemo} />
         </div>
       </motion.div>

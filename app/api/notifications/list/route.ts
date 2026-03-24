@@ -1,39 +1,25 @@
 import { NextResponse } from "next/server";
-import { getSupabaseRouteClient } from "@/lib/supabase/server";
+import { requireBusinessUser } from "@/lib/server/business-auth";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 
 const DEFAULT_LIMIT = 20;
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
-  const businessId = url.searchParams.get("business_id");
+  const requestedBusinessId = url.searchParams.get("business_id");
   const limit = Number(url.searchParams.get("limit") ?? DEFAULT_LIMIT);
 
-  if (!businessId) {
-    return NextResponse.json({ error: "Missing business_id" }, { status: 400 });
-  }
+  const { context, response } = await requireBusinessUser();
+  if (response) return response;
 
-  const supabase = getSupabaseRouteClient();
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const { data: business } = await (supabase as any)
-    .from("businesses")
-    .select("id")
-    .eq("id", businessId)
-    .or(`owner_id.eq.${user.id},owner_user_id.eq.${user.id}`)
-    .maybeSingle();
-
-  if (!business) {
+  const businessId = requestedBusinessId ?? context.businessId;
+  if (businessId !== context.businessId) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const { data: notifications } = await (supabase as any)
+  const admin = getSupabaseAdminClient() as any;
+
+  const { data: notifications } = await admin
     .from("notifications")
     .select("*")
     .eq("business_id", businessId)
@@ -41,22 +27,21 @@ export async function GET(request: Request) {
     .order("created_at", { ascending: false })
     .limit(Number.isFinite(limit) ? Math.max(1, Math.min(limit, 100)) : DEFAULT_LIMIT);
 
-  const { count: unreadCount } = await (supabase as any)
+  const { count: unreadCount } = await admin
     .from("notifications")
     .select("id", { count: "exact", head: true })
     .eq("business_id", businessId)
     .is("read_at", null)
     .is("archived_at", null);
 
-  const { data: badges } = await (supabase as any)
+  const { data: badges } = await admin
     .from("business_badges")
     .select("earned_at, badge_definitions (key, name, icon, rarity)")
     .eq("business_id", businessId)
     .order("earned_at", { ascending: false })
     .limit(3);
 
-  const admin = getSupabaseAdminClient();
-  const { data: existingSettings } = await (supabase as any)
+  const { data: existingSettings } = await admin
     .from("business_notification_settings")
     .select("*")
     .eq("business_id", businessId)

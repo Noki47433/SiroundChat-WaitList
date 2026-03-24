@@ -1,0 +1,13 @@
+{
+  "businessName": "Northstar Ops Consulting",
+  "businessType": "consulting",
+  "subtype": "operations",
+  "location": "Chicago, IL",
+  "services": ["Process Audit", "KPI Design", "Implementation Support"],
+  "targetCustomer": "growing service businesses",
+  "toneProfile": "professional",
+  "ctaIntent": "demo",
+  "proofAssets": ["Case study library"],
+  "photosAvailable": true,
+  "description": "Operations consulting that helps teams reduce waste and improve throughput."
+}

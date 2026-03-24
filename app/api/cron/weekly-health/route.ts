@@ -147,7 +147,7 @@ async function handle(request: Request) {
   }
   for (const row of reservationsResult.data ?? []) {
     if (!row.business_id) continue;
-    if (row.status === "cancelled") continue;
+    if (row.status === "cancelled" || row.status === "canceled" || row.status === "no_show") continue;
     increment(bookingCounts, row.business_id);
   }
   for (const row of intentsResult.data ?? []) {

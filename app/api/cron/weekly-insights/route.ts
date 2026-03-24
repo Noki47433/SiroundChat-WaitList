@@ -253,7 +253,7 @@ async function handle(request: Request) {
           severity: "info",
           category: "product",
           cta_label: "Update FAQ",
-          cta_url: `/dashboard/knowledge?topic=${encodeURIComponent(safeTopic)}`,
+          cta_url: `/dashboard/documents?topic=${encodeURIComponent(safeTopic)}`,
           data: { topic: safeTopic }
         },
         "weekly_insight_product",

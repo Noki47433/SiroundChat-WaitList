@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { getSupabaseRouteClient } from "@/lib/supabase/server";
+import { requireBusinessUser } from "@/lib/server/business-auth";
+import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export async function POST(request: Request) {
   const payload = await request.json().catch(() => null);
@@ -9,27 +10,22 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Missing notification_id" }, { status: 400 });
   }
 
-  const supabase = getSupabaseRouteClient();
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
+  const { context, response } = await requireBusinessUser();
+  if (response) return response;
 
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const admin = getSupabaseAdminClient() as any;
 
-  const { data: notification } = await (supabase as any)
+  const { data: notification } = await admin
     .from("notifications")
-    .select("id, business_id, businesses!inner(owner_id)")
+    .select("id, business_id")
     .eq("id", notificationId)
-    .eq("businesses.owner_id", user.id)
     .maybeSingle();
 
-  if (!notification) {
+  if (!notification || notification.business_id !== context.businessId) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const { error } = await (supabase as any)
+  const { error } = await admin
     .from("notifications")
     .update({ archived_at: new Date().toISOString() })
     .eq("id", notificationId);

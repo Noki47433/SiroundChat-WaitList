@@ -13,6 +13,12 @@ import { TextEditor } from "@/app/editor/[siteId]/components/property-editors/Te
 import { BackgroundEditor } from "@/app/editor/[siteId]/components/property-editors/BackgroundEditor";
 import { SpacingEditor } from "@/app/editor/[siteId]/components/property-editors/SpacingEditor";
 import type { ContentStyle, ElementStyle, SiteSection, SiteElement, ElementFrame } from "@/lib/website-builder/types";
+import {
+  SITE_FONT_OPTIONS,
+  getManualFontValue,
+  normalizeManualFontValue
+} from "@/lib/website-builder/theme/fonts";
+import { hydrateSectionFreeformElements } from "@/lib/website-builder/editor/freeform";
 
 const REQUIRED_CONTENT_KEYS: Record<string, string[]> = {
   hero: ["headline", "subheadline", "ctaLabel", "ctaHref"],
@@ -95,13 +101,6 @@ const toPx = (value?: string | number) => {
   if (!Number.isFinite(numeric)) return undefined;
   return `${numeric}px`;
 };
-
-const FONT_OPTIONS = [
-  "Sora, Inter, system-ui, sans-serif",
-  "Manrope, Inter, system-ui, sans-serif",
-  '"Space Grotesk", Inter, system-ui, sans-serif',
-  '"Playfair Display", Inter, system-ui, sans-serif'
-];
 
 const buildDefaultFrame = (element: SiteElement, index: number): ElementFrame => {
   const baseX = 24;
@@ -240,13 +239,13 @@ const StyleControls = ({
         Font family
         <select
           className="mt-2 h-9 w-full rounded-xl border border-sc-border bg-sc-surface px-2 text-sm text-sc-text"
-          value={style.fontFamily ?? ""}
-          onChange={(event) => update({ fontFamily: event.target.value })}
+          value={normalizeManualFontValue(style.fontFamily)}
+          onChange={(event) => update({ fontFamily: event.target.value || undefined })}
         >
           <option value="">Default</option>
-          {FONT_OPTIONS.map((font) => (
-            <option key={font} value={font}>
-              {font.split(",")[0].replace(/\"/g, "")}
+          {SITE_FONT_OPTIONS.map((font) => (
+            <option key={font.id} value={getManualFontValue(font.themeValue)}>
+              {font.label}
             </option>
           ))}
         </select>
@@ -1379,7 +1378,11 @@ export function RightPanel() {
                       onClick={() =>
                         updateSection((section) => {
                           const nextMode = mode;
-                          const elements = (section.elements ?? []).map((element, index) =>
+                          const baseElements =
+                            nextMode === "freeform"
+                              ? hydrateSectionFreeformElements(section)
+                              : section.elements ?? [];
+                          const elements = baseElements.map((element, index) =>
                             nextMode === "freeform" && !element.frame
                               ? { ...element, frame: buildDefaultFrame(element, index) }
                               : element

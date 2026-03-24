@@ -99,27 +99,39 @@ export type SiteImage = {
   slot: string;
   src: string;
   alt?: string;
+  width?: number;
+  height?: number;
   credit?: { provider: "pexels" | "unsplash" | "openai"; photographer?: string; sourceUrl?: string };
   query?: string;
 };
 
 export type SiteBrief = {
   businessName?: string;
+  logoUrl?: string;
   industry?: string;
   description?: string;
   tone?: string;
   goals?: string[];
   pages?: string[];
+  language?: string;
+  generationBrief?: {
+    audience?: string;
+    coreOffer?: string;
+    primaryCtaGoal?: string;
+    topServices?: string[];
+    proofPoints?: string[];
+    tone?: string;
+  };
   theme?: {
     primary?: string;
     background?: string;
     fontFamily?: string;
   };
-  designDNA?: {
-    variationSeed?: string;
-    layoutStyle?: string;
-    palette?: {
-      primary?: string;
+    designDNA?: {
+      variationSeed?: string;
+      layoutStyle?: string;
+      palette?: {
+        primary?: string;
       secondary?: string;
       background?: string;
       accent?: string;
@@ -127,12 +139,17 @@ export type SiteBrief = {
     fontPair?: {
       heading?: string;
       body?: string;
+      };
+      variantBias?: Record<string, string>;
+      sectionOrder?: string[];
+      imageryStyle?: string;
+      industryKey?: string;
+      archetypeKey?: string;
+      layoutDNA?: string;
+      sectionBlueprints?: string[];
+      conversionGoal?: string;
     };
-    variantBias?: Record<string, string>;
-    sectionOrder?: string[];
-    imageryStyle?: string;
   };
-};
 
 export type SiteElement =
   | {

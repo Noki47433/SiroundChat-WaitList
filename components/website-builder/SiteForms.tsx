@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { trackLeadSubmitted } from "@/lib/analytics/track";
+import { getOrCreateSessionId } from "@/lib/analytics/track";
 
 type FormMode = "live" | "preview";
 
@@ -15,6 +15,18 @@ type FormBaseProps = {
     pagePath?: string;
     pageTitle?: string | null;
     enabled?: boolean;
+  };
+};
+
+const buildAnalyticsPayload = (analytics?: FormBaseProps["analytics"]) => {
+  if (analytics?.enabled === false || !analytics?.businessId) return null;
+  return {
+    businessId: analytics.businessId,
+    siteId: analytics.siteId ?? null,
+    pagePath: analytics.pagePath ?? (typeof window !== "undefined" ? window.location.pathname : "/"),
+    pageTitle: analytics.pageTitle ?? (typeof document !== "undefined" ? document.title : null),
+    sessionId: getOrCreateSessionId(),
+    referrer: typeof document !== "undefined" ? document.referrer || null : null
   };
 };
 
@@ -37,8 +49,9 @@ export function ContactForm({ siteSlug, siteId, mode = "live", analytics }: Form
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (mode !== "live") return;
+    const form = event.currentTarget;
 
-    const formData = new FormData(event.currentTarget);
+    const formData = new FormData(form);
     const name = String(formData.get("name") ?? "").trim();
     const contact = String(formData.get("contact") ?? "").trim();
     const messageValue = String(formData.get("message") ?? "").trim();
@@ -66,32 +79,26 @@ export function ContactForm({ siteSlug, siteId, mode = "live", analytics }: Form
         body: JSON.stringify({
           ...resolveSitePayload({ siteSlug, siteId }),
           form_type: "contact",
-          payload
+          payload,
+          analytics: buildAnalyticsPayload(analytics)
         })
       });
 
       if (!response.ok) {
-        throw new Error("Failed to submit");
+        const errorBody = await response.json().catch(() => null);
+        const apiMessage =
+          errorBody && typeof errorBody === "object" && "error" in errorBody && typeof errorBody.error === "string"
+            ? errorBody.error
+            : "Submission failed. Please try again.";
+        throw new Error(apiMessage);
       }
 
       setStatus("sent");
       setMessage("Thanks! We will be in touch shortly.");
-      event.currentTarget.reset();
-      if (analytics?.enabled !== false && analytics?.businessId) {
-        const pagePath = analytics.pagePath ?? (typeof window !== "undefined" ? window.location.pathname : "/");
-        const pageTitle = analytics.pageTitle ?? (typeof document !== "undefined" ? document.title : null);
-        trackLeadSubmitted({
-          businessId: analytics.businessId,
-          siteId: analytics.siteId ?? null,
-          pagePath,
-          pageTitle,
-          leadType: "form",
-          referrer: typeof document !== "undefined" ? document.referrer || null : null
-        });
-      }
+      form.reset();
     } catch (error) {
       setStatus("error");
-      setMessage("Submission failed. Please try again.");
+      setMessage(error instanceof Error ? error.message : "Submission failed. Please try again.");
     }
   };
 
@@ -147,8 +154,9 @@ export function ReservationForm({ siteSlug, siteId, mode = "live", analytics }: 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (mode !== "live") return;
+    const form = event.currentTarget;
 
-    const formData = new FormData(event.currentTarget);
+    const formData = new FormData(form);
     const name = String(formData.get("name") ?? "").trim();
     const date = String(formData.get("date") ?? "").trim();
     const time = String(formData.get("time") ?? "").trim();
@@ -180,33 +188,27 @@ export function ReservationForm({ siteSlug, siteId, mode = "live", analytics }: 
         body: JSON.stringify({
           ...resolveSitePayload({ siteSlug, siteId }),
           form_type: "reservation",
-          payload
+          payload,
+          analytics: buildAnalyticsPayload(analytics)
         })
       });
 
       if (!response.ok) {
-        throw new Error("Failed to submit");
+        const errorBody = await response.json().catch(() => null);
+        const apiMessage =
+          errorBody && typeof errorBody === "object" && "error" in errorBody && typeof errorBody.error === "string"
+            ? errorBody.error
+            : "Submission failed. Please try again.";
+        throw new Error(apiMessage);
       }
 
       setStatus("sent");
       setMessage("Reservation request sent. We will confirm soon.");
-      event.currentTarget.reset();
+      form.reset();
 
-      if (analytics?.enabled !== false && analytics?.businessId) {
-        const pagePath = analytics.pagePath ?? (typeof window !== "undefined" ? window.location.pathname : "/");
-        const pageTitle = analytics.pageTitle ?? (typeof document !== "undefined" ? document.title : null);
-        trackLeadSubmitted({
-          businessId: analytics.businessId,
-          siteId: analytics.siteId ?? null,
-          pagePath,
-          pageTitle,
-          leadType: "form",
-          referrer: typeof document !== "undefined" ? document.referrer || null : null
-        });
-      }
     } catch (error) {
       setStatus("error");
-      setMessage("Submission failed. Please try again.");
+      setMessage(error instanceof Error ? error.message : "Submission failed. Please try again.");
     }
   };
 

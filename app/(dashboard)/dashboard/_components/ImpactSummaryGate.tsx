@@ -1,28 +1,22 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ImpactSummaryModal } from "@/components/impact/ImpactSummaryModal";
+import { useRouter } from "next/navigation";
+import { WrappedModal } from "@/components/wrapped/WrappedModal";
+import type { WrappedPostAction } from "@/components/wrapped/types";
 
 type Period = "weekly" | "monthly";
-
-type Highlight = {
-  key: string;
-  title: string;
-  value: string;
-  subtext?: string;
-  emoji?: string;
-  tone?: "success" | "info" | "warning";
-  cta?: { label: string; href: string };
-};
 
 type ImpactSummary = {
   id: string;
   period: Period;
-  period_start: string;
   period_end: string;
-  metrics?: Record<string, unknown> | null;
-  highlights?: Highlight[] | null;
   shown_at?: string | null;
+};
+
+type ImpactSummaryGateProps = {
+  businessId: string;
+  eligiblePeriods: Period[];
 };
 
 const PERIOD_DAYS: Record<Period, number> = {
@@ -56,36 +50,71 @@ const computeSummary = async (period: Period) => {
   return {
     id: payload.summaryId as string,
     period,
-    period_start: payload.period_start as string,
     period_end: payload.period_end as string,
-    metrics: payload.metrics ?? null,
-    highlights: payload.highlights ?? null,
     shown_at: null
   } as ImpactSummary;
 };
 
-export function ImpactSummaryGate() {
+export function ImpactSummaryGate({ businessId, eligiblePeriods }: ImpactSummaryGateProps) {
   const [summary, setSummary] = useState<ImpactSummary | null>(null);
   const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState<Period>("weekly");
   const initialized = useRef(false);
+  const router = useRouter();
+
+  const handlePostAction = (action: WrappedPostAction) => {
+    switch (action.type) {
+      case "leads":
+        router.push("/dashboard/leads");
+        break;
+      case "reservations":
+        router.push("/dashboard/reservations");
+        break;
+      case "conversations":
+        router.push("/dashboard/conversations");
+        break;
+      case "conversation":
+        router.push(`/dashboard/conversations/${action.id}`);
+        break;
+      case "analytics":
+      case "impact-details":
+        router.push("/dashboard/analytics");
+        break;
+      case "settings":
+        router.push("/dashboard/settings");
+        break;
+      default:
+        break;
+    }
+  };
 
   useEffect(() => {
+    if (!businessId) return;
+    if (!eligiblePeriods.length) return;
     if (initialized.current) return;
     initialized.current = true;
 
     const load = async () => {
-      const monthly = await fetchLatest("monthly");
-      const monthlyStale = monthly ? isSummaryStale(monthly, PERIOD_DAYS.monthly) : true;
-      if (!monthly || monthlyStale) {
-        const computed = await computeSummary("monthly");
-        if (computed) {
-          setSummary(computed);
+      if (eligiblePeriods.includes("monthly")) {
+        const monthly = await fetchLatest("monthly");
+        const monthlyStale = monthly ? isSummaryStale(monthly, PERIOD_DAYS.monthly) : true;
+        if (!monthly || monthlyStale) {
+          const computed = await computeSummary("monthly");
+          if (computed) {
+            setSummary(computed);
+            setMode("monthly");
+            setOpen(true);
+            return;
+          }
+        } else if (!monthly.shown_at) {
+          setSummary(monthly);
+          setMode("monthly");
           setOpen(true);
           return;
         }
-      } else if (!monthly.shown_at) {
-        setSummary(monthly);
-        setOpen(true);
+      }
+
+      if (!eligiblePeriods.includes("weekly")) {
         return;
       }
 
@@ -95,16 +124,18 @@ export function ImpactSummaryGate() {
         const computed = await computeSummary("weekly");
         if (computed) {
           setSummary(computed);
+          setMode("weekly");
           setOpen(true);
         }
       } else if (!weekly.shown_at) {
         setSummary(weekly);
+        setMode("weekly");
         setOpen(true);
       }
     };
 
     void load();
-  }, []);
+  }, [businessId, eligiblePeriods]);
 
   const markShown = async () => {
     if (!summary?.id) return;
@@ -115,9 +146,13 @@ export function ImpactSummaryGate() {
     });
   };
 
-  const handleClose = () => {
+  const handleClose = (action?: WrappedPostAction) => {
     setOpen(false);
+    void markShown();
+    if (action) {
+      handlePostAction(action);
+    }
   };
 
-  return <ImpactSummaryModal open={open} summary={summary} onClose={handleClose} onMarkShown={markShown} />;
+  return <WrappedModal open={open} mode={mode} businessId={businessId} onClose={handleClose} />;
 }

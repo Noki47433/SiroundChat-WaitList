@@ -1,23 +1,27 @@
-import { getTenantFromSession } from "@/lib/utils/tenant";
-import { getWorkspaceSubscription } from "@/src/billing/getSubscription";
-import { BillingClient } from "./BillingClient";
+import { redirect } from "next/navigation";
 
-export default async function BillingPage() {
-  const tenant = await getTenantFromSession();
+const toQueryString = (searchParams?: Record<string, string | string[] | undefined>) => {
+  const params = new URLSearchParams();
+  if (!searchParams) return "";
 
-  if (!tenant.businessId) {
-    return (
-      <div className="space-y-4">
-        <p className="text-xs uppercase tracking-[0.2em] text-white/40">Billing</p>
-        <h2 className="text-3xl font-semibold text-white">Upgrade your plan</h2>
-        <p className="text-sm text-white/60">No workspace found for this account.</p>
-      </div>
-    );
-  }
+  Object.entries(searchParams).forEach(([key, value]) => {
+    if (typeof value === "string") {
+      params.set(key, value);
+      return;
+    }
+    if (Array.isArray(value)) {
+      value.forEach((entry) => params.append(key, entry));
+    }
+  });
 
-  const subscription = await getWorkspaceSubscription(tenant.businessId);
+  return params.toString();
+};
 
-  return (
-    <BillingClient workspaceId={tenant.businessId} initialSubscription={subscription} />
-  );
+export default function DashboardBillingRedirect({
+  searchParams
+}: {
+  searchParams?: Record<string, string | string[] | undefined>;
+}) {
+  const query = toQueryString(searchParams);
+  redirect(query ? `/billing?${query}` : "/billing");
 }

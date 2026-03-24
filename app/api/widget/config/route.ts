@@ -84,6 +84,7 @@ const resolveBusinessByWidgetKey = async (widgetKey: string) => {
 
 const hasWidgetAccess = async (businessId: string) => {
   const subscription = await getWorkspaceSubscription(businessId);
+  if (!subscription.is_access_active) return false;
   const entitlements = resolveEntitlements(subscription.plan_id);
   return hasEntitlement(entitlements, "chatbot_embed");
 };

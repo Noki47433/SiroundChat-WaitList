@@ -1,0 +1,48 @@
+{
+  "template": "restaurant",
+  "motion_level": "none",
+  "brand": {
+    "business_name": "Mismatch Bistro",
+    "city": "Austin",
+    "accent_hex": "#3E270F"
+  },
+  "header": {
+    "nav_items": ["Menu", "About", "Gallery", "Contact"],
+    "primary_cta_label": "Reserve a table",
+    "primary_cta_url": "https://example.com/book"
+  },
+  "hero": {
+    "headline": "Headline",
+    "subhead": "Subhead",
+    "primary_cta_label": "Order now",
+    "primary_cta_url": "https://example.com/order",
+    "secondary_cta_label": "View menu",
+    "secondary_cta_url": "https://example.com/menu",
+    "hero_image": {
+      "src": "https://cdn.example.com/hero.jpg",
+      "alt": "Dining room",
+      "crop_desktop": "16:9",
+      "crop_mobile": "4:5"
+    }
+  },
+  "proof": { "items": ["4.8 Google"] },
+  "signature": {
+    "items": [
+      { "title": "A", "desc": "A", "image": { "src": "https://a.com/1.jpg", "alt": "A", "crop": "1:1" } },
+      { "title": "B", "desc": "B", "image": { "src": "https://a.com/2.jpg", "alt": "B", "crop": "1:1" } },
+      { "title": "C", "desc": "C", "image": { "src": "https://a.com/3.jpg", "alt": "C", "crop": "4:3" } }
+    ]
+  },
+  "menu": { "variant": "categories", "menu_url": "https://example.com/menu" },
+  "story": { "paragraph": "Story" },
+  "logistics": {
+    "variant": "map_hours_contact",
+    "address": "Address",
+    "hours": ["Mon 1-2", "Tue 1-2", "Wed 1-2"],
+    "phone": "+1 555",
+    "policies": []
+  },
+  "reviews": { "items": [] },
+  "newsletter": { "headline": "N", "subhead": "S" },
+  "footer": { "email": "hello@example.com", "instagram_url": "https://instagram.com/example" }
+}

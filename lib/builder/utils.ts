@@ -4,7 +4,14 @@ const resolveTemplateKeyFromId = (templateId?: string | null): TemplateKey | nul
   const value = (templateId ?? "").trim();
   if (!value) return null;
   if (value === "restaurant-editorial") return "restaurant_v1";
-  if (["clinic-clean", "beauty-lux", "corporate-sleek", "auto-modern"].includes(value)) {
+  if (value === "barbershop-editorial") return "service_v1";
+  if (value === "dental-assurance") return "service_v1";
+  if (value === "real-estate-signature") return "service_v1";
+  if (
+    ["clinic-clean", "beauty-lux", "corporate-sleek", "auto-modern", "home-services-trust", "legal-clarity"].includes(
+      value
+    )
+  ) {
     return "service_v1";
   }
   if (["portfolio-minimal", "ecommerce-simple", "hospitality-resort"].includes(value)) {

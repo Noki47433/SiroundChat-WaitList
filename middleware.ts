@@ -1,22 +1,33 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const BLOCKED_PREFIXES = ["/dashboard", "/admin", "/builder", "/chatbot", "/app"];
+const hasAuthCookie = (request: NextRequest) =>
+  request.cookies
+    .getAll()
+    .some(
+      (cookie) =>
+        cookie.name === "supabase-auth-token" ||
+        (cookie.name.startsWith("sb-") && cookie.name.includes("auth-token"))
+    );
 
 export function middleware(request: NextRequest) {
-  if (process.env.NODE_ENV !== "production") {
+  if (!request.nextUrl.pathname.startsWith("/dashboard")) {
     return NextResponse.next();
   }
 
-  if (BLOCKED_PREFIXES.some((prefix) => request.nextUrl.pathname.startsWith(prefix))) {
-    const redirectUrl = request.nextUrl.clone();
-    redirectUrl.pathname = "/";
-    redirectUrl.searchParams.set("blocked", "1");
-    return NextResponse.redirect(redirectUrl);
+  if (process.env.NEXT_PUBLIC_DISABLE_AUTH === "true" || process.env.DISABLE_AUTH === "true") {
+    return NextResponse.next();
   }
 
-  return NextResponse.next();
+  if (hasAuthCookie(request)) {
+    return NextResponse.next();
+  }
+
+  const next = `${request.nextUrl.pathname}${request.nextUrl.search}`;
+  const redirectUrl = new URL("/auth", request.url);
+  redirectUrl.searchParams.set("next", next);
+  return NextResponse.redirect(redirectUrl);
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/admin/:path*", "/builder/:path*", "/chatbot/:path*", "/app/:path*"]
+  matcher: ["/dashboard", "/dashboard/:path*"]
 };

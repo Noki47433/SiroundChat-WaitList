@@ -6,7 +6,7 @@ import { resolveRedirectPath } from "@/lib/utils/redirect";
 
 export async function POST(request: Request) {
   const json = await request.json().catch(() => null);
-  const redirect = resolveRedirectPath(json?.redirect, "/");
+  const redirect = resolveRedirectPath(json?.redirect, "/dashboard");
   const parsed = LoginSchema.safeParse(json);
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.format() }, { status: 400 });

@@ -4,7 +4,6 @@ import { randomUUID } from "crypto";
 import { Card } from "@/components/ui/card";
 import { CopyButton } from "@/components/ui/copy-button";
 import { NotificationSettingsPanel } from "@/app/(dashboard)/dashboard/_components/NotificationSettingsPanel";
-import { DemoImpactPanel } from "@/app/(dashboard)/dashboard/_components/DemoImpactPanel";
 import { WrappedLauncher } from "@/app/(dashboard)/dashboard/_components/WrappedLauncher";
 import { FeedbackCard } from "@/app/(dashboard)/dashboard/settings/_components/FeedbackCard";
 import { listMyFeedbackReports } from "@/lib/feedback/queries";
@@ -130,39 +129,93 @@ export default async function DashboardSettingsPage() {
     <div className="space-y-6">
       <div>
         <p className="text-xs uppercase tracking-[0.2em] text-white/40">Settings</p>
-        <h2 className="mt-2 text-3xl font-semibold">Widget key & embed snippet</h2>
-        <p className="mt-2 text-sm text-white/60">Use this snippet to install your widget on any website.</p>
+        <h2 className="mt-2 text-3xl font-semibold">Workspace settings</h2>
+        <p className="mt-2 text-sm text-white/60">Manage your profile, organization settings, and operational controls.</p>
       </div>
 
-      <PaywallGate entitlementKey="chatbot_embed">
-        <Card className="space-y-6">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-xs uppercase tracking-[0.2em] text-white/50">Your widget key</p>
-              <p className="mt-2 text-sm font-mono text-white">{widgetKey ?? "Not available"}</p>
-            </div>
-            {widgetKey ? (
-              <CopyButton value={widgetKey} label="Copy key" copiedLabel="Copied" size="sm" variant="secondary" />
-            ) : null}
+      <section className="space-y-3">
+        <p className="text-xs uppercase tracking-[0.2em] text-white/45">Profile / Org basics</p>
+        <Card className="space-y-4">
+          <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+            <p className="text-xs uppercase tracking-[0.2em] text-white/50">Organization</p>
+            <p className="mt-2 text-base font-semibold text-white">{business.business_name ?? "Your business"}</p>
           </div>
 
-          <div className="space-y-3">
-            <p className="text-sm font-semibold text-white">Embed snippet</p>
-            <div className="rounded-xl border border-white/10 bg-neutral-950/70 p-3 text-xs font-mono text-white">
-              {embedSnippet ? (
-                <pre className="whitespace-pre-wrap break-all">{embedSnippet}</pre>
-              ) : (
-                <p className="text-white/60">Generate a widget key to see the snippet.</p>
-              )}
-            </div>
-            {embedSnippet ? (
-              <div className="flex justify-end">
-                <CopyButton value={embedSnippet} label="Copy snippet" copiedLabel="Copied" size="sm" variant="secondary" />
+          <PaywallGate entitlementKey="chatbot_embed">
+            <div className="space-y-4 rounded-xl border border-white/10 bg-white/5 p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-white/50">Widget key</p>
+                  <p className="mt-2 text-sm font-mono text-white">{widgetKey ?? "Not available"}</p>
+                </div>
+                {widgetKey ? (
+                  <CopyButton value={widgetKey} label="Copy key" copiedLabel="Copied" size="sm" variant="secondary" />
+                ) : null}
               </div>
-            ) : null}
+
+              <div className="space-y-3">
+                <p className="text-sm font-semibold text-white">Embed snippet</p>
+                <div className="relative overflow-hidden rounded-xl border border-white/10 bg-neutral-950/70 p-3 text-xs font-mono text-white">
+                  {embedSnippet ? (
+                    <>
+                      <pre className="pointer-events-none whitespace-pre-wrap break-all blur-[7px] select-none">
+                        {embedSnippet}
+                      </pre>
+                      <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-transparent via-white/[0.03] to-transparent" />
+                    </>
+                  ) : (
+                    <p className="text-white/60">Generate a widget key to see the snippet.</p>
+                  )}
+                </div>
+                {embedSnippet ? (
+                  <div className="flex justify-end">
+                    <CopyButton value={embedSnippet} label="Copy snippet" copiedLabel="Copied" size="sm" variant="secondary" />
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </PaywallGate>
+        </Card>
+      </section>
+
+      <section className="space-y-3">
+        <p className="text-xs uppercase tracking-[0.2em] text-white/45">Billing</p>
+        <Card className="space-y-3">
+          <p className="text-sm text-white/70">
+            Plan management, invoices, and upgrade controls live in Billing.
+          </p>
+          <div>
+            <Link
+              href="/billing"
+              className="inline-flex h-10 items-center justify-center rounded-xl border border-white/15 px-4 text-sm font-semibold text-white hover:bg-white/10"
+            >
+              Open Billing
+            </Link>
           </div>
         </Card>
-      </PaywallGate>
+      </section>
+
+      <section className="space-y-3">
+        <p className="text-xs uppercase tracking-[0.2em] text-white/45">Notifications</p>
+        <NotificationSettingsPanel businessId={business.id} initial={notificationSettings} />
+      </section>
+
+      <section className="space-y-3">
+        <p className="text-xs uppercase tracking-[0.2em] text-white/45">Danger zone</p>
+        <Card className="space-y-3 border-red-500/30">
+          <p className="text-sm text-white/70">
+            Need to end your session or adjust sensitive account settings? Use the account page controls.
+          </p>
+          <div>
+            <Link
+              href="/dashboard/account"
+              className="inline-flex h-10 items-center justify-center rounded-xl border border-red-400/40 px-4 text-sm font-semibold text-red-200 hover:bg-red-500/10"
+            >
+              Open Account Controls
+            </Link>
+          </div>
+        </Card>
+      </section>
 
       <PaywallGate entitlementKey="webhooks">
         <Card className="space-y-4">
@@ -182,7 +235,6 @@ export default async function DashboardSettingsPage() {
         </Card>
       </PaywallGate>
 
-      <NotificationSettingsPanel businessId={business.id} initial={notificationSettings} />
       <FeedbackCard
         initialRows={myFeedbackReports.map((row) => ({
           id: row.id,
@@ -197,7 +249,6 @@ export default async function DashboardSettingsPage() {
         initialContactEmail={user.email ?? null}
       />
       <WrappedLauncher businessId={business.id} />
-      <DemoImpactPanel />
     </div>
   );
 }

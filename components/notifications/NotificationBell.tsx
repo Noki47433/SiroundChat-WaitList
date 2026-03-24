@@ -6,6 +6,7 @@ import { NotificationDropdown } from "@/components/notifications/NotificationDro
 import { fireConfetti } from "@/components/notifications/confetti";
 import { useToast } from "@/components/ui/toast";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { cn } from "@/lib/utils/cn";
 
 type Notification = {
   id: string;
@@ -62,7 +63,15 @@ const shouldFireConfetti = (notification: Notification) => {
 const shouldPush = (notification: Notification) =>
   notification.severity === "critical" || notification.severity === "celebration";
 
-export function NotificationBell({ businessId: initialBusinessId }: { businessId?: string }) {
+export function NotificationBell({
+  businessId: initialBusinessId,
+  variant = "full",
+  className
+}: {
+  businessId?: string;
+  variant?: "full" | "icon";
+  className?: string;
+}) {
   const { push } = useToast();
   const [open, setOpen] = useState(false);
   const [businessId, setBusinessId] = useState<string | null>(initialBusinessId ?? null);
@@ -253,23 +262,35 @@ export function NotificationBell({ businessId: initialBusinessId }: { businessId
   };
 
   const badgeCount = useMemo(() => (unreadCount > 99 ? "99+" : String(unreadCount)), [unreadCount]);
+  const iconOnly = variant === "icon";
 
   return (
-    <div ref={containerRef} className="relative">
+    <div ref={containerRef} className={cn("relative", open ? "z-[240]" : "z-20")}>
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        className="relative rounded-xl border border-white/10 px-3 py-2 text-sm text-white/80"
+        className={cn(
+          "relative",
+          iconOnly
+            ? "dashboard-chip inline-flex h-10 w-10 items-center justify-center rounded-full border border-[#ffd87266] text-[#f7d56b] transition hover:bg-white/10 hover:text-white"
+            : "rounded-xl border border-white/10 px-3 py-2 text-sm text-white/80",
+          className
+        )}
+        aria-label="Open notifications"
       >
         {unreadCount > 0 ? (
           <span className="absolute -right-1 -top-1 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[#00A3FF] px-1 text-[11px] text-white">
             {badgeCount}
           </span>
         ) : null}
-        <span className="flex items-center gap-2">
+        {iconOnly ? (
           <Bell className="h-4 w-4" />
-          Alerts
-        </span>
+        ) : (
+          <span className="flex items-center gap-2">
+            <Bell className="h-4 w-4" />
+            Alerts
+          </span>
+        )}
       </button>
       {open ? (
         <NotificationDropdown

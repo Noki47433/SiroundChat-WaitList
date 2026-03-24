@@ -16,6 +16,14 @@ type SectionPreset = {
 
 export const TEMPLATE_META: TemplateMeta[] = [
   {
+    id: "barbershop-editorial",
+    name: "Barbershop Editorial",
+    description: "High-identity layout for barber brands.",
+    industryTags: ["Barbershop", "Grooming", "Local Service"],
+    thumbnailPath:
+      "https://images.pexels.com/photos/1319461/pexels-photo-1319461.jpeg?auto=compress&cs=tinysrgb&w=1200"
+  },
+  {
     id: "auto-modern",
     name: "Auto Modern",
     description: "Flexible layout for modern service brands.",
@@ -32,6 +40,14 @@ export const TEMPLATE_META: TemplateMeta[] = [
       "https://images.pexels.com/photos/262978/pexels-photo-262978.jpeg?auto=compress&cs=tinysrgb&w=1200"
   },
   {
+    id: "dental-assurance",
+    name: "Dental Assurance",
+    description: "Trust-first layout for dental clinics.",
+    industryTags: ["Dental", "Clinic", "Medical"],
+    thumbnailPath:
+      "https://images.pexels.com/photos/3845810/pexels-photo-3845810.jpeg?auto=compress&cs=tinysrgb&w=1200"
+  },
+  {
     id: "clinic-clean",
     name: "Clinic Clean",
     description: "Calm, trusted layout for clinics and practices.",
@@ -46,6 +62,14 @@ export const TEMPLATE_META: TemplateMeta[] = [
     industryTags: ["Beauty", "Service"],
     thumbnailPath:
       "https://images.pexels.com/photos/3738349/pexels-photo-3738349.jpeg?auto=compress&cs=tinysrgb&w=1200"
+  },
+  {
+    id: "real-estate-signature",
+    name: "Real Estate Signature",
+    description: "Lead-focused layout for real estate agencies.",
+    industryTags: ["Real Estate", "Property", "Agency"],
+    thumbnailPath:
+      "https://images.pexels.com/photos/323780/pexels-photo-323780.jpeg?auto=compress&cs=tinysrgb&w=1200"
   },
   {
     id: "corporate-sleek",
@@ -78,10 +102,35 @@ export const TEMPLATE_META: TemplateMeta[] = [
     industryTags: ["Hospitality", "Travel"],
     thumbnailPath:
       "https://images.pexels.com/photos/338504/pexels-photo-338504.jpeg?auto=compress&cs=tinysrgb&w=1200"
+  },
+  {
+    id: "legal-clarity",
+    name: "Legal Clarity",
+    description: "Structured, trust-first layout for legal services.",
+    industryTags: ["Legal", "Professional"],
+    thumbnailPath:
+      "https://images.pexels.com/photos/5668473/pexels-photo-5668473.jpeg?auto=compress&cs=tinysrgb&w=1200"
+  },
+  {
+    id: "home-services-trust",
+    name: "Home Services Trust",
+    description: "Conversion-focused layout for local home services.",
+    industryTags: ["Home Services", "Local Service"],
+    thumbnailPath:
+      "https://images.pexels.com/photos/8293744/pexels-photo-8293744.jpeg?auto=compress&cs=tinysrgb&w=1200"
   }
 ];
 
 export const TEMPLATE_DEFAULT_SECTIONS: Record<string, SectionPreset[]> = {
+  "barbershop-editorial": [
+    { type: "hero", variant: "A", enabled: true },
+    { type: "services", variant: "B", enabled: true },
+    { type: "gallery", variant: "B", enabled: true },
+    { type: "about", variant: "B", enabled: true },
+    { type: "cta", variant: "A", enabled: true },
+    { type: "contact", variant: "B", enabled: true },
+    { type: "footer", variant: "B", enabled: true }
+  ],
   "auto-modern": [
     { type: "hero", variant: "A", enabled: true },
     { type: "services", variant: "B", enabled: true },
@@ -108,6 +157,15 @@ export const TEMPLATE_DEFAULT_SECTIONS: Record<string, SectionPreset[]> = {
     { type: "contact", variant: "B", enabled: true },
     { type: "footer", variant: "B", enabled: true }
   ],
+  "dental-assurance": [
+    { type: "hero", variant: "C", enabled: true },
+    { type: "services", variant: "C", enabled: true },
+    { type: "about", variant: "A", enabled: true },
+    { type: "faq", variant: "B", enabled: true },
+    { type: "cta", variant: "A", enabled: true },
+    { type: "contact", variant: "A", enabled: true },
+    { type: "footer", variant: "A", enabled: true }
+  ],
   "clinic-clean": [
     { type: "hero", variant: "C", enabled: true },
     { type: "services", variant: "C", enabled: true },
@@ -132,6 +190,15 @@ export const TEMPLATE_DEFAULT_SECTIONS: Record<string, SectionPreset[]> = {
     { type: "faq", variant: "A", enabled: false },
     { type: "contact", variant: "A", enabled: true },
     { type: "reservation", variant: "A", enabled: false },
+    { type: "footer", variant: "B", enabled: true }
+  ],
+  "real-estate-signature": [
+    { type: "hero", variant: "A", enabled: true },
+    { type: "pricing", variant: "A", enabled: true },
+    { type: "services", variant: "C", enabled: true },
+    { type: "about", variant: "B", enabled: true },
+    { type: "cta", variant: "A", enabled: true },
+    { type: "contact", variant: "B", enabled: true },
     { type: "footer", variant: "B", enabled: true }
   ],
   "corporate-sleek": [
@@ -185,21 +252,40 @@ export const TEMPLATE_DEFAULT_SECTIONS: Record<string, SectionPreset[]> = {
     { type: "pricing", variant: "B", enabled: false },
     { type: "contact", variant: "A", enabled: true },
     { type: "footer", variant: "B", enabled: true }
+  ],
+  "legal-clarity": [
+    { type: "hero", variant: "A", enabled: true },
+    { type: "about", variant: "A", enabled: true },
+    { type: "services", variant: "A", enabled: true },
+    { type: "faq", variant: "A", enabled: true },
+    { type: "cta", variant: "A", enabled: true },
+    { type: "contact", variant: "A", enabled: true },
+    { type: "footer", variant: "A", enabled: true }
+  ],
+  "home-services-trust": [
+    { type: "hero", variant: "A", enabled: true },
+    { type: "services", variant: "A", enabled: true },
+    { type: "pricing", variant: "A", enabled: true },
+    { type: "testimonials", variant: "A", enabled: true },
+    { type: "faq", variant: "A", enabled: true },
+    { type: "cta", variant: "A", enabled: true },
+    { type: "contact", variant: "A", enabled: true },
+    { type: "footer", variant: "A", enabled: true }
   ]
 };
 
 const BASE_ALLOWED_VARIANTS: Record<string, string[]> = {
-  hero: ["A", "B", "C"],
-  services: ["A", "B", "C"],
-  about: ["A", "B"],
-  gallery: ["A", "B"],
-  testimonials: ["A", "B"],
-  pricing: ["A", "B"],
-  cta: ["A", "B"],
-  faq: ["A", "B"],
-  contact: ["A", "B"],
-  reservation: ["A", "B"],
-  footer: ["A", "B"],
+  hero: ["A", "B", "C", "D", "E", "F", "G", "H"],
+  services: ["A", "B", "C", "D", "E", "F", "G"],
+  about: ["A", "B", "C", "D", "E", "F"],
+  gallery: ["A", "B", "C", "D", "E"],
+  testimonials: ["A", "B", "C", "D", "E", "F"],
+  pricing: ["A", "B", "C", "D", "E"],
+  cta: ["A", "B", "C", "D", "E", "F"],
+  faq: ["A", "B", "C"],
+  contact: ["A", "B", "C", "D", "E", "F"],
+  reservation: ["A", "B", "C"],
+  footer: ["A", "B", "C"],
   newsletter: ["A"],
   "blog-index": ["A"],
   "blog-post": ["A"],
@@ -211,12 +297,17 @@ const BASE_ALLOWED_VARIANTS: Record<string, string[]> = {
 };
 
 export const TEMPLATE_ALLOWED_VARIANTS: Record<string, Record<string, string[]>> = {
+  "barbershop-editorial": BASE_ALLOWED_VARIANTS,
   "auto-modern": BASE_ALLOWED_VARIANTS,
   "restaurant-editorial": BASE_ALLOWED_VARIANTS,
+  "dental-assurance": BASE_ALLOWED_VARIANTS,
   "clinic-clean": BASE_ALLOWED_VARIANTS,
   "beauty-lux": BASE_ALLOWED_VARIANTS,
+  "real-estate-signature": BASE_ALLOWED_VARIANTS,
   "corporate-sleek": BASE_ALLOWED_VARIANTS,
   "portfolio-minimal": BASE_ALLOWED_VARIANTS,
   "ecommerce-simple": BASE_ALLOWED_VARIANTS,
-  "hospitality-resort": BASE_ALLOWED_VARIANTS
+  "hospitality-resort": BASE_ALLOWED_VARIANTS,
+  "legal-clarity": BASE_ALLOWED_VARIANTS,
+  "home-services-trust": BASE_ALLOWED_VARIANTS
 };

@@ -63,7 +63,7 @@ export function BuilderOverviewActions({ siteId, publishedUrl, canPublish }: Bui
           setConfirmOpen(true);
         }}
         disabled={isPublishing || !canPublish}
-        className="inline-flex h-11 items-center justify-center rounded-2xl bg-yellow-400 px-5 text-sm font-semibold text-neutral-900 disabled:opacity-60"
+        className="inline-flex h-11 items-center justify-center rounded-2xl bg-gradient-to-r from-[#ffe169] to-[#f3b012] px-5 text-sm font-semibold text-[#2d1c00] shadow-[0_14px_28px_rgba(255,191,63,0.32)] transition hover:brightness-105 disabled:opacity-60"
       >
         {isPublishing ? "Publishing..." : currentUrl ? "Republish" : "Publish"}
       </button>
@@ -72,7 +72,7 @@ export function BuilderOverviewActions({ siteId, publishedUrl, canPublish }: Bui
           href={currentUrl}
           target="_blank"
           rel="noreferrer"
-          className="inline-flex h-11 items-center justify-center rounded-2xl border border-white/10 px-5 text-sm font-semibold text-white"
+          className="dashboard-pill inline-flex h-11 items-center justify-center rounded-2xl border border-white/15 px-5 text-sm font-semibold text-white"
         >
           View live site
         </a>
@@ -83,8 +83,8 @@ export function BuilderOverviewActions({ siteId, publishedUrl, canPublish }: Bui
       {error ? <span className="text-xs text-red-300">{error}</span> : null}
       {publishNeedsUpgrade ? (
         <Link
-          href="/dashboard/billing?blocked=publish_website"
-          className="inline-flex h-9 items-center justify-center rounded-xl border border-amber-200 bg-amber-100 px-3 text-xs font-semibold text-amber-900"
+          href="/billing?blocked=publish_website"
+          className="inline-flex h-9 items-center justify-center rounded-xl border border-[#ffd87266] bg-[#ffd34a1f] px-3 text-xs font-semibold text-[#ffe9ad]"
         >
           Upgrade to publish
         </Link>

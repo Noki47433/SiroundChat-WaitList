@@ -1,0 +1,295 @@
+{
+  "version": "1.0",
+  "meta": {
+    "locale": "en-GB",
+    "vertical": "restaurant",
+    "siteType": "local_business",
+    "primaryGoal": "reservations",
+    "brandName": "Rikoli",
+    "pageTitle": "Rikoli | Dinner reservations",
+    "pageDescription": "Rikoli helps Local diners with Dinner reservations."
+  },
+  "theme": {
+    "mode": "light",
+    "tone": "neutral",
+    "density": "normal",
+    "radius": "sm",
+    "accent": "yellow",
+    "font": "serif"
+  },
+  "cta": {
+    "primary": {
+      "label": "Book a Table",
+      "href": "/#reservations",
+      "style": "primary"
+    },
+    "secondary": {
+      "label": "View Menu",
+      "href": "/#menu",
+      "style": "ghost"
+    }
+  },
+  "sections": [
+    {
+      "id": "sec-header-01",
+      "type": "header",
+      "variant": "simple",
+      "props": {
+        "sticky": true
+      },
+      "copy": {
+        "links": [
+          {
+            "label": "Home",
+            "href": "/#home"
+          },
+          {
+            "label": "Menu",
+            "href": "/#menu"
+          },
+          {
+            "label": "Reservations",
+            "href": "/#reservations"
+          },
+          {
+            "label": "About",
+            "href": "/#about"
+          },
+          {
+            "label": "Contact",
+            "href": "/#contact"
+          }
+        ]
+      },
+      "media": [],
+      "ctas": []
+    },
+    {
+      "id": "sec-hero-02",
+      "type": "hero",
+      "variant": "centered",
+      "props": {
+        "hasMockup": false
+      },
+      "copy": {
+        "headline": "Rikoli dining in your neighborhood",
+        "subheadline": "Rikoli serves seasonal dishes through a deterministic pipeline for diners.",
+        "badge": "Restaurant",
+        "primaryCtaLabel": "Book a Table",
+        "secondaryCtaLabel": "View Menu"
+      },
+      "media": [
+        {
+          "role": "hero",
+          "source": "user",
+          "aspectRatio": "16:9",
+          "src": "/images/placeholders/restaurant-hero.jpg",
+          "alt": "Rikoli hero food and ambience photo"
+        }
+      ],
+      "ctas": [
+        {
+          "intent": "primary",
+          "label": "Book a Table",
+          "href": "/#reservations",
+          "style": "primary"
+        },
+        {
+          "intent": "secondary",
+          "label": "View Menu",
+          "href": "/#menu",
+          "style": "secondary"
+        }
+      ]
+    },
+    {
+      "id": "sec-features-03",
+      "type": "features",
+      "variant": "grid3",
+      "props": {
+        "columns": 3
+      },
+      "copy": {
+        "title": "Menu Highlights",
+        "items": [
+          {
+            "title": "Signature Dishes",
+            "description": "Explore chef specials made with seasonal produce and house-made sauces."
+          },
+          {
+            "title": "Fresh Ingredients",
+            "description": "Our kitchen prepares each plate with local ingredients selected daily."
+          },
+          {
+            "title": "Warm Ambience",
+            "description": "Enjoy a comfortable dining room ideal for dinner dates and family meals."
+          }
+        ]
+      },
+      "media": [],
+      "ctas": []
+    },
+    {
+      "id": "sec-feature-spotlight-04",
+      "type": "feature_spotlight",
+      "variant": "alternating",
+      "props": {
+        "items": 2
+      },
+      "copy": {
+        "items": [
+          {
+            "eyebrow": "Gallery",
+            "title": "Dining Space",
+            "description": "Browse the dining room and patio atmosphere before your reservation.",
+            "bullets": [
+              "Comfortable indoor seating",
+              "Inviting evening ambience"
+            ]
+          },
+          {
+            "eyebrow": "Gallery",
+            "title": "Plated Favorites",
+            "description": "Preview colorful entrées, desserts, and chef specials from the current menu.",
+            "bullets": [
+              "Seasonal chef specials",
+              "House desserts and drinks"
+            ]
+          }
+        ]
+      },
+      "media": [
+        {
+          "role": "gallery",
+          "source": "user",
+          "aspectRatio": "4:3",
+          "src": "/images/placeholders/restaurant-1.jpg",
+          "alt": "Rikoli food gallery image 1"
+        },
+        {
+          "role": "gallery",
+          "source": "user",
+          "aspectRatio": "4:3",
+          "src": "/images/placeholders/restaurant-2.jpg",
+          "alt": "Rikoli ambience gallery image 2"
+        },
+        {
+          "role": "gallery",
+          "source": "user",
+          "aspectRatio": "4:3",
+          "src": "/images/placeholders/restaurant-3.jpg",
+          "alt": "Rikoli dining gallery image 3"
+        }
+      ],
+      "ctas": []
+    },
+    {
+      "id": "sec-contact-05",
+      "type": "contact",
+      "variant": "simple",
+      "props": {
+        "fields": [
+          "name",
+          "email",
+          "message"
+        ]
+      },
+      "copy": {
+        "title": "Hours & Location",
+        "subtitle": "Visit us daily and use reservations for peak dinner hours.",
+        "submitLabel": "Request a Table"
+      },
+      "media": [],
+      "ctas": [
+        {
+          "intent": "primary",
+          "label": "Book a Table",
+          "href": "/#reservations",
+          "style": "secondary"
+        }
+      ]
+    },
+    {
+      "id": "sec-testimonials-06",
+      "type": "testimonials",
+      "variant": "cards",
+      "props": {
+        "count": 2
+      },
+      "copy": {
+        "items": [
+          {
+            "quote": "The menu had fresh flavors and the staff made our dinner feel effortless from start to finish.",
+            "name": "A. Rivera",
+            "title": "Dinner Guest"
+          },
+          {
+            "quote": "We booked ahead and everything was ready when we arrived. Great ambience and excellent service.",
+            "name": "M. Patel",
+            "title": "Returning Diner"
+          }
+        ]
+      },
+      "media": [],
+      "ctas": []
+    },
+    {
+      "id": "sec-cta-banner-07",
+      "type": "cta_banner",
+      "variant": "simple",
+      "props": {},
+      "copy": {
+        "title": "Reserve Your Table",
+        "subtitle": "Book dinner now or explore the full menu before your visit.",
+        "ctaLabel": "Book a Table"
+      },
+      "media": [],
+      "ctas": [
+        {
+          "intent": "primary",
+          "label": "Book a Table",
+          "href": "/#reservations",
+          "style": "primary"
+        }
+      ]
+    },
+    {
+      "id": "sec-footer-08",
+      "type": "footer",
+      "variant": "simple",
+      "props": {},
+      "copy": {
+        "columns": [
+          {
+            "title": "Explore",
+            "links": [
+              {
+                "label": "Menu",
+                "href": "/#menu"
+              },
+              {
+                "label": "Reservations",
+                "href": "/#reservations"
+              }
+            ]
+          },
+          {
+            "title": "Restaurant",
+            "links": [
+              {
+                "label": "About",
+                "href": "/#about"
+              },
+              {
+                "label": "Contact",
+                "href": "/#contact"
+              }
+            ]
+          }
+        ]
+      },
+      "media": [],
+      "ctas": []
+    }
+  ]
+}

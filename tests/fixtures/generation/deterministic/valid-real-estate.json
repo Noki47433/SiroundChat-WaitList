@@ -1,0 +1,93 @@
+{
+  "template": "real_estate",
+  "motion_level": "none",
+  "brand": {
+    "business_name": "Bay Harbor Towers",
+    "city": "Miami",
+    "accent_hex": "#0A2239"
+  },
+  "header": {
+    "phone": "+1 (305) 555-0199",
+    "nav_items": ["Vision", "Residences", "Amenities", "Neighborhood", "Floorplans", "Press", "Team", "Contact"],
+    "primary_cta_label": "Inquire",
+    "primary_cta_url": "https://example.com/inquire"
+  },
+  "hero": {
+    "headline": "Waterfront residences designed for light",
+    "subhead": "Private marina access, curated amenities, and skyline views.",
+    "status_badge": "80% sold",
+    "primary_cta_label": "Inquire",
+    "primary_cta_url": "https://example.com/inquire",
+    "secondary_cta_label": "Download brochure",
+    "secondary_cta_url": "https://example.com/brochure.pdf",
+    "hero_image": {
+      "src": "https://cdn.example.com/hero-realestate.jpg",
+      "alt": "Building exterior at sunset",
+      "crop_desktop": "21:9",
+      "crop_mobile": "4:5"
+    }
+  },
+  "vision": {
+    "paragraph": "A modern waterfront address focused on natural materials, privacy, and access to the bay."
+  },
+  "residences": {
+    "variant": "property_cards",
+    "items": [
+      {
+        "title": "Two-bedroom corner",
+        "summary": "2 bed, 2.5 bath, floor-to-ceiling glazing.",
+        "image": {
+          "src": "https://cdn.example.com/r1.jpg",
+          "alt": "Residence interior",
+          "crop": "4:3"
+        },
+        "cta_label": "Inquire",
+        "cta_url": "https://example.com/inquire"
+      }
+    ]
+  },
+  "amenities": {
+    "items": [
+      { "title": "Private marina", "description": "Direct bay access with staffed slips." },
+      { "title": "Rooftop pool", "description": "Sunset deck and cabanas." },
+      { "title": "Wellness suite", "description": "Sauna, steam, and training studio." }
+    ]
+  },
+  "neighborhood": {
+    "variant": "map_highlights",
+    "image": {
+      "src": "https://cdn.example.com/neighborhood.jpg",
+      "alt": "Neighborhood view",
+      "crop": "16:9"
+    },
+    "highlights": ["8 min to Bal Harbour", "Walkable waterfront dining"]
+  },
+  "floorplans": {
+    "downloads": [
+      { "label": "Residence collection", "url": "https://example.com/floorplans.pdf" }
+    ]
+  },
+  "press": {
+    "items": [
+      { "outlet": "Design Journal", "title": "A new standard in bayfront living", "url": "https://example.com/press-1" }
+    ]
+  },
+  "team": {
+    "members": [
+      { "name": "Elena Park", "role": "Sales Director" }
+    ]
+  },
+  "contact": {
+    "address": "888 Bay Harbor Drive, Miami, FL",
+    "phone": "+1 (305) 555-0199",
+    "inquire_cta_label": "Inquire",
+    "inquire_cta_url": "https://example.com/inquire",
+    "legal_teaser": "All visuals are conceptual and subject to change.",
+    "map_mode": "static"
+  },
+  "footer": {
+    "legal_url": "https://example.com/legal",
+    "privacy_url": "https://example.com/privacy",
+    "downloads_url": "https://example.com/downloads"
+  }
+}

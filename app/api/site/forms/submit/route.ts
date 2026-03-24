@@ -3,18 +3,35 @@ import { z } from "zod";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { enforceRateLimit, RateLimitError } from "@/lib/utils/rate-limit";
 import { createNotificationIfNotExists } from "@/lib/notifications/engine";
+import { insertWebsiteAnalyticsEvent } from "@/lib/analytics/website-events";
+import {
+  computeUsedCapacityForInterval,
+  ensureRestaurantBootstrap,
+  getOrCreateReservationSettings,
+  loadCapacityRelevantReservations,
+  localDateTimeStringToUtcDate,
+  validateLeadAndMaxDays
+} from "@/lib/reservations/service";
 
 export const runtime = "nodejs";
 
-// Zod v4: z.record needs key/value (or value) explicitly.
-// We'll accept any JSON-ish object for payload.
 const AnyRecordSchema = z.record(z.string(), z.any());
+
+const AnalyticsSchema = z.object({
+  businessId: z.string().uuid().optional(),
+  siteId: z.string().uuid().optional().nullable(),
+  pagePath: z.string().min(1),
+  pageTitle: z.string().optional().nullable(),
+  sessionId: z.string().min(8),
+  referrer: z.string().optional().nullable()
+});
 
 const BaseSchema = z.object({
   slug: z.string().min(1).optional(),
   siteId: z.string().uuid().optional(),
   form_type: z.enum(["contact", "reservation"]),
-  payload: AnyRecordSchema
+  payload: AnyRecordSchema,
+  analytics: AnalyticsSchema.optional().nullable()
 });
 
 const ContactPayloadSchema = z
@@ -54,6 +71,18 @@ const getClientIp = (request: Request) => {
   return request.headers.get("x-real-ip") || "";
 };
 
+const toNullableString = (value: unknown) => {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+};
+
+const toReservationPartySize = (value: string | null | undefined) => {
+  const numeric = Number(value ?? "");
+  if (Number.isFinite(numeric) && numeric > 0) return Math.floor(numeric);
+  return 2;
+};
+
 export async function POST(request: Request) {
   try {
     const contentType = request.headers.get("content-type") ?? "";
@@ -72,12 +101,11 @@ export async function POST(request: Request) {
       const siteId = String(formData.get("siteId") ?? "").trim();
 
       const name = String(formData.get("name") ?? "").trim();
-      const contactField = String(formData.get("contact") ?? "").trim(); // combined field from templates
+      const contactField = String(formData.get("contact") ?? "").trim();
       const emailField = String(formData.get("email") ?? "").trim();
       const phoneField = String(formData.get("phone") ?? "").trim();
       const contact = contactField || emailField || phoneField;
       const message = String(formData.get("message") ?? "").trim();
-
       const date = String(formData.get("date") ?? "").trim();
       const time = String(formData.get("time") ?? "").trim();
       const partySize = String(formData.get("party_size") ?? "").trim();
@@ -107,7 +135,6 @@ export async function POST(request: Request) {
               }
       };
     } else {
-      // last resort: try json anyway
       incoming = await request.json().catch(() => null);
     }
 
@@ -116,9 +143,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
     }
 
-    const { slug, siteId, form_type, payload: rawPayload } = parsed.data;
-
-    // fix: TS wants explicit checks so siteId isn't "string | undefined" confusion
+    const { slug, siteId, form_type, payload: rawPayload, analytics } = parsed.data;
     const hasSlug = typeof slug === "string" && slug.length > 0;
     const hasSiteId = typeof siteId === "string" && siteId.length > 0;
 
@@ -126,36 +151,116 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "slug or siteId required" }, { status: 400 });
     }
 
-    // rate limit
     const ip = getClientIp(request);
     const rateKey = `${ip || "unknown"}:${form_type}`;
     await enforceRateLimit({ key: rateKey, limit: 6, windowInSeconds: 60 });
 
-    const admin = getSupabaseAdminClient();
-
-    // NOTE: cast to any to avoid Supabase "never" inference in this file
-    const siteQuery = (admin as any)
-      .from("builder_sites")
-      .select("id,business_id,slug,status");
-
+    const admin = getSupabaseAdminClient() as any;
+    const siteQuery = admin.from("builder_sites").select("id,business_id,slug,status");
     const siteRes = hasSiteId
       ? await siteQuery.eq("id", siteId!).maybeSingle()
       : await siteQuery.eq("slug", slug!).maybeSingle();
 
     const site = (siteRes?.data ?? null) as BuilderSiteRow | null;
-
     if (!site || site.status !== "published") {
       return NextResponse.json({ error: "Site not found" }, { status: 404 });
     }
 
     const payloadSchema = form_type === "reservation" ? ReservationPayloadSchema : ContactPayloadSchema;
     const payloadResult = payloadSchema.safeParse(rawPayload);
-
     if (!payloadResult.success) {
       return NextResponse.json({ error: payloadResult.error.flatten() }, { status: 400 });
     }
 
-    const { data: submission, error: insertError } = await (admin as any)
+    let leadId: string | null = null;
+    let reservationId: string | null = null;
+
+    if (form_type === "contact") {
+      const contactPayload = payloadResult.data as z.infer<typeof ContactPayloadSchema>;
+      const leadInsert = {
+        business_id: site.business_id,
+        conversation_id: null,
+        name: contactPayload.name,
+        email: contactPayload.email ?? null,
+        phone: contactPayload.phone ?? null,
+        source: "website_form"
+      };
+      const { data: leadRow, error: leadError } = await admin.from("leads").insert(leadInsert).select("id").maybeSingle();
+      if (!leadError && leadRow?.id) {
+        leadId = leadRow.id as string;
+      }
+    } else {
+      const reservationPayload = payloadResult.data as z.infer<typeof ReservationPayloadSchema>;
+      const restaurant = await ensureRestaurantBootstrap(admin, site.business_id);
+      if (!restaurant) {
+        return NextResponse.json({ error: "Restaurant not found" }, { status: 404 });
+      }
+
+      const settings = await getOrCreateReservationSettings(admin, site.business_id);
+      const startAt = localDateTimeStringToUtcDate(
+        reservationPayload.date,
+        reservationPayload.time,
+        restaurant.timezone ?? "Europe/Belgrade"
+      );
+
+      if (!startAt) {
+        return NextResponse.json({ error: "Invalid reservation date or time" }, { status: 400 });
+      }
+
+      const leadAndMaxValidation = validateLeadAndMaxDays(startAt, settings);
+      if (!leadAndMaxValidation.ok) {
+        return NextResponse.json({ error: leadAndMaxValidation.message, code: leadAndMaxValidation.code }, { status: 400 });
+      }
+
+      const partySize = toReservationPartySize(reservationPayload.party_size);
+      const endAt = new Date(startAt.getTime() + settings.default_duration_min * 60_000);
+      const overlaps = await loadCapacityRelevantReservations(admin, {
+        restaurantId: site.business_id,
+        intervalStart: startAt,
+        intervalEnd: endAt,
+        settings
+      });
+      const usedCapacity = computeUsedCapacityForInterval(overlaps, startAt, endAt, settings);
+
+      if (usedCapacity + partySize > restaurant.total_capacity) {
+        return NextResponse.json(
+          {
+            error: "Not enough capacity at that time.",
+            code: "capacity_conflict",
+            remainingCapacity: Math.max(restaurant.total_capacity - usedCapacity, 0)
+          },
+          { status: 409 }
+        );
+      }
+
+      const { data: reservationRow, error: reservationError } = await admin
+        .from("reservations")
+        .insert({
+          restaurant_id: site.business_id,
+          business_id: site.business_id,
+          conversation_id: null,
+          start_at: startAt.toISOString(),
+          end_at: endAt.toISOString(),
+          datetime: startAt.toISOString(),
+          party_size: partySize,
+          customer_name: reservationPayload.name,
+          customer_phone: reservationPayload.phone ?? reservationPayload.email ?? "website",
+          customer_email: reservationPayload.email ?? null,
+          notes: "Website reservation form",
+          status: "pending",
+          created_by: "widget"
+        })
+        .select("id")
+        .single();
+
+      if (reservationError || !reservationRow?.id) {
+        return NextResponse.json({ error: reservationError?.message ?? "Failed to create reservation" }, { status: 500 });
+      }
+
+      reservationId = reservationRow.id as string;
+    }
+
+    const { data: submission, error: insertError } = await admin
       .from("site_form_submissions")
       .insert({
         site_id: site.id,
@@ -168,6 +273,39 @@ export async function POST(request: Request) {
 
     if (insertError || !submission?.id) {
       return NextResponse.json({ error: "Failed to save submission" }, { status: 500 });
+    }
+
+    if (analytics?.sessionId && analytics.pagePath) {
+      const baseAnalyticsPayload = {
+        businessId: site.business_id,
+        siteId: site.id,
+        pagePath: analytics.pagePath,
+        pageTitle: analytics.pageTitle ?? null,
+        sessionId: analytics.sessionId,
+        referrer: analytics.referrer ?? null,
+        userAgent: request.headers.get("user-agent")
+      };
+
+      if (form_type === "contact") {
+        await insertWebsiteAnalyticsEvent(admin, {
+          ...baseAnalyticsPayload,
+          eventType: "lead_submitted",
+          channel: "form",
+          leadType: "form",
+          leadId
+        });
+      } else {
+        await insertWebsiteAnalyticsEvent(admin, {
+          ...baseAnalyticsPayload,
+          eventType: "reservation_started",
+          channel: "form"
+        });
+        await insertWebsiteAnalyticsEvent(admin, {
+          ...baseAnalyticsPayload,
+          eventType: "reservation_completed",
+          channel: "form"
+        });
+      }
     }
 
     const title = form_type === "reservation" ? "New reservation request" : "New contact form submission";
@@ -188,14 +326,16 @@ export async function POST(request: Request) {
         data: {
           site_id: site.id,
           form_type,
-          name: payloadResult.data.name
+          name: payloadResult.data.name,
+          reservation_id: reservationId,
+          lead_id: leadId
         }
       },
       "site_form_submission",
-      submission.id
+      reservationId ?? leadId ?? submission.id
     );
 
-    return NextResponse.json({ ok: true });
+    return NextResponse.json({ ok: true, leadId, reservationId });
   } catch (error) {
     if (error instanceof RateLimitError) {
       return NextResponse.json({ error: "Too many requests" }, { status: 429 });

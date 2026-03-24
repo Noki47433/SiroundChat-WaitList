@@ -41,6 +41,7 @@ export function FeedbackFilters({
           value={range}
           onChange={(event) => updateParams(event.target.value, siteId)}
           className="mt-2"
+          data-tutorial-target="feedback-range"
         >
           {RANGE_OPTIONS.map((option) => (
             <option key={option.value} value={option.value}>

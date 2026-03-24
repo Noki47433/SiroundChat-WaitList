@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -44,7 +44,7 @@ export default function ChannelsDashboardClient() {
 
   const inboxMap = useMemo(() => new Map(inboxes.map((inbox) => [inbox.id, inbox])), [inboxes]);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     try {
       const [inboxesRes, threadsRes] = await Promise.all([
@@ -65,7 +65,7 @@ export default function ChannelsDashboardClient() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [push]);
 
   const loadThread = async (thread: Thread) => {
     setSelectedThread(thread);
@@ -87,7 +87,7 @@ export default function ChannelsDashboardClient() {
 
   useEffect(() => {
     void loadData();
-  }, []);
+  }, [loadData]);
 
   const saveInbox = async () => {
     setSaving(true);
@@ -163,7 +163,9 @@ export default function ChannelsDashboardClient() {
           <h3 className="text-lg font-semibold">Connected Channels</h3>
           <p className="text-sm text-white/60">WhatsApp and Instagram DM inboxes (integration-ready).</p>
         </div>
-        <Button onClick={() => setConnectOpen(true)}>Connect channel</Button>
+        <Button onClick={() => setConnectOpen(true)} data-tutorial-target="channels-connect">
+          Connect channel
+        </Button>
       </Card>
 
       <div className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
@@ -265,7 +267,11 @@ export default function ChannelsDashboardClient() {
             <Button variant="outline" onClick={() => setConnectOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={saveInbox} disabled={saving || !connectForm.externalAccountId.trim()}>
+            <Button
+              onClick={saveInbox}
+              disabled={saving || !connectForm.externalAccountId.trim()}
+              data-tutorial-target="channels-save-connection"
+            >
               Save connection
             </Button>
           </>

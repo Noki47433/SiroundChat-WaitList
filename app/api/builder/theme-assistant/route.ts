@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getOpenAIClient } from "@/lib/ai/client";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
+import { DEFAULT_SITE_FONT, SITE_FONT_OPTIONS, getThemeFontValue } from "@/lib/website-builder/theme/fonts";
 
 export const runtime = "nodejs";
 
@@ -16,13 +17,6 @@ const ThemeSuggestionSchema = z.object({
   fontFamily: z.string().optional()
 });
 
-const FONT_OPTIONS = [
-  "Sora, Inter, system-ui, sans-serif",
-  "Manrope, Inter, system-ui, sans-serif",
-  '"Space Grotesk", Inter, system-ui, sans-serif',
-  '"Playfair Display", Inter, system-ui, sans-serif'
-];
-
 const normalizeHex = (value?: string | null) => {
   const raw = (value ?? "").trim().replace("#", "");
   if (raw.length === 3) {
@@ -36,12 +30,11 @@ const normalizeHex = (value?: string | null) => {
 };
 
 const normalizeFont = (value?: string | null, fallback?: string | null) => {
-  if (!value) return fallback ?? FONT_OPTIONS[0];
+  if (!value) return fallback ?? DEFAULT_SITE_FONT.themeValue;
   const lowered = value.toLowerCase();
-  const match = FONT_OPTIONS.find((font) => font.toLowerCase().includes(lowered.split(",")[0] ?? ""));
-  if (match) return match;
-  if (FONT_OPTIONS.some((font) => font === value)) return value;
-  return fallback ?? FONT_OPTIONS[0];
+  const match = SITE_FONT_OPTIONS.find((font) => font.label.toLowerCase().includes(lowered.split(",")[0] ?? ""));
+  if (match) return match.themeValue;
+  return SITE_FONT_OPTIONS.find((font) => font.themeValue === value)?.themeValue ?? fallback ?? DEFAULT_SITE_FONT.themeValue;
 };
 
 const pickPalette = (prompt: string, fallback: { primary: string; background: string; fontFamily: string }) => {
@@ -50,28 +43,28 @@ const pickPalette = (prompt: string, fallback: { primary: string; background: st
     return {
       primary: "#E07A5F",
       background: "#FFF4F0",
-      fontFamily: FONT_OPTIONS[0]
+      fontFamily: SITE_FONT_OPTIONS[0].themeValue
     };
   }
   if (lower.includes("luxury") || lower.includes("premium") || lower.includes("elegant")) {
     return {
       primary: "#C9B37E",
       background: "#0B0B0C",
-      fontFamily: FONT_OPTIONS[3]
+      fontFamily: SITE_FONT_OPTIONS.find((font) => font.id === "playfair")?.themeValue ?? DEFAULT_SITE_FONT.themeValue
     };
   }
   if (lower.includes("modern") || lower.includes("tech") || lower.includes("bold") || lower.includes("blue")) {
     return {
       primary: "#2563EB",
       background: "#EEF2FF",
-      fontFamily: FONT_OPTIONS[2]
+      fontFamily: SITE_FONT_OPTIONS.find((font) => font.id === "space-grotesk")?.themeValue ?? DEFAULT_SITE_FONT.themeValue
     };
   }
   if (lower.includes("minimal") || lower.includes("clean") || lower.includes("neutral")) {
     return {
       primary: "#111827",
       background: "#F9FAFB",
-      fontFamily: FONT_OPTIONS[1]
+      fontFamily: SITE_FONT_OPTIONS.find((font) => font.id === "manrope")?.themeValue ?? DEFAULT_SITE_FONT.themeValue
     };
   }
   return fallback;
@@ -99,7 +92,7 @@ export async function POST(request: Request) {
   const fallback = {
     primary: normalizeHex(theme.primary) ?? "#111827",
     background: normalizeHex(theme.bg ?? theme.background) ?? "#F3F4F6",
-    fontFamily: normalizeFont(theme.fontBody ?? theme.fontFamily ?? theme.fontHeading, FONT_OPTIONS[0])
+    fontFamily: getThemeFontValue(normalizeFont(theme.fontBody ?? theme.fontFamily ?? theme.fontHeading, DEFAULT_SITE_FONT.themeValue))
   };
 
   const openai = getOpenAIClient();
@@ -119,7 +112,7 @@ export async function POST(request: Request) {
             role: "user",
             content: [
               `Prompt: ${prompt}`,
-              `Allowed fonts: ${FONT_OPTIONS.join(" | ")}`,
+              `Allowed fonts: ${SITE_FONT_OPTIONS.map((font) => `${font.label} => ${font.themeValue}`).join(" | ")}`,
               `Current primary: ${fallback.primary}`,
               `Current background: ${fallback.background}`
             ].join("\n")

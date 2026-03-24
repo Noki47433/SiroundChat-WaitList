@@ -29,7 +29,7 @@ export function LeftRail() {
   const { setLeftTool, setLeftPanelOpen } = useEditorActions();
 
   return (
-    <aside className="relative flex w-[76px] flex-col items-center gap-2 border-r border-sc-border bg-[#f7f5f1] py-4 overflow-visible">
+    <aside className="relative flex w-[92px] shrink-0 flex-col items-center gap-3 border-r border-sc-border bg-[#faf7f2] px-3 py-5 overflow-visible">
       {TOOL_BUTTONS.map((tool) => {
         const Icon = tool.icon;
         const isActive = state.leftTool === tool.id && state.isLeftPanelOpen;
@@ -50,15 +50,18 @@ export function LeftRail() {
             title={tool.label}
           >
             <span
-              className={`flex h-10 w-10 items-center justify-center rounded-full border transition ${
-                isActive ? "border-[#5b6bff] shadow-sm" : "border-transparent"
+              className={`relative flex h-12 w-12 items-center justify-center rounded-[18px] border transition duration-200 ${
+                isActive
+                  ? "border-[#d9ceb8] bg-white shadow-[0_12px_30px_rgba(54,39,16,0.08)]"
+                  : "border-transparent bg-white/72 hover:border-[#e8dfcf] hover:bg-white"
               } ${tool.tone}`}
             >
               <Icon className="h-5 w-5" />
+              {isActive ? <span className="absolute -right-1 top-1/2 h-6 w-1 -translate-y-1/2 rounded-full bg-sc-yellow" /> : null}
             </span>
             <span
-              className={`pointer-events-none absolute left-12 whitespace-nowrap rounded-lg border border-[#e5e1d8] bg-white px-3 py-1 text-[11px] font-semibold text-neutral-700 shadow-sm ${
-                isActive ? "opacity-100" : "opacity-80"
+              className={`pointer-events-none absolute left-14 whitespace-nowrap rounded-xl border border-[#e5e1d8] bg-white px-3 py-1.5 text-[11px] font-semibold text-neutral-700 shadow-sm transition ${
+                isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100"
               }`}
             >
               {tool.label}

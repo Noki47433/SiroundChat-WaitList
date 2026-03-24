@@ -1,4 +1,11 @@
-export type WebsiteEventType = "page_view" | "cta_click" | "lead_submitted" | "chat_open" | "chat_started";
+export type WebsiteEventType =
+  | "page_view"
+  | "cta_click"
+  | "lead_submitted"
+  | "chat_open"
+  | "chat_started"
+  | "reservation_started"
+  | "reservation_completed";
 export type WebsiteEventChannel = "website" | "chatbot" | "form";
 export type WebsiteCtaType = "call" | "whatsapp" | "email" | "directions" | "booking" | "other";
 export type WebsiteLeadType = "form" | "chat";
@@ -130,6 +137,27 @@ export function trackLeadSubmitted(params: {
     channel: params.leadType === "chat" ? "chatbot" : "form",
     leadType: params.leadType,
     leadId: params.leadId ?? null,
+    referrer: params.referrer
+  });
+}
+
+export function trackReservationEvent(params: {
+  businessId?: string;
+  widgetKey?: string;
+  siteId?: string | null;
+  pagePath: string;
+  pageTitle?: string | null;
+  eventType: "reservation_started" | "reservation_completed";
+  referrer?: string | null;
+}) {
+  trackEvent({
+    businessId: params.businessId,
+    widgetKey: params.widgetKey,
+    siteId: params.siteId ?? null,
+    pagePath: params.pagePath,
+    pageTitle: params.pageTitle ?? null,
+    eventType: params.eventType,
+    channel: "form",
     referrer: params.referrer
   });
 }

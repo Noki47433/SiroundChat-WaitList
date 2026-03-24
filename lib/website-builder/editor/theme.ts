@@ -1,4 +1,5 @@
 import type { SiteThemeTokens } from "@/lib/website-builder/types";
+import { resolveThemeFontPair } from "@/lib/website-builder/theme/fonts";
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
@@ -62,44 +63,6 @@ const isNearWhite = (value: string) => {
   return r > 0.92 && g > 0.92 && b > 0.92;
 };
 
-const resolveFonts = (fontFamily?: string | null) => {
-  const pairs = [
-    {
-      label: "Sora + Inter",
-      value: "Sora, Inter, system-ui, sans-serif",
-      heading: "Sora, Inter, system-ui, sans-serif",
-      body: "Inter, system-ui, sans-serif"
-    },
-    {
-      label: "Manrope + Inter",
-      value: "Manrope, Inter, system-ui, sans-serif",
-      heading: "Manrope, Inter, system-ui, sans-serif",
-      body: "Inter, system-ui, sans-serif"
-    },
-    {
-      label: "Space Grotesk + Inter",
-      value: "\"Space Grotesk\", Inter, system-ui, sans-serif",
-      heading: "\"Space Grotesk\", Inter, system-ui, sans-serif",
-      body: "Inter, system-ui, sans-serif"
-    },
-    {
-      label: "Playfair Display + Inter",
-      value: "\"Playfair Display\", Inter, system-ui, sans-serif",
-      heading: "\"Playfair Display\", Inter, system-ui, sans-serif",
-      body: "Inter, system-ui, sans-serif"
-    }
-  ];
-
-  const match = pairs.find((pair) => pair.value === fontFamily);
-  if (match) return match;
-  return {
-    label: "Custom",
-    value: fontFamily ?? "Inter, system-ui, sans-serif",
-    heading: fontFamily ?? "Inter, system-ui, sans-serif",
-    body: fontFamily ?? "Inter, system-ui, sans-serif"
-  };
-};
-
 export const buildTheme = (
   primaryColor: string,
   backgroundColor: string,
@@ -113,7 +76,7 @@ export const buildTheme = (
   const surface = text === "#FFFFFF" ? mixColors(bg, "#111827", 0.35) : mixColors(bg, "#FFFFFF", 0.7);
   const border = text === "#FFFFFF" ? "rgba(255,255,255,0.14)" : "rgba(17,24,39,0.12)";
   const buttonText = getContrastText(primary);
-  const fonts = resolveFonts(fontFamily);
+  const fonts = resolveThemeFontPair(fontFamily);
 
   return {
     primary,

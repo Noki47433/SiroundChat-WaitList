@@ -86,7 +86,7 @@ export function LeadsList({ leads }: { leads: LeadRow[] }) {
           <PaywallGate
             entitlementKey="export_data"
             fallback={
-              <Link href="/dashboard/billing" className={buttonVariants({ variant: "secondary", size: "sm" })}>
+              <Link href="/billing" className={buttonVariants({ variant: "secondary", size: "sm" })}>
                 Upgrade to export CSV
               </Link>
             }
@@ -95,6 +95,7 @@ export function LeadsList({ leads }: { leads: LeadRow[] }) {
               type="button"
               className={buttonVariants({ variant: "secondary", size: "sm" })}
               onClick={exportCsv}
+              data-tutorial-target="leads-export"
             >
               <Download className="mr-2 h-4 w-4" />
               Export CSV
@@ -105,13 +106,14 @@ export function LeadsList({ leads }: { leads: LeadRow[] }) {
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search leads"
+              data-tutorial-target="leads-search"
             />
           </div>
         </div>
       </div>
 
       <div className="space-y-3">
-        {filteredLeads.map((lead) => {
+        {filteredLeads.map((lead, index) => {
           const email = lead.email?.trim() || "—";
           const phone = lead.phone?.trim() || "—";
           const conversationUrl = lead.conversation_id
@@ -134,6 +136,7 @@ export function LeadsList({ leads }: { leads: LeadRow[] }) {
                 <Link
                   href={conversationUrl}
                   className={buttonVariants({ variant: "secondary", size: "sm" })}
+                  data-tutorial-target={index === 0 ? "leads-open-conversation" : undefined}
                 >
                   View conversation →
                 </Link>

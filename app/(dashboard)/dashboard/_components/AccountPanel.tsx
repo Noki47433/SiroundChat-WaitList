@@ -77,7 +77,7 @@ export function AccountPanel({ initial }: { initial: AccountProfile }) {
             </Select>
           </label>
         </div>
-        <Button variant="primary" onClick={handleSave} disabled={saving}>
+        <Button variant="primary" onClick={handleSave} disabled={saving} data-tutorial-target="account-save">
           {saving ? "Saving..." : "Save changes"}
         </Button>
       </Card>

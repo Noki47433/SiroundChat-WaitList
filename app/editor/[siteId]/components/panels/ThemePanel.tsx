@@ -3,13 +3,7 @@
 import { useMemo } from "react";
 import { useEditorActions, useEditorState } from "@/lib/website-builder/editor/EditorProvider";
 import { buildTheme } from "@/lib/website-builder/editor/theme";
-
-const FONT_OPTIONS = [
-  "Sora, Inter, system-ui, sans-serif",
-  "Manrope, Inter, system-ui, sans-serif",
-  '"Space Grotesk", Inter, system-ui, sans-serif',
-  '"Playfair Display", Inter, system-ui, sans-serif'
-];
+import { DEFAULT_SITE_FONT, SITE_FONT_OPTIONS, getThemeFontValue } from "@/lib/website-builder/theme/fonts";
 
 export function ThemePanel() {
   const state = useEditorState();
@@ -17,9 +11,8 @@ export function ThemePanel() {
   const theme = state.document?.theme;
 
   const currentFont = useMemo(() => {
-    if (!theme) return FONT_OPTIONS[0];
-    const match = FONT_OPTIONS.find((font) => font === theme.fontBody || font === theme.fontHeading);
-    return match ?? theme.fontBody ?? theme.fontHeading ?? FONT_OPTIONS[0];
+    if (!theme) return DEFAULT_SITE_FONT.themeValue;
+    return getThemeFontValue(theme.fontBody ?? theme.fontHeading);
   }, [theme]);
 
   if (!theme) {
@@ -81,9 +74,9 @@ export function ThemePanel() {
           value={currentFont}
           onChange={(event) => applyTheme(theme.primary, theme.bg, event.target.value)}
         >
-          {FONT_OPTIONS.map((font) => (
-            <option key={font} value={font}>
-              {font.split(",")[0].replace(/\"/g, "")}
+          {SITE_FONT_OPTIONS.map((font) => (
+            <option key={font.id} value={font.themeValue}>
+              {font.label}
             </option>
           ))}
         </select>

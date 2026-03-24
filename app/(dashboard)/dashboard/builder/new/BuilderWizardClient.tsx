@@ -3,6 +3,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { TEMPLATE_META } from "@/lib/website-builder/templates/registry";
+import { markChecklistTaskComplete } from "@/app/(dashboard)/dashboard/_components/onboarding/state";
+import {
+  CONTENT_LANGUAGES,
+  CTA_GOALS,
+  QUALITY_MODES,
+  createEmptyGenerationBrief,
+  isGenerationBriefComplete,
+  normalizeContentLanguage,
+  normalizeGenerationBriefForForm,
+  normalizeQualityMode,
+  primaryGoalLabel,
+  sanitizeGenerationBrief,
+  type ContentLanguage,
+  type GenerationBriefData,
+  type QualityMode
+} from "@/lib/builder/generation-config";
 
 const INDUSTRY_OPTIONS = [
   "Restaurant",
@@ -56,6 +72,7 @@ type BuilderWizardClientProps = {
   initialBusinessName: string;
   initialIndustry: string | null;
   initialLogoUrl: string | null;
+  canAttachChatbotEmbed: boolean;
 };
 
 type DraftState = {
@@ -63,6 +80,9 @@ type DraftState = {
   industry: string;
   description: string;
   tone: ToneOption;
+  contentLanguage: ContentLanguage;
+  qualityMode: QualityMode;
+  generationBrief: GenerationBriefData;
   pagesMode: PagesMode;
   templateId: string;
   primaryColor: string;
@@ -82,6 +102,7 @@ type DraftState = {
   includeReservation: boolean;
   includeGallery: boolean;
   hasOwnPhotos: boolean;
+  chatbotEmbedSnippet: string;
 };
 
 const resolveToneDefault = (industryValue: string): ToneOption => {
@@ -384,11 +405,18 @@ const defaultState = (props: BuilderWizardClientProps): DraftState => {
   const normalized = normalizeIndustry(props.initialIndustry);
   const industryValue = props.initialIndustry ?? (normalized.custom || normalized.selected);
   const lowerIndustry = industryValue.toLowerCase();
+  const isClinicLike =
+    lowerIndustry.includes("clinic") ||
+    lowerIndustry.includes("dental") ||
+    lowerIndustry.includes("medical");
   return {
     businessName: props.initialBusinessName || "",
     industry: normalized.selected,
     description: "",
     tone: resolveToneDefault(industryValue),
+    contentLanguage: "en",
+    qualityMode: "balanced",
+    generationBrief: createEmptyGenerationBrief(resolveToneDefault(industryValue)),
     pagesMode: "one",
     templateId: "",
     primaryColor: "#111827",
@@ -406,11 +434,12 @@ const defaultState = (props: BuilderWizardClientProps): DraftState => {
       lowerIndustry.includes("agency") ||
       lowerIndustry.includes("corporate"),
     includePricing: lowerIndustry.includes("consulting"),
-    includeFaq: lowerIndustry.includes("clinic") || lowerIndustry.includes("service"),
+    includeFaq: !isClinicLike && lowerIndustry.includes("service"),
     includeContact: true,
     includeReservation: lowerIndustry.includes("restaurant"),
     includeGallery: false,
-    hasOwnPhotos: false
+    hasOwnPhotos: false,
+    chatbotEmbedSnippet: ""
   };
 };
 
@@ -418,7 +447,8 @@ export function BuilderWizardClient({
   businessId,
   initialBusinessName,
   initialIndustry,
-  initialLogoUrl
+  initialLogoUrl,
+  canAttachChatbotEmbed
 }: BuilderWizardClientProps) {
   const router = useRouter();
   const initialIndustryState = normalizeIndustry(initialIndustry);
@@ -429,7 +459,8 @@ export function BuilderWizardClient({
       businessId,
       initialBusinessName,
       initialIndustry,
-      initialLogoUrl
+      initialLogoUrl,
+      canAttachChatbotEmbed
     });
   }
   const [step, setStep] = useState(0);
@@ -476,17 +507,48 @@ export function BuilderWizardClient({
     return draft.industry.trim();
   }, [customIndustry, draft.industry]);
 
+  const updateBriefField = useCallback(
+    (key: keyof GenerationBriefData, value: string | string[]) => {
+      setDraft((prev) => ({
+        ...prev,
+        generationBrief: {
+          ...prev.generationBrief,
+          [key]: value
+        } as GenerationBriefData
+      }));
+    },
+    []
+  );
+
+  const updateBriefListItem = useCallback(
+    (key: "topServices" | "proofPoints", index: number, value: string) => {
+      setDraft((prev) => {
+        const nextList = [...prev.generationBrief[key]];
+        nextList[index] = value;
+        return {
+          ...prev,
+          generationBrief: {
+            ...prev.generationBrief,
+            [key]: nextList
+          }
+        };
+      });
+    },
+    []
+  );
+
   const canNext = useMemo(() => {
     if (step === 0) {
       return Boolean(
         draft.businessName.trim() &&
           resolvedIndustry &&
           draft.description.trim() &&
-          draft.tone
+          draft.tone &&
+          isGenerationBriefComplete(draft.generationBrief)
       );
     }
     return true;
-  }, [draft.businessName, draft.description, draft.tone, resolvedIndustry, step]);
+  }, [draft.businessName, draft.description, draft.generationBrief, draft.tone, resolvedIndustry, step]);
 
   const themeSuggestions = useMemo(() => getThemeSuggestions(draft.primaryColor), [draft.primaryColor]);
 
@@ -568,6 +630,8 @@ export function BuilderWizardClient({
           },
           openingHours: current.openingHours || null,
           socials: current.socials,
+          contentLanguage: current.contentLanguage,
+          generationBrief: sanitizeGenerationBrief(current.generationBrief, current.tone),
           features: {
             includeServices: current.includeServices,
             includeTestimonials: current.includeTestimonials,
@@ -606,6 +670,14 @@ export function BuilderWizardClient({
 
   useEffect(() => {
     let active = true;
+    const authRedirect = `/auth?next=${encodeURIComponent("/dashboard/builder/new")}`;
+
+    const resolveErrorMessage = (payload: any, fallback: string) => {
+      if (typeof payload?.error === "string" && payload.error.trim()) {
+        return payload.error.trim();
+      }
+      return fallback;
+    };
 
     const createDraft = async () => {
       const seed = initialDraftRef.current as DraftState;
@@ -622,6 +694,8 @@ export function BuilderWizardClient({
           industry: seedIndustry || "Service",
           description: seed.description || "Describe your business.",
           tone: seed.tone,
+          contentLanguage: seed.contentLanguage,
+          generationBrief: sanitizeGenerationBrief(seed.generationBrief, seed.tone),
           pagesMode: seed.pagesMode,
           templateId: seed.templateId,
           primaryColor: seed.primaryColor,
@@ -648,18 +722,62 @@ export function BuilderWizardClient({
         })
       });
 
+      const contentType = response.headers.get("content-type") ?? "";
+      const payload =
+        contentType.includes("application/json") ? await response.json().catch(() => null) : null;
+      if (
+        response.redirected &&
+        typeof response.url === "string" &&
+        response.url.includes("/auth")
+      ) {
+        window.location.href = authRedirect;
+        return;
+      }
+      if (!active) {
+        return;
+      }
       if (!response.ok) {
-        setError("Unable to create draft.");
+        if (response.status === 401 || response.status === 403) {
+          window.location.href = authRedirect;
+          return;
+        }
+
+        const message = resolveErrorMessage(payload, "Unable to create draft right now. Please try again.");
+        console.error("[BUILDER_DRAFT_CREATE_RESPONSE_ERROR]", {
+          status: response.status,
+          statusText: response.statusText,
+          payload
+        });
+        setError(message);
         return;
       }
 
-      const data = await response.json();
-      if (data?.siteId && active) {
-        setSiteId(data.siteId);
-        window.localStorage.setItem("builderDraftSiteId", data.siteId);
+      const data = payload;
+      const createdSiteId =
+        typeof data?.siteId === "string"
+          ? data.siteId
+          : typeof data?.id === "string"
+            ? data.id
+            : typeof data?.site?.id === "string"
+              ? data.site.id
+              : null;
+
+      if (createdSiteId) {
+        if (!active) {
+          return;
+        }
+        setSiteId(createdSiteId);
+        window.localStorage.setItem("builderDraftSiteId", createdSiteId);
         hasLoadedDraft.current = true;
         setDraftLoaded(true);
+        return;
       }
+
+      if (!active) {
+        return;
+      }
+      console.error("[BUILDER_DRAFT_CREATE_MISSING_SITE_ID]", { payload: data });
+      setError("Draft created with an unexpected response. Please refresh and try again.");
     };
 
     const hydrateDraft = async () => {
@@ -671,45 +789,74 @@ export function BuilderWizardClient({
         if (!isValidUuid) {
           window.localStorage.removeItem("builderDraftSiteId");
         } else {
-        const response = await fetch(`/api/builder/site?siteId=${existingId}`);
-        if (response.ok) {
-          const data = await response.json();
-          if (data?.id && active) {
-            const normalized = normalizeIndustry(data.industry ?? "");
-            setCustomIndustry(normalized.custom);
-            setSiteId(data.id);
-            setDraft((prev) => ({
-              ...prev,
-              businessName: data.business_name ?? prev.businessName,
-              industry: normalized.selected,
-              description: data.description ?? prev.description,
-              tone: data.tone ?? prev.tone,
-              pagesMode: data.pages_mode ?? prev.pagesMode,
-              templateId: data.template_id ?? prev.templateId,
-              primaryColor: data.primary_color ?? prev.primaryColor,
-              secondaryColor: data.secondary_color ?? prev.secondaryColor,
-              fontFamily: data.font_family ?? prev.fontFamily,
-              logoUrl: data.logo_url ?? prev.logoUrl,
-              contactEmail: data.contact_email ?? prev.contactEmail,
-              contactPhone: data.contact_phone ?? prev.contactPhone,
-              contactAddress: data.contact_address ?? prev.contactAddress,
-              openingHours: data.opening_hours ?? prev.openingHours,
-              socials: data.socials ?? prev.socials,
-              includeServices: Boolean(data.include_services ?? prev.includeServices),
-              includeTestimonials: Boolean(data.include_testimonials ?? prev.includeTestimonials),
-              includePricing: Boolean(data.include_pricing ?? prev.includePricing),
-              includeFaq: Boolean(data.include_faq ?? prev.includeFaq),
-              includeContact: Boolean(data.include_contact ?? prev.includeContact),
-              includeReservation: Boolean(data.include_reservation ?? prev.includeReservation),
-              includeGallery: Boolean(data.include_gallery ?? prev.includeGallery),
-              hasOwnPhotos: Boolean(data.has_own_photos ?? prev.hasOwnPhotos)
-            }));
-            hasLoadedDraft.current = true;
-            setDraftLoaded(true);
+          const response = await fetch(`/api/builder/site?siteId=${existingId}`);
+          const contentType = response.headers.get("content-type") ?? "";
+          const payload =
+            contentType.includes("application/json") ? await response.json().catch(() => null) : null;
+          if (
+            response.redirected &&
+            typeof response.url === "string" &&
+            response.url.includes("/auth")
+          ) {
+            window.location.href = authRedirect;
             return;
           }
-        }
-        window.localStorage.removeItem("builderDraftSiteId");
+          if (response.status === 401 || response.status === 403) {
+            window.location.href = authRedirect;
+            return;
+          }
+          if (!active) {
+            return;
+          }
+          if (response.ok) {
+            const data = payload;
+            if (data?.id && active) {
+              const normalized = normalizeIndustry(data.industry ?? "");
+              setCustomIndustry(normalized.custom);
+              setSiteId(data.id);
+              setDraft((prev) => ({
+                ...prev,
+                businessName: data.business_name ?? prev.businessName,
+                industry: normalized.selected,
+                description: data.description ?? prev.description,
+                tone: data.tone ?? prev.tone,
+                contentLanguage: normalizeContentLanguage(data.content_language ?? prev.contentLanguage),
+                qualityMode: normalizeQualityMode(prev.qualityMode),
+                generationBrief: normalizeGenerationBriefForForm(
+                  data.generation_brief,
+                  data.tone ?? prev.tone
+                ),
+                pagesMode: data.pages_mode ?? prev.pagesMode,
+                templateId: data.template_id ?? prev.templateId,
+                primaryColor: data.primary_color ?? prev.primaryColor,
+                secondaryColor: data.secondary_color ?? prev.secondaryColor,
+                fontFamily: data.font_family ?? prev.fontFamily,
+                logoUrl: data.logo_url ?? prev.logoUrl,
+                contactEmail: data.contact_email ?? prev.contactEmail,
+                contactPhone: data.contact_phone ?? prev.contactPhone,
+                contactAddress: data.contact_address ?? prev.contactAddress,
+                openingHours: data.opening_hours ?? prev.openingHours,
+                socials: data.socials ?? prev.socials,
+                includeServices: Boolean(data.include_services ?? prev.includeServices),
+                includeTestimonials: Boolean(data.include_testimonials ?? prev.includeTestimonials),
+                includePricing: Boolean(data.include_pricing ?? prev.includePricing),
+                includeFaq: Boolean(data.include_faq ?? prev.includeFaq),
+                includeContact: Boolean(data.include_contact ?? prev.includeContact),
+                includeReservation: Boolean(data.include_reservation ?? prev.includeReservation),
+                includeGallery: Boolean(data.include_gallery ?? prev.includeGallery),
+                hasOwnPhotos: Boolean(data.has_own_photos ?? prev.hasOwnPhotos)
+              }));
+              hasLoadedDraft.current = true;
+              setDraftLoaded(true);
+              return;
+            }
+          }
+          console.error("[BUILDER_DRAFT_HYDRATE_ERROR]", {
+            status: response.status,
+            statusText: response.statusText,
+            payload
+          });
+          window.localStorage.removeItem("builderDraftSiteId");
         }
       }
 
@@ -794,6 +941,10 @@ export function BuilderWizardClient({
 
   const handleGenerate = async () => {
     if (!siteId) return;
+    if (!isGenerationBriefComplete(draft.generationBrief)) {
+      setError("Add audience, core offer, and at least three top services before generating.");
+      return;
+    }
     const resolvedTemplateId = draft.templateId || autoPickTemplateId(resolvedIndustry);
     if (!resolvedTemplateId) {
       setError("Select a template to continue.");
@@ -815,6 +966,9 @@ export function BuilderWizardClient({
         industry: resolvedIndustry,
         description: draft.description,
         tone: draft.tone,
+        language: draft.contentLanguage,
+        qualityMode: draft.qualityMode,
+        brief: sanitizeGenerationBrief(draft.generationBrief, draft.tone),
         pagesMode: draft.pagesMode,
         templateId: resolvedTemplateId,
         primaryColor: draft.primaryColor,
@@ -828,6 +982,13 @@ export function BuilderWizardClient({
         },
         openingHours: draft.openingHours || null,
         socials: draft.socials,
+        targetCustomer: draft.generationBrief.audience,
+        services: draft.generationBrief.topServices.filter(Boolean),
+        proofAssets: draft.generationBrief.proofPoints.filter(Boolean),
+        chatbotEmbedSnippet:
+          canAttachChatbotEmbed && draft.chatbotEmbedSnippet.trim()
+            ? draft.chatbotEmbedSnippet.trim()
+            : undefined,
         features: {
           includeServices: draft.includeServices,
           includeTestimonials: draft.includeTestimonials,
@@ -842,6 +1003,7 @@ export function BuilderWizardClient({
 
       window.localStorage.setItem(`sc_generation_brief:${siteId}`, JSON.stringify(payload));
       window.localStorage.removeItem("builderDraftSiteId");
+      markChecklistTaskComplete("create_website", true);
       router.push(`/editor/${siteId}/generate`);
     } catch (generateError) {
       console.error("[BUILDER_GENERATE_ERROR]", generateError);
@@ -928,6 +1090,49 @@ export function BuilderWizardClient({
                           placeholder="Describe your site or business in a few sentences."
                         />
                       </label>
+                      <div className="grid gap-6 md:grid-cols-2">
+                        <label className="space-y-2 text-sm font-semibold text-neutral-700">
+                          Content language
+                          <select
+                            className={inputClass}
+                            value={draft.contentLanguage}
+                            onChange={(event) =>
+                              setDraft((prev) => ({
+                                ...prev,
+                                contentLanguage: normalizeContentLanguage(event.target.value)
+                              }))
+                            }
+                          >
+                            {CONTENT_LANGUAGES.map((language) => (
+                              <option key={language.value} value={language.value}>
+                                {language.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <div className="space-y-2 text-sm font-semibold text-neutral-700">
+                          <span>Quality mode</span>
+                          <div className="flex flex-wrap gap-2">
+                            {QUALITY_MODES.map((mode) => (
+                              <button
+                                key={mode}
+                                type="button"
+                                onClick={() =>
+                                  setDraft((prev) => ({
+                                    ...prev,
+                                    qualityMode: normalizeQualityMode(mode)
+                                  }))
+                                }
+                                className={`${pillBase} ${
+                                  draft.qualityMode === mode ? pillActive : pillInactive
+                                }`}
+                              >
+                                {mode}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
                       <div className="flex flex-wrap gap-2">
                         {INDUSTRY_SUGGESTIONS.map((label) => (
                           <button
@@ -1000,7 +1205,16 @@ export function BuilderWizardClient({
                             <button
                               key={option.value}
                               type="button"
-                              onClick={() => setDraft((prev) => ({ ...prev, tone: option.value }))}
+                              onClick={() =>
+                                setDraft((prev) => ({
+                                  ...prev,
+                                  tone: option.value,
+                                  generationBrief: {
+                                    ...prev.generationBrief,
+                                    tone: option.value
+                                  }
+                                }))
+                              }
                               className={`${pillBase} ${
                                 draft.tone === option.value ? pillActive : pillInactive
                               }`}
@@ -1009,6 +1223,114 @@ export function BuilderWizardClient({
                             </button>
                           ))}
                         </div>
+                      </div>
+
+                      <div className="space-y-4 rounded-[24px] border border-[#e5e1d8] bg-[#faf9f6] p-5">
+                        <div className="space-y-1">
+                          <p className="text-sm font-semibold text-neutral-800">Generation brief</p>
+                          <p className="text-sm text-neutral-500">
+                            This is the input the generator will use to write non-generic copy.
+                          </p>
+                        </div>
+                        <div className="grid gap-6 md:grid-cols-2">
+                          <label className="space-y-2 text-sm font-semibold text-neutral-700">
+                            Audience
+                            <input
+                              className={inputClass}
+                              value={draft.generationBrief.audience}
+                              onChange={(event) => updateBriefField("audience", event.target.value)}
+                              placeholder="Busy professionals, local families, wedding clients..."
+                            />
+                          </label>
+                          <label className="space-y-2 text-sm font-semibold text-neutral-700">
+                            Core offer
+                            <input
+                              className={inputClass}
+                              value={draft.generationBrief.coreOffer}
+                              onChange={(event) => updateBriefField("coreOffer", event.target.value)}
+                              placeholder="Modern barbering, beard grooming, walk-in cuts..."
+                            />
+                          </label>
+                        </div>
+                        <div className="grid gap-6 md:grid-cols-2">
+                          <label className="space-y-2 text-sm font-semibold text-neutral-700">
+                            Primary CTA goal
+                            <select
+                              className={inputClass}
+                              value={draft.generationBrief.primaryCtaGoal}
+                              onChange={(event) =>
+                                updateBriefField(
+                                  "primaryCtaGoal",
+                                  event.target.value as GenerationBriefData["primaryCtaGoal"]
+                                )
+                              }
+                            >
+                              {CTA_GOALS.map((goal) => (
+                                <option key={goal} value={goal}>
+                                  {primaryGoalLabel(goal)}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="space-y-2 text-sm font-semibold text-neutral-700">
+                            Brief tone
+                            <input
+                              className={inputClass}
+                              value={draft.generationBrief.tone}
+                              onChange={(event) => updateBriefField("tone", event.target.value)}
+                              placeholder="Confident, warm, premium, direct..."
+                            />
+                          </label>
+                        </div>
+                        <div className="grid gap-3 md:grid-cols-3">
+                          {draft.generationBrief.topServices.map((service, index) => (
+                            <label
+                              key={`top-service-${index}`}
+                              className="space-y-2 text-sm font-semibold text-neutral-700"
+                            >
+                              Top service {index + 1}
+                              <input
+                                className={inputClass}
+                                value={service}
+                                onChange={(event) =>
+                                  updateBriefListItem("topServices", index, event.target.value)
+                                }
+                                placeholder={
+                                  index === 0 ? "Skin fades" : index === 1 ? "Beard shaping" : "Hot towel shave"
+                                }
+                              />
+                            </label>
+                          ))}
+                        </div>
+                        <div className="grid gap-3 md:grid-cols-3">
+                          {draft.generationBrief.proofPoints.map((point, index) => (
+                            <label
+                              key={`proof-point-${index}`}
+                              className="space-y-2 text-sm font-semibold text-neutral-700"
+                            >
+                              Proof point {index + 1}
+                              <input
+                                className={inputClass}
+                                value={point}
+                                onChange={(event) =>
+                                  updateBriefListItem("proofPoints", index, event.target.value)
+                                }
+                                placeholder={
+                                  index === 0
+                                    ? "Open 7 days"
+                                    : index === 1
+                                      ? "Same-day appointments"
+                                      : "5-star local reviews"
+                                }
+                              />
+                            </label>
+                          ))}
+                        </div>
+                        {!isGenerationBriefComplete(draft.generationBrief) ? (
+                          <p className="text-sm text-amber-600">
+                            Add audience, core offer, and at least three specific services before continuing.
+                          </p>
+                        ) : null}
                       </div>
                     </div>
                   ) : null}
@@ -1201,6 +1523,27 @@ export function BuilderWizardClient({
                           })}
                         </div>
                       </div>
+
+                      {canAttachChatbotEmbed ? (
+                        <label className="space-y-2 text-sm font-semibold text-neutral-700">
+                          Paste Embed Snippet
+                          <textarea
+                            className={textareaClass}
+                            rows={4}
+                            value={draft.chatbotEmbedSnippet}
+                            onChange={(event) =>
+                              setDraft((prev) => ({
+                                ...prev,
+                                chatbotEmbedSnippet: event.target.value
+                              }))
+                            }
+                            placeholder='<script src="https://siroundchat.com/api/widget/loader?key=..." async></script>'
+                          />
+                          <p className="text-xs font-normal text-neutral-500">
+                            Paste the chatbot embed snippet here and it will be added to the generated website.
+                          </p>
+                        </label>
+                      ) : null}
                     </div>
                   ) : null}
 
@@ -1410,6 +1753,9 @@ export function BuilderWizardClient({
                           <p>Business: {draft.businessName}</p>
                           <p>Industry: {resolvedIndustry}</p>
                           <p>Tone: {draft.tone}</p>
+                          <p>Language: {CONTENT_LANGUAGES.find((item) => item.value === draft.contentLanguage)?.label ?? draft.contentLanguage}</p>
+                          <p>Quality mode: {draft.qualityMode}</p>
+                          <p>Primary CTA: {primaryGoalLabel(draft.generationBrief.primaryCtaGoal)}</p>
                           <p>Pages: {draft.pagesMode === "one" ? "One-page" : "Multi-page"}</p>
                           <p>Template: {draft.templateId || "Auto-pick on generate"}</p>
                         </div>
@@ -1463,7 +1809,11 @@ export function BuilderWizardClient({
                   }
                 }}
                 className="rounded-full bg-neutral-900 px-5 py-2 text-sm font-semibold text-white disabled:opacity-50"
-                disabled={!draftLoaded || (isLastStep ? loading : !canNext)}
+                disabled={
+                  !draftLoaded ||
+                  (isLastStep ? loading || !isGenerationBriefComplete(draft.generationBrief) : !canNext)
+                }
+                data-tutorial-target={isLastStep ? "builder-generate-website" : undefined}
               >
                 {isLastStep ? (loading ? "Generating..." : "Generate website") : "Continue"}
               </button>

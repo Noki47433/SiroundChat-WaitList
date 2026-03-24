@@ -58,7 +58,7 @@ export async function requireAdmin(redirectTo = "/admin") {
     .maybeSingle();
 
   if (!profile || profile.role !== "admin") {
-    redirect("/");
+    redirect("/403");
   }
 
   return {

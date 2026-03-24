@@ -1,0 +1,140 @@
+{
+  "version": "1.0",
+  "meta": {
+    "locale": "en-GB",
+    "vertical": "saas",
+    "siteType": "saas",
+    "primaryGoal": "request_demo",
+    "brandName": "Acme Cloud",
+    "pageTitle": "Acme Cloud | Demo",
+    "pageDescription": "Acme Cloud helps product teams ship faster with clear workflows."
+  },
+  "theme": {
+    "mode": "light",
+    "tone": "technical",
+    "density": "normal",
+    "radius": "md",
+    "accent": "blue",
+    "font": "sans"
+  },
+  "cta": {
+    "primary": {
+      "label": "Request Demo",
+      "href": "/demo",
+      "style": "primary"
+    },
+    "secondary": {
+      "label": "View details",
+      "href": "/#features",
+      "style": "ghost"
+    }
+  },
+  "sections": [
+    {
+      "id": "sec-header-01",
+      "type": "header",
+      "variant": "simple",
+      "props": { "sticky": true },
+      "copy": {
+        "links": [
+          { "label": "Features", "href": "/#features" },
+          { "label": "Pricing", "href": "/#pricing" }
+        ]
+      },
+      "media": [],
+      "ctas": []
+    },
+    {
+      "id": "sec-hero-02",
+      "type": "hero",
+      "variant": "split",
+      "props": { "hasMockup": true },
+      "copy": {
+        "headline": "Acme Cloud for high-output SaaS teams",
+        "subheadline": "Coordinate product, support, and customer success in one shared workspace with clear ownership.",
+        "badge": "SaaS",
+        "primaryCtaLabel": "Request Demo",
+        "secondaryCtaLabel": "See details"
+      },
+      "media": [
+        {
+          "role": "hero",
+          "source": "user",
+          "aspectRatio": "16:9",
+          "src": "https://images.pexels.com/photos/3183183/pexels-photo-3183183.jpeg",
+          "alt": "Acme Cloud SaaS hero team photo"
+        }
+      ],
+      "ctas": [
+        { "intent": "primary", "label": "Request Demo", "href": "/demo", "style": "primary" },
+        { "intent": "secondary", "label": "See details", "href": "/#features", "style": "secondary" }
+      ]
+    },
+    {
+      "id": "sec-features-03",
+      "type": "features",
+      "variant": "grid3",
+      "props": { "columns": 3 },
+      "copy": {
+        "title": "Core capabilities",
+        "items": [
+          {
+            "title": "Team Visibility",
+            "description": "Track roadmap updates, blockers, and handoffs across teams in one shared dashboard."
+          },
+          {
+            "title": "Faster Handoffs",
+            "description": "Keep product, success, and support aligned with clear context across every workflow stage."
+          },
+          {
+            "title": "Actionable Reporting",
+            "description": "Monitor trends and spot risks early with practical reports your team can act on."
+          }
+        ]
+      },
+      "media": [],
+      "ctas": []
+    },
+    {
+      "id": "sec-cta-banner-04",
+      "type": "cta_banner",
+      "variant": "simple",
+      "props": {},
+      "copy": {
+        "title": "Scale your go-to-market team",
+        "subtitle": "Request a walkthrough and see how Acme Cloud fits your product operations.",
+        "ctaLabel": "Request Demo"
+      },
+      "media": [],
+      "ctas": [
+        { "intent": "primary", "label": "Request Demo", "href": "/demo", "style": "primary" }
+      ]
+    },
+    {
+      "id": "sec-footer-05",
+      "type": "footer",
+      "variant": "simple",
+      "props": {},
+      "copy": {
+        "columns": [
+          {
+            "title": "Product",
+            "links": [
+              { "label": "Features", "href": "/#features" },
+              { "label": "Pricing", "href": "/#pricing" }
+            ]
+          },
+          {
+            "title": "Company",
+            "links": [
+              { "label": "Contact", "href": "/contact" },
+              { "label": "About", "href": "/about" }
+            ]
+          }
+        ]
+      },
+      "media": [],
+      "ctas": []
+    }
+  ]
+}

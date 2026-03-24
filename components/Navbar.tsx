@@ -6,11 +6,10 @@ import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 
 const navLinks = [
-  { label: "Features", href: "#features" },
-  { label: "Use cases", href: "#use-cases" },
-  { label: "Pricing", href: "#pricing" },
-  { label: "Developers", href: "#developers" },
-  { label: "Docs", href: "#docs" }
+  { label: "Website Builder", href: "#website-builder" },
+  { label: "Chatbot", href: "#chatbot" },
+  { label: "Business Value", href: "#business-value" },
+  { label: "Statistics", href: "#statistics" }
 ];
 
 type NavbarProps = {

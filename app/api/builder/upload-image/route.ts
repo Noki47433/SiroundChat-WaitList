@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { BUILDER_ASSETS_BUCKET } from "@/lib/builder/storage";
+import { getOwnedBuilderSite } from "@/lib/builder/site-access";
 
 export const runtime = "nodejs";
 
@@ -78,13 +79,13 @@ export async function POST(request: Request) {
   }
 
   // ---- Confirm site exists & user can access it (RLS via route client) ----
-  const { data: site, error: siteError } = await (supabase as any)
-    .from("builder_sites")
-    .select("id,business_id")
-    .eq("id", siteId)
-    .maybeSingle();
+  const site = await getOwnedBuilderSite<{ id: string; business_id: string }>(
+    siteId,
+    userData.user.id,
+    "id,business_id"
+  );
 
-  if (siteError || !site) {
+  if (!site) {
     return NextResponse.json({ error: "Site not found" }, { status: 404 });
   }
 

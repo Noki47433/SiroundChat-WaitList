@@ -1,11 +1,13 @@
 import { getOpenAIClient } from "@/lib/ai/client";
 import { log } from "@/lib/utils/log";
 import { SiteContentSchema, type SectionKey, type SiteContent } from "@/lib/builder/types";
+import type { GenerationBriefData } from "@/lib/builder/generation-config";
 
 type GenerationInput = {
   businessName: string;
   industry: string;
   description: string;
+  brief?: GenerationBriefData;
   primaryColor?: string | null;
   logoUrl?: string | null;
   contact?: {
@@ -41,6 +43,8 @@ const buildPrompt = (input: GenerationInput) => {
   const includeReservation = Boolean(input.features?.includeReservation);
   const includeGallery = Boolean(input.features?.includeGallery);
   const includeMenu = Boolean(input.features?.includeMenu);
+  const topServices = input.brief?.topServices?.filter(Boolean) ?? [];
+  const proofPoints = input.brief?.proofPoints?.filter(Boolean) ?? [];
 
   return [
     "Generate website content in JSON only.",
@@ -56,6 +60,10 @@ const buildPrompt = (input: GenerationInput) => {
     `businessName: ${input.businessName}`,
     `industry: ${input.industry}`,
     `description: ${input.description}`,
+    input.brief?.audience ? `audience: ${input.brief.audience}` : null,
+    input.brief?.coreOffer ? `coreOffer: ${input.brief.coreOffer}` : null,
+    topServices.length ? `topServices: ${topServices.join(", ")}` : null,
+    proofPoints.length ? `proofPoints: ${proofPoints.join(", ")}` : null,
     `primaryColor: ${input.primaryColor ?? ""}`,
     `logoUrl: ${input.logoUrl ?? ""}`,
     `contactEmail: ${input.contact?.email ?? ""}`,
@@ -101,36 +109,54 @@ export const buildFallbackContent = (input: GenerationInput): SiteContent => {
   const includeReservation = Boolean(input.features?.includeReservation);
   const includeGallery = Boolean(input.features?.includeGallery);
   const includeMenu = Boolean(input.features?.includeMenu);
-  const shortDescription = input.description || `Trusted ${input.industry} services.`;
+  const topServices = input.brief?.topServices?.filter(Boolean) ?? [];
+  const proofPoints = input.brief?.proofPoints?.filter(Boolean) ?? [];
+  const audience = input.brief?.audience?.trim();
+  const coreOffer = input.brief?.coreOffer?.trim();
+  const shortDescription =
+    input.description ||
+    coreOffer ||
+    `Trusted ${input.industry} services.`;
+  const serviceItems = topServices.length
+    ? topServices.slice(0, 3).map((service, index) => ({
+        title: service,
+        body:
+          proofPoints[index] ??
+          `Clear, reliable ${service.toLowerCase()} delivered by ${input.businessName}.`
+      }))
+    : [
+        {
+          title: "Signature service",
+          body: `Purpose-built ${input.industry.toLowerCase()} solutions tailored to your goals.`
+        },
+        {
+          title: "Personalized support",
+          body: "Clear guidance, fast response times, and a steady hand from start to finish."
+        },
+        {
+          title: "Ongoing care",
+          body: "We stay involved after launch to keep everything running smoothly."
+        }
+      ];
 
   return normalizeFeatures(
     {
       hero: {
-        headline: `${input.businessName} ${input.industry}`,
-        subheadline: shortDescription,
-        ctaLabel: "Get in touch",
+        headline: coreOffer ? `${input.businessName} for ${audience || input.industry}` : `${input.businessName} ${input.industry}`,
+        subheadline: audience ? `${shortDescription} Built for ${audience}.` : shortDescription,
+        ctaLabel: includeReservation ? "Book now" : "Get in touch",
         ctaHref: "#contact"
       },
       about: {
         title: `About ${input.businessName}`,
-        body: `${input.businessName} delivers dependable ${input.industry.toLowerCase()} support with a focus on quality and consistency.`
+        body:
+          coreOffer
+            ? `${input.businessName} provides ${coreOffer.toLowerCase()} with a focus on quality, speed, and a smoother customer experience.`
+            : `${input.businessName} delivers dependable ${input.industry.toLowerCase()} support with a focus on quality and consistency.`
       },
       services: {
         title: "Services",
-        items: [
-          {
-            title: "Signature service",
-            body: `Purpose-built ${input.industry.toLowerCase()} solutions tailored to your goals.`
-          },
-          {
-            title: "Personalized support",
-            body: "Clear guidance, fast response times, and a steady hand from start to finish."
-          },
-          {
-            title: "Ongoing care",
-            body: "We stay involved after launch to keep everything running smoothly."
-          }
-        ]
+        items: serviceItems
       },
       gallery: includeGallery
         ? {
@@ -182,7 +208,10 @@ export const buildFallbackContent = (input: GenerationInput): SiteContent => {
         : undefined,
       contact: {
         title: "Contact",
-        body: "Tell us what you need and we will follow up quickly.",
+        body:
+          audience && coreOffer
+            ? `Tell us what you need help with and we will follow up with the right ${coreOffer.toLowerCase()} option for ${audience}.`
+            : "Tell us what you need and we will follow up quickly.",
         email: input.contact?.email ?? undefined,
         phone: input.contact?.phone ?? undefined,
         address: input.contact?.address ?? undefined

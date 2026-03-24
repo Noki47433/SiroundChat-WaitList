@@ -80,12 +80,44 @@ export interface Page {
 
 export type ConversationSender = "user" | "ai" | "assistant" | "agent" | "owner";
 
+export type ChatMessageAction =
+  | {
+      type: "quick_reply";
+      label: string;
+      value: string;
+    }
+  | {
+      type: "show_offer";
+      offerId?: string;
+      title: string;
+      description: string;
+      price?: string | null;
+      cta?: string;
+      value?: string;
+    }
+  | {
+      type: "show_recommendations";
+      items: Array<{
+        id: string;
+        name: string;
+        description: string | null;
+        price: number | null;
+        reason: string;
+      }>;
+    }
+  | {
+      type: "ask_qualification_question";
+      field: "budget_range" | "urgency" | "decision_maker";
+      question: string;
+    };
+
 export interface ChatMessage {
   id: string;
   conversationId: string;
   sender: ConversationSender;
   text: string;
   createdAt: string;
+  actions?: ChatMessageAction[];
 }
 
 export interface Lead {

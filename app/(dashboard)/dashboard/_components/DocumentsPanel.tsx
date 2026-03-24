@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/components/ui/toast";
 import type { DocumentItem } from "@/lib/types";
 import { deleteDocument, getDocuments, retrainDocument, updateDocumentStatus, uploadDocuments } from "@/lib/api";
+import { markChecklistTaskComplete } from "@/app/(dashboard)/dashboard/_components/onboarding/state";
 
 const formatBytes = (bytes: number) => {
   if (!bytes || bytes <= 0) return "0 KB";
@@ -98,6 +99,7 @@ export function DocumentsPanel({ initialDocuments }: { initialDocuments: Documen
     );
     updateDocumentStatus(id, update.status);
     if (update.status === "ready") {
+      markChecklistTaskComplete("train_documents", true);
       push({ title: "Retraining complete", message: "Document is ready.", variant: "success" });
     }
   };
@@ -123,6 +125,7 @@ export function DocumentsPanel({ initialDocuments }: { initialDocuments: Documen
             variant="secondary"
             onClick={() => inputRef.current?.click()}
             disabled={uploading}
+            data-tutorial-target="documents-select-files"
           >
             {uploading ? "Uploading..." : "Select files"}
           </Button>
@@ -161,7 +164,12 @@ export function DocumentsPanel({ initialDocuments }: { initialDocuments: Documen
               </div>
               <div className="flex flex-wrap items-center gap-3">
                 <Badge variant={doc.status === "ready" ? "success" : "warning"}>{doc.status}</Badge>
-                <Button variant="outline" size="sm" onClick={() => handleRetrain(doc.id)}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleRetrain(doc.id)}
+                  data-tutorial-target="documents-retrain"
+                >
                   Re-train
                 </Button>
                 <Button variant="danger" size="sm" onClick={() => handleDelete(doc.id)}>

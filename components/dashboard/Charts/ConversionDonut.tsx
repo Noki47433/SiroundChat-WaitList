@@ -21,6 +21,10 @@ const tooltipStyle = {
   color: "#E2E8F0",
   fontSize: 12
 };
+const tooltipTextStyle = {
+  color: "#F8FAFC",
+  fontSize: 12
+};
 
 export function ConversionDonut({ segments }: ConversionDonutProps) {
   const safeSegments = segments ?? [];
@@ -32,7 +36,12 @@ export function ConversionDonut({ segments }: ConversionDonutProps) {
       <SafeChartContainer className={`h-52 ${hasData ? "" : "opacity-0"}`}>
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
-            <Tooltip contentStyle={tooltipStyle} formatter={(value) => [value, "Count"]} />
+            <Tooltip
+              contentStyle={tooltipStyle}
+              labelStyle={tooltipTextStyle}
+              itemStyle={tooltipTextStyle}
+              formatter={(value) => [String(value), "Count"]}
+            />
             <Pie
               data={safeSegments}
               dataKey="value"

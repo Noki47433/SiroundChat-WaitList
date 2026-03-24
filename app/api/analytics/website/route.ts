@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
-import { getTenantFromSession } from "@/lib/utils/tenant";
 import { isAuthDisabled } from "@/lib/config/auth";
+import { getSupabaseAdminClient } from "@/lib/supabase/admin";
+import { listOwnedBusinessIds } from "@/lib/builder/site-access";
 
 export const runtime = "nodejs";
 
@@ -79,9 +80,6 @@ type WebsiteEventRow = {
   country_code: string | null;
   occurred_at: string | null;
 };
-
-const cache = new Map<string, { expiresAt: number; data: WebsiteAnalyticsResponse }>();
-const CACHE_TTL_MS = 60 * 1000;
 
 const hashString = (value: string) => {
   let hash = 0;
@@ -453,7 +451,6 @@ export async function GET(request: Request) {
   const rangeParam = url.searchParams.get("range") ?? "7d";
   const modeParam = url.searchParams.get("mode") ?? "visitors";
   const siteParam = url.searchParams.get("siteId") ?? undefined;
-
   const rangeParsed = RangeSchema.safeParse(rangeParam);
   const modeParsed = MapModeSchema.safeParse(modeParam);
 
@@ -464,7 +461,8 @@ export async function GET(request: Request) {
 
   const demoEnabled =
     process.env.NODE_ENV === "development" &&
-    (process.env.NEXT_PUBLIC_ANALYTICS_DEMO === "1" || url.searchParams.get("demo") === "1");
+    process.env.NEXT_PUBLIC_ANALYTICS_DEMO === "1" &&
+    url.searchParams.get("demo") === "1";
 
   if (isAuthDisabled()) {
     return NextResponse.json(buildDemoResponse("demo", range, mode));
@@ -479,24 +477,16 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const tenant = await getTenantFromSession();
-  if (!tenant.businessId) {
+  const ownedBusinessIds = await listOwnedBusinessIds(user.id);
+  if (!ownedBusinessIds.length) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const cacheKey = `${tenant.businessId}:${siteId ?? "all"}:${range}:${mode}:${demoEnabled ? "demo" : "live"}`;
-  const cached = cache.get(cacheKey);
-  if (cached && cached.expiresAt > Date.now()) {
-    return NextResponse.json(cached.data);
-  }
-
   if (demoEnabled) {
-    const data = buildDemoResponse(tenant.businessId, range, mode);
-    cache.set(cacheKey, { data, expiresAt: Date.now() + CACHE_TTL_MS });
-    return NextResponse.json(data);
+    return NextResponse.json(buildDemoResponse(ownedBusinessIds[0], range, mode));
   }
 
-  const db = supabase as any;
+  const db = getSupabaseAdminClient() as any;
   const days = RANGE_DAYS[range];
   const now = new Date();
   const start = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
@@ -507,37 +497,42 @@ export async function GET(request: Request) {
   const prevStartIso = prevStart.toISOString();
   const prevEndIso = startIso;
 
-  const { data: business } = await db
-    .from("businesses")
-    .select("timezone")
-    .eq("id", tenant.businessId)
-    .maybeSingle();
-
-  const timeZone = (business?.timezone as string | null) ?? "UTC";
+  let timeZone = "UTC";
+  let selectedBusinessId = ownedBusinessIds[0];
 
   if (siteId) {
     const { data: siteRow } = await db
       .from("builder_sites")
-      .select("id")
+      .select("id, business_id")
       .eq("id", siteId)
-      .eq("business_id", tenant.businessId)
       .maybeSingle();
-    if (!siteRow?.id) {
+
+    if (!siteRow?.id || !ownedBusinessIds.includes(siteRow.business_id as string)) {
       return NextResponse.json({ error: "Site not found" }, { status: 404 });
     }
+
+    selectedBusinessId = siteRow.business_id as string;
   }
+
+  const { data: business } = await db
+    .from("businesses")
+    .select("timezone")
+    .eq("id", selectedBusinessId)
+    .maybeSingle();
+
+  timeZone = (business?.timezone as string | null) ?? "UTC";
 
   let currentQuery = db
     .from("website_analytics_events")
     .select("event_type, channel, cta_type, lead_type, page_path, page_title, session_id, country_code, occurred_at")
-    .eq("business_id", tenant.businessId)
+    .in("business_id", ownedBusinessIds)
     .gte("occurred_at", startIso)
     .lt("occurred_at", endIso);
 
   let prevQuery = db
     .from("website_analytics_events")
     .select("event_type, channel, session_id")
-    .eq("business_id", tenant.businessId)
+    .in("business_id", ownedBusinessIds)
     .gte("occurred_at", prevStartIso)
     .lt("occurred_at", prevEndIso);
 
@@ -674,8 +669,6 @@ export async function GET(request: Request) {
     channelSplit: { leadsByChannel, interactionsByChannel },
     nudges
   };
-
-  cache.set(cacheKey, { data: response, expiresAt: Date.now() + CACHE_TTL_MS });
 
   return NextResponse.json(response);
 }

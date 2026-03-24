@@ -33,7 +33,7 @@ export async function getEntitlementAccess(
 
   const subscription = await getWorkspaceSubscription(targetWorkspaceId);
   const entitlements = resolveEntitlements(subscription.plan_id);
-  const allowed = hasEntitlement(entitlements, entitlementKey);
+  const allowed = subscription.is_access_active && hasEntitlement(entitlements, entitlementKey);
 
   return { workspaceId: targetWorkspaceId, entitlements, allowed };
 }
@@ -44,7 +44,7 @@ export async function requireEntitlement(
 ): Promise<RequireEntitlementResult> {
   const access = await getEntitlementAccess(entitlementKey, workspaceId);
   if (!access.workspaceId || !access.entitlements || !access.allowed) {
-    redirect(`/dashboard/billing?blocked=${encodeURIComponent(entitlementKey)}`);
+    redirect(`/billing?blocked=${encodeURIComponent(entitlementKey)}`);
   }
   return { workspaceId: access.workspaceId, entitlements: access.entitlements };
 }

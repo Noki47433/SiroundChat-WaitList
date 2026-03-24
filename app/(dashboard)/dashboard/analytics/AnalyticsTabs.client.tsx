@@ -94,7 +94,10 @@ export default function AnalyticsTabs({
           <p className="text-sm font-semibold">Insights</p>
           <p className="text-xs text-white/60">Visual drill-downs without the scroll</p>
         </div>
-        <div className="flex items-center gap-1 rounded-full border border-white/10 bg-white/5 p-1 text-[11px]">
+        <div
+          className="flex items-center gap-1 rounded-full border border-white/10 bg-white/5 p-1 text-[11px]"
+          data-tutorial-target="analytics-tabs"
+        >
           {TABS.map((tab) => (
             <button
               key={tab}

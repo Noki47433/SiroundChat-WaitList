@@ -11,7 +11,6 @@ import { OverviewCard } from "@/components/analytics/website/OverviewCard";
 import { WorldMap } from "@/components/analytics/website/WorldMap";
 import { PeakTimesChart } from "@/components/analytics/website/PeakTimesChart";
 import { ChannelSplitCard } from "@/components/analytics/website/ChannelSplitCard";
-import { EmptyState } from "@/components/analytics/website/EmptyState";
 import { cn } from "@/lib/utils/cn";
 
 const RANGE_OPTIONS = ["7d", "30d", "90d"] as const;
@@ -89,7 +88,7 @@ export function WebsiteInsightsDashboard({
   const [data, setData] = useState<AnalyticsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
+  const [refreshTick, setRefreshTick] = useState(0);
   useEffect(() => {
     let active = true;
     setSitesLoading(true);
@@ -113,6 +112,12 @@ export function WebsiteInsightsDashboard({
   }, []);
 
   useEffect(() => {
+    const handleFocus = () => setRefreshTick((value) => value + 1);
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
+  }, []);
+
+  useEffect(() => {
     if (sitesLoading) return;
     if (siteId === "all") return;
     if (!sites.find((site) => site.id === siteId)) {
@@ -131,7 +136,8 @@ export function WebsiteInsightsDashboard({
         const demoQuery = demo ? "&demo=1" : "";
         const siteQuery = siteId !== "all" ? `&siteId=${siteId}` : "";
         const res = await fetch(`/api/analytics/website?range=${range}&mode=${mapMode}${siteQuery}${demoQuery}`, {
-          signal: controller.signal
+          signal: controller.signal,
+          cache: "no-store"
         });
         if (!res.ok) {
           throw new Error("Failed to load analytics");
@@ -153,17 +159,7 @@ export function WebsiteInsightsDashboard({
       clearTimeout(timer);
       controller.abort();
     };
-  }, [range, mapMode, demo, siteId]);
-
-  const hasData = useMemo(() => {
-    if (!data) return false;
-    return (
-      data.overview.visitors.value > 0 ||
-      data.overview.chatsStarted.value > 0 ||
-      data.overview.leads.value > 0 ||
-      data.overview.ctaClicks.value > 0
-    );
-  }, [data]);
+  }, [range, mapMode, demo, siteId, refreshTick]);
 
   const countriesCount = useMemo(() => {
     if (!data) return 0;
@@ -185,10 +181,6 @@ export function WebsiteInsightsDashboard({
     );
   }
 
-  if (!loading && data && !hasData) {
-    return <EmptyState onPreviewHref="/dashboard/analytics/website?demo=1" />;
-  }
-
   return (
     <div className="space-y-8">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -206,7 +198,12 @@ export function WebsiteInsightsDashboard({
               </option>
             ))}
           </Select>
-          <Select value={range} onChange={(event) => setRange(event.target.value as RangeKey)} className="w-32">
+          <Select
+            value={range}
+            onChange={(event) => setRange(event.target.value as RangeKey)}
+            className="w-32"
+            data-tutorial-target="website-analytics-range"
+          >
             {RANGE_OPTIONS.map((option) => (
               <option key={option} value={option}>
                 {option}

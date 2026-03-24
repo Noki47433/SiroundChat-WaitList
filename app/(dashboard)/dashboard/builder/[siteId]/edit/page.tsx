@@ -1,10 +1,9 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/require-user";
-import { getSupabaseServerClient } from "@/lib/supabase/server";
-import { getTenantFromSession } from "@/lib/utils/tenant";
 import { SiteDocumentSchema } from "@/lib/website-builder/schema";
 import { getBuilderPlanForBusiness } from "@/lib/builder/plan";
 import { BuilderEditorClient } from "@/app/(dashboard)/dashboard/builder/[siteId]/edit/BuilderEditorClient";
+import { getOwnedBuilderSite } from "@/lib/builder/site-access";
 
 export const dynamic = "force-dynamic";
 
@@ -13,31 +12,39 @@ type PageProps = {
 };
 
 export default async function BuilderEditorPage({ params }: PageProps) {
-  await requireUser("/dashboard/builder");
-  const tenant = await getTenantFromSession();
-  const supabase = getSupabaseServerClient();
-
-  if (!tenant.businessId) {
+  const { user } = await requireUser("/dashboard/builder");
+  if (!user?.id) {
     notFound();
   }
 
-  const { data: site } = await (supabase as any)
-    .from("builder_sites")
-    .select("id,status,slug,business_name,site_document,published_url")
-    .eq("id", params.siteId)
-    .eq("business_id", tenant.businessId)
-    .maybeSingle();
+  const site = await getOwnedBuilderSite<{
+    id: string;
+    business_id: string;
+    status: string | null;
+    slug: string | null;
+    business_name: string | null;
+    site_document: unknown;
+    published_url: string | null;
+  }>(
+    params.siteId,
+    user.id,
+    "id,business_id,status,slug,business_name,site_document,published_url"
+  );
 
-  if (!site?.site_document) {
+  if (!site) {
     notFound();
+  }
+
+  if (!site.site_document) {
+    redirect(`/editor/${params.siteId}/generate`);
   }
 
   const parsedDoc = SiteDocumentSchema.safeParse(site.site_document);
   if (!parsedDoc.success) {
-    notFound();
+    redirect(`/editor/${params.siteId}/generate`);
   }
 
-  const { flags } = await getBuilderPlanForBusiness(tenant.businessId);
+  const { flags } = await getBuilderPlanForBusiness(site.business_id);
 
   return (
     <BuilderEditorClient

@@ -18,33 +18,33 @@ const toneClass = (tone: ActivityItem["tone"]) => {
     case "danger":
       return "bg-rose-400";
     default:
-      return "bg-sky-400";
+      return "bg-amber-300";
   }
 };
 
 export function ActivityFeed({ items }: { items: ActivityItem[] }) {
   return (
-    <Card className="rounded-3xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+    <Card className="rounded-3xl p-4">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm font-semibold">Real-time activity</p>
-          <p className="text-xs text-white/60">What just happened</p>
+          <p className="dashboard-heading text-sm font-semibold text-white">Real-time activity</p>
+          <p className="text-xs text-[#cbbd98]">What just happened</p>
         </div>
       </div>
       <div className="mt-4 max-h-[520px] space-y-3 overflow-auto pr-1">
         {items.length ? (
           items.map((item) => (
-            <div key={item.id} className="rounded-2xl border border-white/10 bg-white/5 p-3">
+            <div key={item.id} className="dashboard-inset rounded-2xl p-3">
               <div className="flex items-start gap-2">
                 <span className={`mt-1 h-2 w-2 rounded-full ${toneClass(item.tone)}`} />
                 <div className="flex-1">
-                  <p className="text-sm text-white/80">{item.label}</p>
-                  <p className="text-[11px] text-white/40">{item.time}</p>
+                  <p className="text-sm text-white/90">{item.label}</p>
+                  <p className="text-[11px] text-[#94aac2]">{item.time}</p>
                 </div>
                 {item.href ? (
                   <Link
                     href={item.href}
-                    className="rounded-full border border-white/10 px-2 py-1 text-[11px] text-white/60 transition hover:text-white"
+                    className="dashboard-pill rounded-full px-2 py-1 text-[11px] text-[#b5d2ee] transition hover:text-white"
                   >
                     View
                   </Link>
@@ -53,7 +53,7 @@ export function ActivityFeed({ items }: { items: ActivityItem[] }) {
             </div>
           ))
         ) : (
-          <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-xs text-white/50">
+          <div className="dashboard-inset rounded-2xl p-3 text-xs text-[#cbbd98]">
             No events yet.
           </div>
         )}

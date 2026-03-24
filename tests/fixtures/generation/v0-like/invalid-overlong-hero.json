@@ -1,0 +1,107 @@
+{
+  "version": "1.0",
+  "meta": {
+    "locale": "en-GB",
+    "vertical": "saas",
+    "siteType": "saas",
+    "primaryGoal": "request_demo",
+    "brandName": "Acme Cloud",
+    "pageTitle": "Acme Cloud | Demo",
+    "pageDescription": "Deterministic site generator"
+  },
+  "theme": {
+    "mode": "light",
+    "tone": "technical",
+    "density": "normal",
+    "radius": "md",
+    "accent": "blue",
+    "font": "sans"
+  },
+  "cta": {
+    "primary": {
+      "label": "Request Demo",
+      "href": "/demo",
+      "style": "primary"
+    },
+    "secondary": {
+      "label": "View details",
+      "href": "/#features",
+      "style": "ghost"
+    }
+  },
+  "sections": [
+    {
+      "id": "sec-header-01",
+      "type": "header",
+      "variant": "simple",
+      "props": { "sticky": true },
+      "copy": { "links": [] },
+      "media": [],
+      "ctas": []
+    },
+    {
+      "id": "sec-hero-02",
+      "type": "hero",
+      "variant": "split",
+      "props": { "hasMockup": true },
+      "copy": {
+        "headline": "This headline is intentionally far too long to fit the strict hero limit and should trigger a validation failure in schema checks",
+        "subheadline": "Plan with strict schema, render with fixed registry templates, and ship stable output without random layout drift.",
+        "badge": "SaaS",
+        "primaryCtaLabel": "Request Demo",
+        "secondaryCtaLabel": "See details"
+      },
+      "media": [],
+      "ctas": []
+    },
+    {
+      "id": "sec-features-03",
+      "type": "features",
+      "variant": "grid3",
+      "props": { "columns": 3 },
+      "copy": {
+        "title": "Core capabilities",
+        "items": [
+          {
+            "title": "Schema planning",
+            "description": "Generate a strict plan object first so layout, copy, and media all stay within deterministic constraints."
+          },
+          {
+            "title": "Registry rendering",
+            "description": "Render only allowlisted section templates, preventing arbitrary component drift and random output differences."
+          },
+          {
+            "title": "Retry controls",
+            "description": "Retry only failing stages with exact validation feedback and strict attempt caps to avoid runaway loops."
+          }
+        ]
+      },
+      "media": [],
+      "ctas": []
+    },
+    {
+      "id": "sec-footer-04",
+      "type": "footer",
+      "variant": "simple",
+      "props": {},
+      "copy": {
+        "columns": [
+          {
+            "title": "Company",
+            "links": [
+              { "label": "Contact", "href": "/contact" }
+            ]
+          },
+          {
+            "title": "Legal",
+            "links": [
+              { "label": "Privacy", "href": "/privacy" }
+            ]
+          }
+        ]
+      },
+      "media": [],
+      "ctas": []
+    }
+  ]
+}

@@ -81,6 +81,12 @@ const ThemeSchema = z.object({
   pageTransitions: z.enum(["none", "fade", "slide"]).optional()
 });
 
+const SiteImageSrcSchema = z
+  .string()
+  .refine((value) => value.startsWith("/") || /^https?:\/\//.test(value), {
+    message: "Image src must start with '/' or 'http(s)://'"
+  });
+
 const ContentStyleSchema = z.object({
   color: z.string().optional(),
   fontSize: z.string().optional(),
@@ -169,8 +175,10 @@ const SectionStyleSchema = z.object({
 
 const SiteImageSchema = z.object({
   slot: z.string().min(1),
-  src: z.string().url(),
+  src: SiteImageSrcSchema,
   alt: z.string().optional(),
+  width: z.number().int().positive().optional(),
+  height: z.number().int().positive().optional(),
   credit: z
     .object({
       provider: z.enum(["pexels", "unsplash", "openai"]),
@@ -258,11 +266,23 @@ const SitePageSchema = z.object({
 const SiteBriefSchema = z
   .object({
     businessName: z.string().optional(),
+    logoUrl: z.string().optional(),
     industry: z.string().optional(),
     description: z.string().optional(),
     tone: z.string().optional(),
     goals: z.array(z.string()).optional(),
     pages: z.array(z.string()).optional(),
+    language: z.string().optional(),
+    generationBrief: z
+      .object({
+        audience: z.string().optional(),
+        coreOffer: z.string().optional(),
+        primaryCtaGoal: z.string().optional(),
+        topServices: z.array(z.string()).optional(),
+        proofPoints: z.array(z.string()).optional(),
+        tone: z.string().optional()
+      })
+      .optional(),
     theme: z
       .object({
         primary: z.string().optional(),
@@ -290,7 +310,12 @@ const SiteBriefSchema = z
           .optional(),
         variantBias: z.record(z.string(), z.string()).optional(),
         sectionOrder: z.array(z.string()).optional(),
-        imageryStyle: z.string().optional()
+        imageryStyle: z.string().optional(),
+        industryKey: z.string().optional(),
+        archetypeKey: z.string().optional(),
+        layoutDNA: z.string().optional(),
+        sectionBlueprints: z.array(z.string()).optional(),
+        conversionGoal: z.string().optional()
       })
       .optional()
   })

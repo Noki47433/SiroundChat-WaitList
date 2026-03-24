@@ -223,6 +223,7 @@ export async function GET() {
 
     return jsonNoStore({
       businessId: row.id,
+      widgetKey,
       businessName: normalizeBusinessName(row.business_name),
       greeting: normalizeGreeting(row.greeting),
       tonePreset: resolveTonePreset(row.tone),
@@ -308,6 +309,7 @@ export async function PATCH(req: Request) {
 
     return jsonNoStore({
       businessId: row.id,
+      widgetKey,
       businessName: normalizeBusinessName(row.business_name),
       greeting: normalizeGreeting(row.greeting),
       tonePreset: resolveTonePreset(row.tone),

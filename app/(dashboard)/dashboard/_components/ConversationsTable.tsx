@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -14,12 +14,42 @@ const filters = [
   { value: "closed", label: "Closed" },
   { value: "lead", label: "Lead" }
 ];
+const FILTER_VALUES = new Set(filters.map((filter) => filter.value));
 
-export function ConversationsTable({ initialConversations }: { initialConversations: ConversationSummary[] }) {
+export function ConversationsTable({
+  initialConversations,
+  initialSearch = "",
+  initialFilter = "all",
+  autoFocusSearch = false
+}: {
+  initialConversations: ConversationSummary[];
+  initialSearch?: string;
+  initialFilter?: string;
+  autoFocusSearch?: boolean;
+}) {
   const router = useRouter();
   const [conversations, setConversations] = useState(initialConversations);
-  const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState("all");
+  const [search, setSearch] = useState(initialSearch);
+  const [filter, setFilter] = useState(FILTER_VALUES.has(initialFilter) ? initialFilter : "all");
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    setSearch(initialSearch);
+  }, [initialSearch]);
+
+  useEffect(() => {
+    setFilter(FILTER_VALUES.has(initialFilter) ? initialFilter : "all");
+  }, [initialFilter]);
+
+  useEffect(() => {
+    if (!autoFocusSearch) return;
+    const timeout = window.setTimeout(() => {
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select();
+    }, 0);
+
+    return () => window.clearTimeout(timeout);
+  }, [autoFocusSearch]);
 
   useEffect(() => {
     let active = true;
@@ -49,9 +79,11 @@ export function ConversationsTable({ initialConversations }: { initialConversati
     <div className="space-y-4">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <Input
+          ref={searchInputRef}
           value={search}
           onChange={(event) => setSearch(event.target.value)}
           placeholder="Search by visitor ID"
+          data-tutorial-target="conversations-search"
         />
         <Select value={filter} onChange={(event) => setFilter(event.target.value)}>
           {filters.map((item) => (
@@ -78,6 +110,7 @@ export function ConversationsTable({ initialConversations }: { initialConversati
                 key={conversation.id}
                 className="cursor-pointer bg-neutral-950/20 transition hover:bg-white/5"
                 onClick={() => router.push(`/dashboard/conversations/${conversation.id}`)}
+                data-tutorial-target={filtered[0]?.id === conversation.id ? "conversations-first-row" : undefined}
               >
                 <td className="px-4 py-3 font-semibold">{conversation.visitorId}</td>
                 <td className="px-4 py-3 text-white/70">{conversation.startedAt}</td>

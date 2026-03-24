@@ -6,7 +6,9 @@ export type WebsiteAnalyticsEventType =
   | "cta_click"
   | "lead_submitted"
   | "chat_open"
-  | "chat_started";
+  | "chat_started"
+  | "reservation_started"
+  | "reservation_completed";
 
 export type WebsiteAnalyticsChannel = "website" | "chatbot" | "form";
 

@@ -1,0 +1,13 @@
+{
+  "businessName": "Cedar Table Kitchen",
+  "businessType": "restaurant",
+  "subtype": "bistro",
+  "location": "Austin, TX",
+  "services": ["Dinner Service", "Weekend Brunch", "Private Dining"],
+  "targetCustomer": "local diners",
+  "toneProfile": "friendly",
+  "ctaIntent": "reserve",
+  "proofAssets": ["Yelp 4.8 rating", "Local press mention"],
+  "photosAvailable": true,
+  "description": "Seasonal bistro serving wood-fired dishes and house cocktails."
+}

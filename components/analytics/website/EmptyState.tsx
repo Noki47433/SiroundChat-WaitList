@@ -1,10 +1,9 @@
 "use client";
 
-import { ArrowRight, Sparkles } from "lucide-react";
+import { Sparkles } from "lucide-react";
 import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 
-export function EmptyState({ onPreviewHref }: { onPreviewHref: string }) {
+export function EmptyState() {
   return (
     <Card className="rounded-3xl border border-white/10 bg-white/5 p-10 text-center">
       <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-cyan-500/15 text-cyan-200">
@@ -22,15 +21,6 @@ export function EmptyState({ onPreviewHref }: { onPreviewHref: string }) {
           </div>
         ))}
       </div>
-      <Button
-        className="mt-6 inline-flex items-center gap-2 rounded-full bg-cyan-500/90 px-5 py-2 text-sm font-semibold text-white hover:bg-cyan-400"
-        onClick={() => {
-          if (typeof window !== "undefined") window.location.href = onPreviewHref;
-        }}
-      >
-        Preview tracking setup
-        <ArrowRight className="h-4 w-4" />
-      </Button>
     </Card>
   );
 }

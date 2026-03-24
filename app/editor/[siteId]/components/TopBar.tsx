@@ -59,18 +59,21 @@ export function TopBar({ siteId, businessName, slug, canPublish, publishedUrl, o
   const [domainBusy, setDomainBusy] = useState(false);
   const [domainError, setDomainError] = useState<string | null>(null);
   const [domainSuccess, setDomainSuccess] = useState<string | null>(null);
+  const [clientOrigin, setClientOrigin] = useState<string | null>(null);
 
   const isDirty = savedSignature !== documentSignature;
-  const defaultLiveUrl = useMemo(() => {
-    if (typeof window !== "undefined") {
-      return `${window.location.origin}/s/${slug}`;
-    }
-    return `https://siround.chat/s/${slug}`;
-  }, [slug]);
+  const defaultLiveUrl = useMemo(
+    () => (clientOrigin ? `${clientOrigin}/s/${slug}` : `/s/${slug}`),
+    [clientOrigin, slug]
+  );
 
   useEffect(() => {
     setPublishUrl(publishedUrl);
   }, [publishedUrl]);
+
+  useEffect(() => {
+    setClientOrigin(window.location.origin);
+  }, []);
 
   useEffect(() => {
     if (!publishModalOpen) return;
@@ -92,7 +95,7 @@ export function TopBar({ siteId, businessName, slug, canPublish, publishedUrl, o
   }, [publishModalOpen, siteId]);
 
   const saveDraft = async () => {
-    if (!state.document || saveState === "saving") return;
+    if (!state.document || saveState === "saving") return false;
     setSaveState("saving");
     try {
       const response = await fetch("/api/builder/save-draft", {
@@ -101,15 +104,22 @@ export function TopBar({ siteId, businessName, slug, canPublish, publishedUrl, o
         body: JSON.stringify({ siteId, siteDocument: state.document })
       });
       if (!response.ok) {
-        throw new Error("Save failed");
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.error ?? "Save failed");
       }
       setSavedSignature(documentSignature);
       setSaveState("saved");
       pushToast({ title: "Saved", message: "Draft updated.", variant: "success" });
+      return true;
     } catch (error) {
       console.error("[EDITOR_SAVE_ERROR]", error);
       setSaveState("error");
-      pushToast({ title: "Save failed", message: "Try again in a moment.", variant: "error" });
+      pushToast({
+        title: "Save failed",
+        message: error instanceof Error ? error.message : "Try again in a moment.",
+        variant: "error"
+      });
+      return false;
     } finally {
       window.setTimeout(() => setSaveState("idle"), 1500);
     }
@@ -118,6 +128,10 @@ export function TopBar({ siteId, businessName, slug, canPublish, publishedUrl, o
   const publishSite = async () => {
     if (!canPublish) return;
     try {
+      if (isDirty) {
+        const saved = await saveDraft();
+        if (!saved) return;
+      }
       const response = await fetch("/api/builder/publish", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -145,6 +159,14 @@ export function TopBar({ siteId, businessName, slug, canPublish, publishedUrl, o
       console.error("[EDITOR_PUBLISH_ERROR]", error);
       pushToast({ title: "Publish failed", message: "Try again in a moment.", variant: "error" });
     }
+  };
+
+  const openPreview = async () => {
+    if (isDirty) {
+      const saved = await saveDraft();
+      if (!saved) return;
+    }
+    window.open(previewUrl, "_blank", "noopener,noreferrer");
   };
 
   const connectDomain = async () => {
@@ -186,11 +208,11 @@ export function TopBar({ siteId, businessName, slug, canPublish, publishedUrl, o
 
   return (
     <>
-      <header className="flex h-[60px] items-center justify-between gap-4 border-b border-sc-border bg-sc-surface px-4">
-        <div className="flex items-center gap-4">
-        <div className="flex flex-col">
-          <span className="text-xs font-semibold uppercase tracking-[0.2em] text-sc-muted">Website Editor</span>
-          <span className="text-sm font-semibold text-sc-text">{businessName}</span>
+      <header className="flex min-h-[60px] flex-wrap items-center justify-between gap-3 border-b border-sc-border bg-sc-surface px-4 py-2">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
+        <div className="min-w-0 max-w-[220px]">
+          <span className="block text-xs font-semibold uppercase tracking-[0.2em] text-sc-muted">Website Editor</span>
+          <span className="block truncate text-sm font-semibold text-sc-text">{businessName}</span>
         </div>
         <div className="flex items-center gap-2 rounded-full border border-sc-border bg-sc-surface px-3 py-1 text-xs font-semibold">
           <span className="text-[10px] uppercase tracking-[0.2em] text-sc-muted">Page</span>
@@ -207,12 +229,12 @@ export function TopBar({ siteId, businessName, slug, canPublish, publishedUrl, o
           </select>
           <ChevronDown className="h-3 w-3 text-sc-muted" />
         </div>
-        <div className="hidden items-center gap-2 rounded-full border border-sc-border bg-sc-surface px-3 py-1 text-xs text-sc-muted md:flex">
+        <div className="hidden min-w-0 max-w-[360px] items-center gap-2 rounded-full border border-sc-border bg-sc-surface px-3 py-1 text-xs text-sc-muted xl:flex">
           <span className="truncate">{publishUrl ?? defaultLiveUrl}</span>
         </div>
         <button
           type="button"
-          onClick={() => window.open(previewUrl, "_blank", "noopener,noreferrer")}
+          onClick={openPreview}
           className="inline-flex items-center gap-2 rounded-full border border-sc-border px-3 py-1 text-xs font-semibold text-sc-text hover:bg-sc-surface-2"
         >
           <Eye className="h-4 w-4" />
@@ -220,11 +242,11 @@ export function TopBar({ siteId, businessName, slug, canPublish, publishedUrl, o
         </button>
       </div>
 
-      <div className="flex items-center gap-2">
-        <div className="hidden items-center gap-2 rounded-full border border-sc-border bg-sc-surface px-3 py-1 text-xs text-sc-muted lg:flex">
+      <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+        <div className="hidden items-center gap-2 rounded-full border border-sc-border bg-sc-surface px-3 py-1 text-xs text-sc-muted 2xl:flex">
           <Search className="h-4 w-4" />
           <input
-            className="w-40 bg-transparent text-xs text-sc-text placeholder:text-sc-muted focus:outline-none"
+            className="w-28 bg-transparent text-xs text-sc-text placeholder:text-sc-muted focus:outline-none xl:w-40"
             placeholder="Search"
           />
         </div>
@@ -296,7 +318,7 @@ export function TopBar({ siteId, businessName, slug, canPublish, publishedUrl, o
           type="button"
           onClick={saveDraft}
           disabled={!isDirty || saveState === "saving"}
-          className="inline-flex items-center gap-2 rounded-full border border-sc-border px-4 py-2 text-xs font-semibold text-sc-text disabled:opacity-40"
+          className="inline-flex shrink-0 items-center gap-2 rounded-full border border-sc-border px-4 py-2 text-xs font-semibold text-sc-text disabled:opacity-40"
         >
           <Save className="h-4 w-4" />
           {saveState === "saving" ? "Saving..." : "Save"}
@@ -305,7 +327,7 @@ export function TopBar({ siteId, businessName, slug, canPublish, publishedUrl, o
           type="button"
           onClick={publishSite}
           disabled={!canPublish}
-          className="inline-flex items-center gap-2 rounded-full bg-sc-yellow px-4 py-2 text-xs font-semibold text-sc-text disabled:opacity-50"
+          className="inline-flex shrink-0 items-center gap-2 rounded-full bg-sc-yellow px-4 py-2 text-xs font-semibold text-sc-text disabled:opacity-50"
         >
           <ExternalLink className="h-4 w-4" />
           {publishedUrl ? "Republish" : "Publish"}

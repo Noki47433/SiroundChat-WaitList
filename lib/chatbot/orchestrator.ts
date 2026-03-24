@@ -6,6 +6,7 @@ import { matchFaq, matchObjection } from "@/lib/chatbot/faq-objections";
 import { scoreLeadQualification } from "@/lib/chatbot/lead-scoring";
 import { evaluateUpsells, type UpsellAction } from "@/lib/chatbot/upsell-evaluator";
 import { recommendCatalogItems } from "@/lib/chatbot/recommender";
+import { listApprovedUpdateRules, selectRelevantUpdateRules, type ChatbotUpdateRuleRow } from "@/lib/chatbot/update-info";
 
 export type OrchestratorInput = {
   businessId: string;
@@ -51,8 +52,60 @@ type LeadQualificationRow = {
   score: number;
 };
 
-const SALES_INTENT_KEYWORDS = ["price", "pricing", "quote", "service", "services", "cost", "package"];
-const RECOMMENDER_KEYWORDS = ["recommend", "suggest", "menu", "what should i order", "best item", "popular"];
+const LEAD_QUALIFICATION_KEYWORDS = [
+  "quote",
+  "quotation",
+  "proposal",
+  "consultation",
+  "project",
+  "package",
+  "packages",
+  "plan",
+  "plans",
+  "implementation",
+  "setup",
+  "audit",
+  "demo",
+  "trial",
+  "crm",
+  "automation",
+  "website",
+  "seo",
+  "campaign",
+  "lead generation"
+];
+const RECOMMENDER_KEYWORDS = [
+  "recommend",
+  "suggest",
+  "menu",
+  "what should i order",
+  "best item",
+  "popular",
+  "rekomando",
+  "rekomandon",
+  "sugjero",
+  "sugjeron",
+  "menuja",
+  "porosit",
+  "qa mund te porositi",
+  "qka mund te porositi"
+];
+const EXPLICIT_OFFER_KEYWORDS = ["offer", "offers", "deal", "deals", "discount", "promo", "promotion", "special", "ofert", "oferta"];
+const DIETARY_KEYWORDS = [
+  "allergy",
+  "allergic",
+  "alergjik",
+  "allergjik",
+  "vegetarian",
+  "vegan",
+  "gluten",
+  "mushroom",
+  "mushrooms",
+  "kepurdh",
+  "kërpudh",
+  "pa ",
+  "without "
+];
 
 const QUESTION_BY_FIELD = {
   budget_range: "What budget range are you planning for this project?",
@@ -115,14 +168,24 @@ const normalizeUrgency = (message: string) => {
   return null;
 };
 
-const detectSalesIntent = (message: string) => {
+const detectLeadQualificationIntent = (message: string) => {
   const normalized = normalizeText(message);
-  return SALES_INTENT_KEYWORDS.some((keyword) => normalized.includes(keyword));
+  return LEAD_QUALIFICATION_KEYWORDS.some((keyword) => normalized.includes(keyword));
 };
 
 const detectRecommendationIntent = (message: string) => {
   const normalized = normalizeText(message);
   return RECOMMENDER_KEYWORDS.some((keyword) => normalized.includes(keyword));
+};
+
+const detectExplicitOfferIntent = (message: string) => {
+  const normalized = normalizeText(message);
+  return EXPLICIT_OFFER_KEYWORDS.some((keyword) => normalized.includes(keyword));
+};
+
+const detectDietaryIntent = (message: string) => {
+  const normalized = normalizeText(message);
+  return DIETARY_KEYWORDS.some((keyword) => normalized.includes(keyword));
 };
 
 const detectReservationSize = (message: string) => {
@@ -209,6 +272,7 @@ const nextMissingField = (lead: Pick<LeadQualificationRow, "budget_range" | "urg
 export async function runChatbotOrchestrator(admin: any, input: OrchestratorInput): Promise<OrchestratorOutput> {
   const actions: OrchestratorAction[] = [];
   let assistantMessage: string | null = null;
+  let approvedUpdateRules: ChatbotUpdateRuleRow[] = [];
 
   const customer = await resolveCustomerIdentity(admin, {
     businessId: input.businessId,
@@ -235,6 +299,67 @@ export async function runChatbotOrchestrator(admin: any, input: OrchestratorInpu
     );
   } catch (error) {
     log("warn", "Failed to insert orchestrator message_received analytics", { error });
+  }
+
+  try {
+    approvedUpdateRules = await listApprovedUpdateRules(admin, input.businessId);
+    const explicitOfferIntent = detectExplicitOfferIntent(input.message);
+    const dietaryIntent = detectDietaryIntent(input.message);
+    const matchedRules = await selectRelevantUpdateRules(approvedUpdateRules, input.message, {
+      reservationFlowActive: Boolean(input.reservationContext?.partySize || input.reservationContext?.time),
+      partySize: input.reservationContext?.partySize ?? null
+    });
+    const directReplyRule = matchedRules.find((rule) =>
+      ["closure", "service_notice", "faq", "general_notice", "reservation_constraint"].includes(rule.category)
+    );
+
+    if (directReplyRule && !assistantMessage) {
+      assistantMessage = directReplyRule.body;
+    }
+
+    const approvedOfferRules = approvedUpdateRules.filter((rule) => rule.category === "offer");
+    const matchedOfferRule =
+      matchedRules.find((rule) => rule.category === "offer") ??
+      (!dietaryIntent && explicitOfferIntent ? approvedOfferRules[0] ?? null : null);
+
+    if (matchedOfferRule) {
+      actions.push({
+        type: "show_offer",
+        offerId: matchedOfferRule.id,
+        title: matchedOfferRule.title,
+        description: matchedOfferRule.body,
+        price: null,
+        cta: "Would you like to use this offer?"
+      });
+      if (!assistantMessage) {
+        assistantMessage = matchedOfferRule.body;
+      }
+    }
+
+    const approvedRecommendationRules = approvedUpdateRules.filter((rule) => rule.category === "recommendation");
+    const matchedRecommendationRules = matchedRules.filter((rule) => rule.category === "recommendation");
+    const recommendationRules =
+      matchedRecommendationRules.length || !detectRecommendationIntent(input.message) || dietaryIntent
+        ? matchedRecommendationRules
+        : approvedRecommendationRules.slice(0, 3);
+
+    if (recommendationRules.length) {
+      actions.push({
+        type: "show_recommendations",
+        items: recommendationRules.slice(0, 3).map((rule) => ({
+          id: rule.id,
+          name: rule.title,
+          description: rule.body,
+          price: null,
+          reason: "Recommended by the business"
+        }))
+      });
+      if (!assistantMessage) {
+        assistantMessage = recommendationRules[0]?.body ?? null;
+      }
+    }
+  } catch (error) {
+    log("warn", "Update info rules failed", { error });
   }
 
   try {
@@ -269,7 +394,7 @@ export async function runChatbotOrchestrator(admin: any, input: OrchestratorInpu
   }
 
   try {
-    const shouldQualify = detectSalesIntent(input.message);
+    const shouldQualify = detectLeadQualificationIntent(input.message);
     if (shouldQualify) {
       const { data: setting } = await admin
         .from("qualification_settings")
@@ -361,8 +486,8 @@ export async function runChatbotOrchestrator(admin: any, input: OrchestratorInpu
             body: "A high-intent lead is ready for follow-up.",
             severity: "critical",
             category: "revenue",
-            cta_label: "Open CRM",
-            cta_url: "/dashboard/crm",
+            cta_label: "Open Leads",
+            cta_url: "/dashboard/leads",
             data: {
               conversation_id: input.conversationId,
               customer_id: customer?.id ?? null,
@@ -405,39 +530,43 @@ export async function runChatbotOrchestrator(admin: any, input: OrchestratorInpu
   }
 
   try {
-    const { data: upsellRows } = await admin
-      .from("upsell_catalog")
-      .select("id,name,description,trigger_type,trigger_rules,offer_payload,priority")
-      .eq("business_id", input.businessId)
-      .eq("is_active", true)
-      .limit(40);
+    const hasApprovedOfferRules = approvedUpdateRules.some((rule) => rule.category === "offer");
+    if (!hasApprovedOfferRules) {
+      const { data: upsellRows } = await admin
+        .from("upsell_catalog")
+        .select("id,name,description,trigger_type,trigger_rules,offer_payload,priority")
+        .eq("business_id", input.businessId)
+        .eq("is_active", true)
+        .limit(40);
 
-    const upsell = evaluateUpsells(upsellRows ?? [], {
-      reservationSize: input.reservationContext?.partySize ?? detectReservationSize(input.message),
-      reservationTime: input.reservationContext?.time ?? detectReservationTime(input.message),
-      message: input.message
-    });
+      const upsell = evaluateUpsells(upsellRows ?? [], {
+        reservationSize: input.reservationContext?.partySize ?? detectReservationSize(input.message),
+        reservationTime: input.reservationContext?.time ?? detectReservationTime(input.message),
+        message: input.message
+      });
 
-    if (upsell) {
-      actions.push(upsell.action);
-      await insertAnalytics(
-        admin,
-        input.businessId,
-        input.conversationId,
-        "upsell_shown",
-        {
-          offer_id: upsell.action.offerId,
-          title: upsell.action.title
-        },
-        customer?.id ?? null
-      );
+      if (upsell) {
+        actions.push(upsell.action);
+        await insertAnalytics(
+          admin,
+          input.businessId,
+          input.conversationId,
+          "upsell_shown",
+          {
+            offer_id: upsell.action.offerId,
+            title: upsell.action.title
+          },
+          customer?.id ?? null
+        );
+      }
     }
   } catch (error) {
     log("warn", "Upsell evaluation failed", { error });
   }
 
   try {
-    if (detectRecommendationIntent(input.message)) {
+    const hasApprovedRecommendationRules = approvedUpdateRules.some((rule) => rule.category === "recommendation");
+    if (detectRecommendationIntent(input.message) && !hasApprovedRecommendationRules) {
       const { data: catalogRows } = await admin
         .from("catalog_items")
         .select("id,name,description,price,tags")

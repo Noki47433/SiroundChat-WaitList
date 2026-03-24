@@ -5,7 +5,7 @@ import { getTenantFromSession } from "@/lib/utils/tenant";
 
 const BodySchema = z.object({
   reservationId: z.string().uuid(),
-  status: z.enum(["pending", "confirmed", "cancelled"])
+  status: z.enum(["pending", "confirmed", "canceled", "cancelled", "seated", "completed", "no_show"])
 });
 
 export async function POST(request: Request) {
@@ -29,10 +29,26 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Business not found" }, { status: 404 });
   }
 
-  const { reservationId, status } = parsed.data;
+  const { reservationId } = parsed.data;
+  const status = parsed.data.status === "cancelled" ? "canceled" : parsed.data.status;
+  const updatePayload: Record<string, unknown> = { status };
+  if (status === "canceled") {
+    updatePayload.canceled_at = new Date().toISOString();
+    updatePayload.canceled_by = "staff";
+  }
+  if (status === "seated") {
+    updatePayload.seated_at = new Date().toISOString();
+  }
+  if (status === "completed") {
+    updatePayload.completed_at = new Date().toISOString();
+  }
+  if (status === "no_show") {
+    updatePayload.no_show_at = new Date().toISOString();
+  }
+
   const { data: updated, error: updateError } = await (supabase as any)
     .from("reservations")
-    .update({ status })
+    .update(updatePayload)
     .eq("id", reservationId)
     .eq("business_id", tenant.businessId)
     .select("id, status")

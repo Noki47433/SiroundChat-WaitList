@@ -1,16 +1,27 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth/require-user";
-import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { getTenantFromSession } from "@/lib/utils/tenant";
+import { ensureBusinessRow } from "@/lib/tenant";
 import { Card } from "@/components/ui/card";
+import { listOwnedBuilderSites } from "@/lib/builder/site-access";
 
 export const dynamic = "force-dynamic";
 
 export default async function BuilderDashboardPage() {
-  await requireUser("/dashboard/builder/new");
-  const tenant = await getTenantFromSession();
+  const { user } = await requireUser("/dashboard/builder/new");
+  const tenant = await getTenantFromSession(user?.id);
+  let businessId = tenant.businessId;
 
-  if (!tenant.businessId) {
+  if (!businessId && tenant.userId) {
+    try {
+      const ensured = await ensureBusinessRow({ userId: tenant.userId });
+      businessId = ensured.businessId;
+    } catch (error) {
+      console.error("[BUILDER_LIST_ENSURE_BUSINESS_ERROR]", error);
+    }
+  }
+
+  if (!businessId) {
     return (
       <div className="space-y-4">
         <p className="text-xs uppercase tracking-[0.2em] text-white/40">Website Builder</p>
@@ -20,12 +31,11 @@ export default async function BuilderDashboardPage() {
     );
   }
 
-  const supabase = getSupabaseServerClient();
-  const { data: sites } = await (supabase as any)
-    .from("builder_sites")
-    .select("id,status,slug,template_key,business_name,updated_at,published_url")
-    .eq("business_id", tenant.businessId)
-    .order("updated_at", { ascending: false });
+  const sites = await listOwnedBuilderSites<any>(
+    businessId,
+    user.id,
+    "id,status,slug,template_key,business_name,updated_at,published_url"
+  );
 
   return (
     <div className="space-y-6">
@@ -37,7 +47,8 @@ export default async function BuilderDashboardPage() {
         </div>
         <Link
           href="/dashboard/builder/new"
-          className="inline-flex h-11 items-center justify-center rounded-2xl bg-yellow-400 px-5 text-sm font-semibold text-neutral-900"
+          data-tutorial-target="builder-create-site"
+          className="inline-flex h-11 items-center justify-center rounded-2xl bg-gradient-to-r from-[#ffe169] to-[#f3b012] px-5 text-sm font-semibold text-[#2d1c00] shadow-[0_14px_28px_rgba(255,191,63,0.32)] transition hover:brightness-105"
         >
           Create new site
         </Link>
@@ -50,7 +61,7 @@ export default async function BuilderDashboardPage() {
               <Link
                 key={site.id}
                 href={`/dashboard/builder/${site.id}`}
-                className="rounded-2xl border border-white/10 bg-white/5 p-4 transition hover:bg-white/10"
+                className="dashboard-inset rounded-2xl p-4 transition hover:border-[#ffd87266]"
               >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
@@ -64,7 +75,7 @@ export default async function BuilderDashboardPage() {
                   </div>
                 </div>
                 {site.published_url ? (
-                  <p className="mt-3 text-sm text-yellow-300">Live: {site.published_url}</p>
+                  <p className="mt-3 text-sm text-[#ffd974]">Live: {site.published_url}</p>
                 ) : null}
               </Link>
             ))}

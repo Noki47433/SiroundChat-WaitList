@@ -20,12 +20,17 @@ const eur = (value: number) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(value);
 const usd = (value: number) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format(value);
+const compact = (value: number) =>
+  new Intl.NumberFormat("en-US", {
+    notation: value >= 1000 ? "compact" : "standard",
+    maximumFractionDigits: 1
+  }).format(value);
 
 export function BusinessDetailClient({ businessId, initialData }: { businessId: string; initialData: BusinessDetailData }) {
   const [data, setData] = useState(initialData);
   const [conversationSearch, setConversationSearch] = useState("");
   const [callModalOpen, setCallModalOpen] = useState(false);
-  const [callNote, setCallNote] = useState("Congrats on the recent performance. Review upsell plan and renewal date.");
+  const [callNote, setCallNote] = useState("Congrats on the recent performance. Review conversion flow and next growth move.");
 
   const refresh = useCallback(async () => {
     const response = await fetch(`/api/admin/business/${businessId}/metrics?range=${data.range}`, {
@@ -75,43 +80,50 @@ export function BusinessDetailClient({ businessId, initialData }: { businessId: 
   const unprofitable = data.snapshot.aiCostUsd > data.business.mrrEur && data.business.mrrEur > 0;
 
   return (
-    <Tabs defaultValue="snapshot">
+    <Tabs defaultValue="performance">
       <TabsList>
-        <TabsTrigger value="snapshot">Snapshot</TabsTrigger>
+        <TabsTrigger value="performance">Performance</TabsTrigger>
         <TabsTrigger value="usage">Usage</TabsTrigger>
         <TabsTrigger value="leads">Leads</TabsTrigger>
+        <TabsTrigger value="reservations">Reservations</TabsTrigger>
         <TabsTrigger value="costs">Costs</TabsTrigger>
         <TabsTrigger value="conversations">Conversations</TabsTrigger>
       </TabsList>
 
-      <TabsContent value="snapshot">
-        <div className="grid gap-4 lg:grid-cols-[1.5fr,1fr]">
+      <TabsContent value="performance">
+        <div className="grid gap-4 lg:grid-cols-[1.55fr,1fr]">
           <GlassCard accent="green">
-            <p className="text-sm font-semibold text-[var(--adm-text)]">Business Snapshot</p>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <p className="text-sm font-semibold text-[var(--adm-text)]">Operational Snapshot</p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                <p className="text-xs text-white/55">Plan</p>
-                <p className="mt-1 text-sm text-white">{data.business.plan}</p>
+                <p className="text-xs text-white/55">Health Score</p>
+                <p className="mt-1 text-2xl font-semibold text-white">{data.snapshot.healthScore}/100</p>
+                <p className="mt-1 text-[11px] text-white/45">Demand {data.snapshot.scoreBreakdown.demand} • Conversion {data.snapshot.scoreBreakdown.conversions}</p>
               </div>
               <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                <p className="text-xs text-white/55">Status</p>
-                <p className="mt-1 text-sm text-white">{data.business.status}</p>
+                <p className="text-xs text-white/55">Website Sessions</p>
+                <p className="mt-1 text-2xl font-semibold text-white">{compact(data.snapshot.websiteSessions)}</p>
+                <p className="mt-1 text-[11px] text-white/45">Trend {data.snapshot.trendPct == null ? "0%" : `${data.snapshot.trendPct > 0 ? "+" : ""}${data.snapshot.trendPct}%`}</p>
               </div>
               <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                <p className="text-xs text-white/55">MRR</p>
-                <p className="mt-1 text-sm text-white">{eur(data.business.mrrEur)}</p>
+                <p className="text-xs text-white/55">Leads</p>
+                <p className="mt-1 text-2xl font-semibold text-white">{compact(data.snapshot.leads)}</p>
+                <p className="mt-1 text-[11px] text-white/45">Reservations {compact(data.snapshot.reservations)}</p>
               </div>
               <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                <p className="text-xs text-white/55">Phone</p>
-                <p className="mt-1 text-sm text-white">{data.business.phone ?? "-"}</p>
+                <p className="text-xs text-white/55">Conversations</p>
+                <p className="mt-1 text-2xl font-semibold text-white">{compact(data.snapshot.conversations)}</p>
+                <p className="mt-1 text-[11px] text-white/45">Messages {compact(data.snapshot.messages)}</p>
               </div>
               <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                <p className="text-xs text-white/55">Website</p>
-                <p className="mt-1 text-sm text-white">{data.business.websiteUrl ?? "-"}</p>
+                <p className="text-xs text-white/55">AI Usage</p>
+                <p className="mt-1 text-2xl font-semibold text-white">{usd(data.snapshot.aiCostUsd)}</p>
+                <p className="mt-1 text-[11px] text-white/45">{compact(data.snapshot.aiTokens)} tokens</p>
               </div>
               <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                <p className="text-xs text-white/55">Created</p>
-                <p className="mt-1 text-sm text-white">{new Date(data.business.createdAt).toLocaleDateString("en-US")}</p>
+                <p className="text-xs text-white/55">Avg Response</p>
+                <p className="mt-1 text-2xl font-semibold text-white">{data.snapshot.responseMinutes ? `${data.snapshot.responseMinutes}m` : "N/A"}</p>
+                <p className="mt-1 text-[11px] text-white/45">MRR {eur(data.business.mrrEur)}</p>
               </div>
             </div>
           </GlassCard>
@@ -143,8 +155,52 @@ export function BusinessDetailClient({ businessId, initialData }: { businessId: 
                 </a>
               ) : null}
             </div>
+            <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] p-3 text-sm text-white/80">
+              <p className="text-xs text-white/55">Business</p>
+              <p className="mt-1 text-white">{data.business.name}</p>
+              <p className="mt-2 text-xs text-white/55">Website</p>
+              <p className="mt-1 break-all text-white/80">{data.business.websiteUrl ?? "-"}</p>
+              <p className="mt-2 text-xs text-white/55">Phone</p>
+              <p className="mt-1 text-white/80">{data.business.phone ?? "-"}</p>
+            </div>
           </GlassCard>
         </div>
+
+        <div className="mt-4 grid gap-4 lg:grid-cols-[1.2fr,1fr]">
+          <GlassCard accent="blue">
+            <p className="text-sm font-semibold text-[var(--adm-text)]">Score Breakdown</p>
+            <div className="mt-3 space-y-3">
+              {Object.entries(data.snapshot.scoreBreakdown).map(([key, value]) => (
+                <div key={key}>
+                  <div className="mb-1 flex items-center justify-between text-xs uppercase tracking-[0.18em] text-white/50">
+                    <span>{key}</span>
+                    <span>{value}</span>
+                  </div>
+                  <div className="h-2 rounded-full bg-white/5">
+                    <div className="h-2 rounded-full bg-gradient-to-r from-[#55FF95] to-[#7CFFBE]" style={{ width: `${Math.min(100, (value / (key === "conversions" ? 30 : key === "trend" ? 15 : key === "efficiency" ? 15 : 20)) * 100)}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </GlassCard>
+
+          <GlassCard accent="green">
+            <p className="text-sm font-semibold text-[var(--adm-text)]">Top lead intents</p>
+            <div className="mt-3 space-y-2 text-sm text-white/85">
+              {data.snapshot.topLeadTypes.length ? (
+                data.snapshot.topLeadTypes.map((intent) => (
+                  <div key={intent.name} className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
+                    <span>{intent.name}</span>
+                    <span className="text-white/60">{intent.value}</span>
+                  </div>
+                ))
+              ) : (
+                <p className="text-white/60">No intent data yet.</p>
+              )}
+            </div>
+          </GlassCard>
+        </div>
+
         <Dialog open={callModalOpen} onClose={() => setCallModalOpen(false)} title="Congratulate Business">
           <div className="space-y-3">
             <p className="text-xs text-white/70">
@@ -243,6 +299,41 @@ export function BusinessDetailClient({ businessId, initialData }: { businessId: 
                 <TableRow>
                   <TableCell colSpan={5} className="text-center text-white/55">
                     No leads yet.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </GlassCard>
+      </TabsContent>
+
+      <TabsContent value="reservations">
+        <GlassCard accent="green">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Customer</TableHead>
+                <TableHead>Party</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Reserved For</TableHead>
+                <TableHead>Created</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data.reservations.length ? (
+                data.reservations.map((reservation) => (
+                  <TableRow key={reservation.id}>
+                    <TableCell>{reservation.customerName ?? "-"}</TableCell>
+                    <TableCell>{reservation.partySize ?? "-"}</TableCell>
+                    <TableCell>{reservation.status}</TableCell>
+                    <TableCell>{reservation.dateTime ? new Date(reservation.dateTime).toLocaleString("en-US") : "-"}</TableCell>
+                    <TableCell>{reservation.createdAt ? new Date(reservation.createdAt).toLocaleString("en-US") : "-"}</TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center text-white/55">
+                    No reservations yet.
                   </TableCell>
                 </TableRow>
               )}

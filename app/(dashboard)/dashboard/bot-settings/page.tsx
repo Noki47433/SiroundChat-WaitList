@@ -37,12 +37,12 @@ export default async function BotSettingsPage() {
     <div className="space-y-6">
       <div>
         <p className="text-xs uppercase tracking-[0.2em] text-white/40">Bot Settings</p>
-        <h2 className="mt-2 text-3xl font-semibold">Shape your brand voice</h2>
-        <p className="mt-2 text-sm text-white/60">Adjust how the bot greets and responds.</p>
+        <h2 className="mt-2 text-3xl font-semibold">Launch your chatbot</h2>
+        <p className="mt-2 text-sm text-white/60">
+          Complete the onboarding steps, deploy the widget, and copy the embed snippet for this business.
+        </p>
       </div>
-      <Card>
-        <BotSettingsPanel settings={settings} examples={examples} />
-      </Card>
+      <BotSettingsPanel settings={settings} examples={examples} />
     </div>
   );
 }

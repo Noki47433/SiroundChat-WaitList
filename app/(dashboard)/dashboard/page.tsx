@@ -7,6 +7,7 @@ import { OverviewHeader } from "@/components/dashboard/OverviewHeader";
 import { RecentTable } from "@/components/dashboard/RecentTable";
 import { ActivityFeed } from "@/components/dashboard/ActivityFeed";
 import { ImpactSummaryGate } from "@/app/(dashboard)/dashboard/_components/ImpactSummaryGate";
+import { SummaryBootstrapTrigger } from "@/app/(dashboard)/dashboard/_components/SummaryBootstrapTrigger";
 import { buildHealthSuggestions } from "@/lib/health/weekly";
 import { logActivity } from "@/lib/activity/log";
 
@@ -76,6 +77,24 @@ const computeDelta = (current: number, previous: number) => {
   return ((current - previous) / previous) * 100;
 };
 
+const formatSummaryRange = (start: string, end: string, timeZone: string) => {
+  try {
+    const startLabel = new Date(start).toLocaleDateString("en-US", {
+      timeZone,
+      month: "short",
+      day: "numeric"
+    });
+    const endLabel = new Date(end).toLocaleDateString("en-US", {
+      timeZone,
+      month: "short",
+      day: "numeric"
+    });
+    return `${startLabel} - ${endLabel}`;
+  } catch {
+    return "";
+  }
+};
+
 const activityTone = (type?: string): "success" | "danger" | "warning" | "info" => {
   switch (type) {
     case "reservation_created":
@@ -124,7 +143,7 @@ export default async function DashboardOverviewPage({
 
   const { data: business } = await (supabase as any)
     .from("businesses")
-    .select("id, business_name, timezone, industry")
+    .select("id, business_name, timezone, industry, created_at, onboarding_completed_at")
     .eq("id", tenant.businessId)
     .maybeSingle();
 
@@ -146,7 +165,8 @@ export default async function DashboardOverviewPage({
     eventsResult,
     recentEventsResult,
     messagesResult,
-    weeklyMetricsResult
+    weeklyMetricsResult,
+    impactSummariesResult
   ] =
     await Promise.all([
       (supabase as any)
@@ -192,7 +212,14 @@ export default async function DashboardOverviewPage({
         .select("*")
         .eq("business_id", tenant.businessId)
         .order("week_start", { ascending: false })
-        .limit(2)
+        .limit(2),
+      (supabase as any)
+        .from("business_impact_summaries")
+        .select("id,period,period_start,period_end,highlights,created_at")
+        .eq("business_id", tenant.businessId)
+        .in("period", ["weekly", "monthly"])
+        .order("period_start", { ascending: false })
+        .limit(10)
     ]);
 
   const conversations = (conversationsResult.data ?? []) as Array<{
@@ -236,6 +263,31 @@ export default async function DashboardOverviewPage({
     error_events_count: number;
     health_score: number;
   }>;
+  const impactSummaries = (impactSummariesResult.data ?? []) as Array<{
+    id: string;
+    period: "weekly" | "monthly";
+    period_start: string;
+    period_end: string;
+    highlights?: Array<{ title?: string; value?: string; subtext?: string }> | null;
+    created_at?: string | null;
+  }>;
+
+  const latestWeeklySummary = impactSummaries.find((summary) => summary.period === "weekly") ?? null;
+  const latestMonthlySummary = impactSummaries.find((summary) => summary.period === "monthly") ?? null;
+  const businessCreatedAt =
+    business?.created_at && !Number.isNaN(new Date(business.created_at).getTime())
+      ? new Date(business.created_at)
+      : null;
+  const businessAgeMs = businessCreatedAt ? now.getTime() - businessCreatedAt.getTime() : Number.POSITIVE_INFINITY;
+  const weeklyEligible = businessAgeMs >= 7 * DAY_MS;
+  const monthlyEligible = businessAgeMs >= 30 * DAY_MS;
+  const eligibleImpactPeriods: Array<"weekly" | "monthly"> = [
+    ...(monthlyEligible ? (["monthly"] as const) : []),
+    ...(weeklyEligible ? (["weekly"] as const) : [])
+  ];
+  const missingImpactPeriods: Array<"weekly" | "monthly"> = [];
+  if (weeklyEligible && !latestWeeklySummary) missingImpactPeriods.push("weekly");
+  if (monthlyEligible && !latestMonthlySummary) missingImpactPeriods.push("monthly");
 
   const currentWeeklyMetric = weeklyMetrics[0] ?? null;
   const previousWeeklyMetric = weeklyMetrics[1] ?? null;
@@ -487,10 +539,18 @@ export default async function DashboardOverviewPage({
 
   return (
     <div className="space-y-6">
-      <ImpactSummaryGate />
+      <ImpactSummaryGate businessId={tenant.businessId} eligiblePeriods={eligibleImpactPeriods} />
+      {missingImpactPeriods.length ? (
+        <SummaryBootstrapTrigger
+          businessId={tenant.businessId}
+          missingPeriods={missingImpactPeriods}
+          eligiblePeriods={eligibleImpactPeriods}
+        />
+      ) : null}
       <OverviewHeader
         title="Welcome back"
         subtitle={`Here is what ${businessName} looked like over the past ${rangeDays} days.`}
+        businessId={tenant.businessId}
       />
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -508,20 +568,20 @@ export default async function DashboardOverviewPage({
 
       <div className="grid gap-4 lg:grid-cols-[2fr,1fr]">
         <div className="min-w-0 space-y-4">
-          <Card className="min-w-0 rounded-3xl border border-white/10 bg-white/5 p-5 backdrop-blur">
+          <Card className="min-w-0 rounded-3xl p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <p className="text-sm font-semibold">Conversations over time</p>
-                <p className="text-xs text-white/60">{formatNumber(currentConversations.length)} total in range</p>
+                <p className="dashboard-heading text-sm font-semibold text-white">Conversations over time</p>
+                <p className="text-xs text-[#cbbd98]">{formatNumber(currentConversations.length)} total in range</p>
               </div>
-              <div className="flex items-center gap-1 rounded-full border border-white/10 bg-white/5 p-1 text-[11px]">
+              <div className="dashboard-pill flex items-center gap-1 rounded-full p-1 text-[11px]">
                 {(["7d", "30d", "90d"] as RangeKey[]).map((range) => (
                   <Link
                     key={range}
                     href={`/dashboard?range=${range}`}
                     className={[
                       "rounded-full px-3 py-1 transition",
-                      rangeKey === range ? "bg-white/10 text-white" : "text-white/60 hover:text-white"
+                      rangeKey === range ? "dashboard-chip text-white" : "text-[#cbbd98] hover:text-white"
                     ].join(" ")}
                   >
                     {range}
@@ -535,50 +595,50 @@ export default async function DashboardOverviewPage({
           </Card>
 
           <div className="grid gap-4 lg:grid-cols-[1.2fr,1fr]">
-            <Card className="min-w-0 rounded-3xl border border-white/10 bg-white/5 p-5 backdrop-blur">
+            <Card className="min-w-0 rounded-3xl p-5">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-semibold">Conversion breakdown</p>
-                  <p className="text-xs text-white/60">Opened → Messaged → Meaningful → Converted</p>
+                  <p className="dashboard-heading text-sm font-semibold text-white">Conversion breakdown</p>
+                  <p className="text-xs text-[#cbbd98]">Opened to Messaged to Meaningful to Converted</p>
                 </div>
               </div>
               <ConversionDonut segments={conversionSegments} />
-              <div className="mt-4 grid grid-cols-2 gap-2 text-xs text-white/60">
+              <div className="mt-4 grid grid-cols-2 gap-2 text-xs text-[#cbbd98]">
                 {conversionSegments.map((segment) => (
                   <div key={segment.name} className="flex items-center gap-2">
                     <span className="h-2 w-2 rounded-full" style={{ background: segment.color }} />
                     <span>{segment.name}</span>
-                    <span className="ml-auto text-white/80">{formatNumber(segment.value)}</span>
+                    <span className="ml-auto text-white">{formatNumber(segment.value)}</span>
                   </div>
                 ))}
               </div>
             </Card>
 
-            <Card className="rounded-3xl border border-white/10 bg-white/5 p-5 backdrop-blur">
-              <p className="text-sm font-semibold">Bot health</p>
-              <p className="text-xs text-white/60">Operational quality and recovery</p>
+            <Card className="rounded-3xl p-5">
+              <p className="dashboard-heading text-sm font-semibold text-white">Bot health</p>
+              <p className="text-xs text-[#cbbd98]">Operational quality and recovery</p>
               <div className="mt-4 space-y-3 text-sm">
-                <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
-                  <span className="text-white/60">Uptime</span>
-                  <span className="text-white/80">{uptime}</span>
+                <div className="dashboard-inset flex items-center justify-between rounded-2xl px-3 py-2">
+                  <span className="text-[#cbbd98]">Uptime</span>
+                  <span className="text-white">{uptime}</span>
                 </div>
-                <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
-                  <span className="text-white/60">Avg response</span>
-                  <span className="text-white/80">{avgResponseMs ? `${avgResponseSeconds}s` : "-"}</span>
+                <div className="dashboard-inset flex items-center justify-between rounded-2xl px-3 py-2">
+                  <span className="text-[#cbbd98]">Avg response</span>
+                  <span className="text-white">{avgResponseMs ? `${avgResponseSeconds}s` : "-"}</span>
                 </div>
-                <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
-                  <span className="text-white/60">Fallback rate</span>
-                  <span className="text-white/80">{fallbackRate}%</span>
+                <div className="dashboard-inset flex items-center justify-between rounded-2xl px-3 py-2">
+                  <span className="text-[#cbbd98]">Fallback rate</span>
+                  <span className="text-white">{fallbackRate}%</span>
                 </div>
               </div>
               <div className="mt-4">
-                <div className="h-2 w-full rounded-full bg-white/5">
+                <div className="h-2 w-full rounded-full bg-[#1a2a3d]">
                   <div
                     className="h-2 rounded-full bg-emerald-400"
                     style={{ width: `${Math.max(100 - fallbackRate, 5)}%` }}
                   />
                 </div>
-                <p className="mt-2 text-[11px] text-white/40">Lower fallback rates keep conversations on track.</p>
+                <p className="mt-2 text-[11px] text-[#ccb77e]">Lower fallback rates keep conversations on track.</p>
               </div>
             </Card>
           </div>
@@ -588,52 +648,52 @@ export default async function DashboardOverviewPage({
 
         <div className="lg:sticky lg:top-4">
           <ActivityFeed items={activityItems} />
-          <Card className="mt-4 rounded-3xl border border-white/10 bg-white/5 p-5 backdrop-blur">
-            <p className="text-sm font-semibold">Health Score</p>
-            <p className="text-xs text-white/60">Weekly performance snapshot</p>
+          <Card className="mt-4 rounded-3xl p-5">
+            <p className="dashboard-heading text-sm font-semibold text-white">Health Score</p>
+            <p className="text-xs text-[#cbbd98]">Weekly performance snapshot</p>
             {currentWeeklyMetric ? (
               <>
                 <div className="mt-3 flex items-end justify-between gap-3">
-                  <p className="text-3xl font-semibold text-white">{currentWeeklyMetric.health_score}</p>
-                  <p className="text-xs text-white/60">
+                  <p className="dashboard-heading text-3xl font-semibold text-white">{currentWeeklyMetric.health_score}</p>
+                  <p className="text-xs text-[#cbbd98]">
                     {healthDelta === null ? "No prior week" : `${healthDelta >= 0 ? "+" : ""}${healthDelta} vs last week`}
                   </p>
                 </div>
-                <div className="mt-3 space-y-2 text-xs text-white/70">
-                  <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] px-2 py-1.5">
+                <div className="mt-3 space-y-2 text-xs text-[#b7cee5]">
+                  <div className="dashboard-inset flex items-center justify-between rounded-xl px-2 py-1.5">
                     <span>Errors</span>
                     <span>{currentWeeklyMetric.error_events_count}</span>
                   </div>
-                  <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] px-2 py-1.5">
+                  <div className="dashboard-inset flex items-center justify-between rounded-xl px-2 py-1.5">
                     <span>Missed intents</span>
                     <span>{currentWeeklyMetric.missed_intents_count}</span>
                   </div>
-                  <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] px-2 py-1.5">
+                  <div className="dashboard-inset flex items-center justify-between rounded-xl px-2 py-1.5">
                     <span>Avg response</span>
                     <span>{currentWeeklyMetric.avg_response_time_sec}s</span>
                   </div>
-                  <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] px-2 py-1.5">
+                  <div className="dashboard-inset flex items-center justify-between rounded-xl px-2 py-1.5">
                     <span>Bookings</span>
                     <span>{currentWeeklyMetric.bookings_count}</span>
                   </div>
                 </div>
-                <div className="mt-3 space-y-1 text-[11px] text-white/65">
+                <div className="mt-3 space-y-1 text-[11px] text-[#dbc995]">
                   {healthSuggestions.map((item) => (
                     <p key={item}>• {item}</p>
                   ))}
                 </div>
               </>
             ) : (
-              <p className="mt-3 text-xs text-white/60">No weekly score yet. It appears after the first weekly computation.</p>
+              <p className="mt-3 text-xs text-[#cbbd98]">Generating your first summary...</p>
             )}
           </Card>
 
-          <Card className="mt-4 rounded-3xl border border-white/10 bg-white/5 p-5 backdrop-blur">
-            <p className="text-sm font-semibold">Compared to similar businesses</p>
-            <p className="text-xs text-white/60">Platform median for your industry this week</p>
+          <Card className="mt-4 rounded-3xl p-5">
+            <p className="dashboard-heading text-sm font-semibold text-white">Compared to similar businesses</p>
+            <p className="text-xs text-[#cbbd98]">Platform median for your industry this week</p>
             {currentWeeklyMetric && selectedBenchmark ? (
               <>
-                <p className="mt-3 text-xs text-white/75">
+                <p className="mt-3 text-xs text-[#b5cae0]">
                   {conversionDeltaPercent === null
                     ? "Benchmark conversion unavailable."
                     : `You're ${conversionDeltaPercent >= 0 ? "+" : ""}${conversionDeltaPercent.toFixed(0)}% ${
@@ -642,15 +702,15 @@ export default async function DashboardOverviewPage({
                 </p>
                 <div className="mt-3 space-y-2">
                   <div>
-                    <div className="flex items-center justify-between text-xs text-white/60">
+                    <div className="flex items-center justify-between text-xs text-[#cbbd98]">
                       <span>Conversion</span>
                       <span>
                         {(currentConversion * 100).toFixed(1)}% vs {(selectedBenchmark.conversion_p50 * 100).toFixed(1)}%
                       </span>
                     </div>
-                    <div className="mt-1 h-2 w-full rounded-full bg-white/10">
+                    <div className="mt-1 h-2 w-full rounded-full bg-[#1a2a3d]">
                       <div
-                        className="h-2 rounded-full bg-sky-400"
+                        className="h-2 rounded-full bg-amber-300"
                         style={{
                           width: `${Math.min(100, Math.max(2, selectedBenchmark.conversion_p50 > 0 ? (currentConversion / selectedBenchmark.conversion_p50) * 50 : 0))}%`
                         }}
@@ -658,13 +718,13 @@ export default async function DashboardOverviewPage({
                     </div>
                   </div>
                   <div>
-                    <div className="flex items-center justify-between text-xs text-white/60">
+                    <div className="flex items-center justify-between text-xs text-[#cbbd98]">
                       <span>Bookings</span>
                       <span>
                         {currentWeeklyMetric.bookings_count} vs {selectedBenchmark.bookings_p50}
                       </span>
                     </div>
-                    <div className="mt-1 h-2 w-full rounded-full bg-white/10">
+                    <div className="mt-1 h-2 w-full rounded-full bg-[#1a2a3d]">
                       <div
                         className="h-2 rounded-full bg-emerald-400"
                         style={{
@@ -682,13 +742,13 @@ export default async function DashboardOverviewPage({
                     </div>
                   </div>
                   <div>
-                    <div className="flex items-center justify-between text-xs text-white/60">
+                    <div className="flex items-center justify-between text-xs text-[#cbbd98]">
                       <span>Health score</span>
                       <span>
                         {currentWeeklyMetric.health_score} vs {selectedBenchmark.health_p50}
                       </span>
                     </div>
-                    <div className="mt-1 h-2 w-full rounded-full bg-white/10">
+                    <div className="mt-1 h-2 w-full rounded-full bg-[#1a2a3d]">
                       <div
                         className="h-2 rounded-full bg-indigo-400"
                         style={{
@@ -708,23 +768,61 @@ export default async function DashboardOverviewPage({
                 </div>
               </>
             ) : (
-              <p className="mt-3 text-xs text-white/60">Not enough data yet — check back soon.</p>
+              <p className="mt-3 text-xs text-[#cbbd98]">Not enough data yet - check back soon.</p>
             )}
           </Card>
 
-          <Card className="mt-4 rounded-3xl border border-white/10 bg-white/5 p-5 backdrop-blur">
-            <p className="text-sm font-semibold">Funnel snapshot</p>
-            <p className="text-xs text-white/60">Current conversion momentum</p>
+          <Card className="mt-4 rounded-3xl p-5">
+            <p className="dashboard-heading text-sm font-semibold text-white">Weekly & Monthly summaries</p>
+            <p className="text-xs text-[#cbbd98]">Latest generated highlights for your business</p>
+            <div className="mt-3 space-y-3">
+              {([
+                { label: "Weekly", data: latestWeeklySummary },
+                { label: "Monthly", data: latestMonthlySummary }
+              ] as const).map((item) => {
+                const highlight = item.data?.highlights?.[0];
+                return (
+                  <div key={item.label} className="dashboard-inset rounded-2xl p-3">
+                    <p className="text-xs uppercase tracking-[0.2em] text-white/50">{item.label}</p>
+                    {item.data ? (
+                      <>
+                        <p className="mt-1 text-xs text-[#cbbd98]">
+                          {formatSummaryRange(item.data.period_start, item.data.period_end, timeZone)}
+                        </p>
+                        <p className="mt-2 text-sm font-medium text-white">
+                          {highlight?.title ?? "Summary generated"}
+                        </p>
+                        <p className="mt-1 text-xs text-[#e7d6a8]">
+                          {highlight?.value ?? "Open impact summary for details."}
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="mt-1 text-xs text-[#cbbd98]">Generating your first summary...</p>
+                        <p className="mt-1 text-[11px] text-[#8ba6c1]">
+                          We trigger this once automatically and refresh when ready.
+                        </p>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+
+          <Card className="mt-4 rounded-3xl p-5">
+            <p className="dashboard-heading text-sm font-semibold text-white">Funnel snapshot</p>
+            <p className="text-xs text-[#cbbd98]">Current conversion momentum</p>
             <div className="mt-4 space-y-2">
               {funnelSteps.map((step) => (
                 <div key={step.label}>
-                  <div className="flex items-center justify-between text-xs text-white/60">
+                  <div className="flex items-center justify-between text-xs text-[#cbbd98]">
                     <span>{step.label}</span>
                     <span>{formatNumber(step.value)}</span>
                   </div>
-                  <div className="h-2 w-full rounded-full bg-white/5">
+                  <div className="h-2 w-full rounded-full bg-[#1a2a3d]">
                     <div
-                      className="h-2 rounded-full bg-sky-400"
+                      className="h-2 rounded-full bg-amber-300"
                       style={{ width: `${openedBase ? (step.value / openedBase) * 100 : 0}%` }}
                     />
                   </div>

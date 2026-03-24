@@ -1,0 +1,53 @@
+{
+  "template": "service",
+  "service_niche": "nail_salon",
+  "motion_level": "none",
+  "brand": {
+    "business_name": "Base Coat",
+    "city": "New York",
+    "accent_hex": "#111111"
+  },
+  "header": {
+    "nav_items": ["Services", "Prices", "Gallery", "Contact"],
+    "primary_cta_label": "Book appointment",
+    "primary_cta_url": "https://example.com/book"
+  },
+  "hero": {
+    "headline": "Precision nail care",
+    "tagline": "Clean lines and long-lasting finish.",
+    "primary_cta_label": "Book appointment",
+    "primary_cta_url": "https://example.com/book",
+    "hero_image": {
+      "src": "https://cdn.example.com/hero.jpg",
+      "alt": "Nail studio",
+      "crop_desktop": "16:9",
+      "crop_mobile": "4:5"
+    }
+  },
+  "services": { "items": [
+    { "title": "Gel manicure", "description": "Durable polish." },
+    { "title": "Nail art", "description": "Custom details." },
+    { "title": "Pedicure", "description": "Spa treatment." }
+  ] },
+  "pricing": { "variant": "starting_at", "items": [ { "label": "Manicure", "amount": "$45" } ] },
+  "staff": { "enabled": false, "members": [] },
+  "gallery": {
+    "variant": "masonry",
+    "items": [
+      {
+        "src": "https://cdn.example.com/g1.jpg",
+        "alt": "Lookbook",
+        "crop": "3:2"
+      }
+    ]
+  },
+  "reviews": { "items": [], "fallback_hygiene_bullets": ["Sterile tools."] },
+  "contact": {
+    "hours": ["Mon-Fri 10-8", "Sat 10-7", "Sun 11-6"],
+    "address": "123 Broadway, New York",
+    "phone": "+1 555-1122",
+    "booking_cta_label": "Book appointment",
+    "booking_cta_url": "https://example.com/book"
+  },
+  "footer": { "instagram_url": "https://instagram.com/basecoat" }
+}

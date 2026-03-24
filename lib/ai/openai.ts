@@ -27,9 +27,10 @@ RESERVATION FLOW MODE:
   1) Name
   2) Date
   3) Time
-  4) Phone number
-  5) Party size (optional)
+  4) Party size
+  5) Phone number
 - Ask for ONLY ONE missing field at a time.
+- Show available times and ask the user to pick one before final confirmation.
 - Confirm details once all required fields are collected.
 - Stay in reservation flow until:
   - reservation is confirmed, OR

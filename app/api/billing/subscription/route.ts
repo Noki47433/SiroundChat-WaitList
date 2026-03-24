@@ -1,13 +1,11 @@
 import { NextResponse } from "next/server";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
-import { getSupabaseAdminClient } from "@/lib/supabase/admin";
+import { resolveBillingEntitlements } from "@/lib/billing/entitlements";
 import { getTenantFromSession } from "@/lib/utils/tenant";
-import { getPlanDefinition, resolveEntitlements, type PlanId } from "@/src/billing/plans";
+import { getWorkspaceSubscription } from "@/src/billing/getSubscription";
+import { getPlanDefinition } from "@/src/billing/plans";
 
 const normalizeUuid = (value: string | null) => (value ?? "").trim().replace(/[<>]/g, "");
-
-const SUBSCRIPTION_SELECT =
-  "id,business_id,plan_id,status,current_period_start,current_period_end,cancel_at_period_end,created_at,updated_at";
 
 const resolveIsAdmin = async (supabase: any, userId: string) => {
   const { data } = await (supabase as any)
@@ -31,41 +29,6 @@ const assertMembership = async (supabase: any, userId: string, businessId: strin
   const ownerId = (business.owner_user_id ?? business.owner_id) as string | null;
   if (ownerId && ownerId === userId) return true;
   return resolveIsAdmin(supabase, userId);
-};
-
-const ensureSubscription = async (supabaseAdmin: any, businessId: string) => {
-  const { data: existing } = await (supabaseAdmin as any)
-    .from("subscriptions")
-    .select(SUBSCRIPTION_SELECT)
-    .eq("business_id", businessId)
-    .maybeSingle();
-
-  if (existing) return existing;
-
-  const now = new Date();
-  const periodEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-  const { data: inserted, error } = await (supabaseAdmin as any)
-    .from("subscriptions")
-    .upsert(
-      {
-        business_id: businessId,
-        plan: "local_basic",
-        plan_id: "website",
-        status: "active",
-        current_period_start: now.toISOString(),
-        current_period_end: periodEnd.toISOString(),
-        cancel_at_period_end: false
-      },
-      { onConflict: "business_id" }
-    )
-    .select(SUBSCRIPTION_SELECT)
-    .single();
-
-  if (error || !inserted) {
-    throw new Error(error?.message ?? "Failed to ensure subscription");
-  }
-
-  return inserted;
 };
 
 export const dynamic = "force-dynamic";
@@ -96,14 +59,18 @@ export async function GET(request: Request) {
   }
 
   try {
-    const admin = getSupabaseAdminClient();
-    const subscription = await ensureSubscription(admin, workspaceId);
-    const planId = (subscription.plan_id ?? "website") as PlanId;
+    const subscription = await getWorkspaceSubscription(workspaceId);
+    const entitlements = resolveBillingEntitlements(
+      subscription.billing_plan_id,
+      subscription.is_access_active
+    );
+
     return NextResponse.json(
       {
         subscription,
-        planDefinition: getPlanDefinition(planId),
-        entitlements: resolveEntitlements(planId)
+        accessActive: subscription.is_access_active,
+        planDefinition: getPlanDefinition(subscription.plan_id),
+        entitlements
       },
       { status: 200 }
     );

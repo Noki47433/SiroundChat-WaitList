@@ -1,7 +1,10 @@
 import type { SiteThemeTokens } from "@/lib/website-builder/types";
 import type { CSSProperties } from "react";
+import { resolveThemeFontPair } from "@/lib/website-builder/theme/fonts";
 
 export function themeToCssVars(theme: SiteThemeTokens): CSSProperties {
+  const headingFont = resolveThemeFontPair(theme.fontHeading ?? theme.fontBody).heading;
+  const bodyFont = resolveThemeFontPair(theme.fontBody ?? theme.fontHeading).body;
   return {
     ["--site-primary" as any]: theme.primary,
     ["--site-secondary" as any]: theme.secondary,
@@ -13,8 +16,8 @@ export function themeToCssVars(theme: SiteThemeTokens): CSSProperties {
     ["--site-buttonText" as any]: theme.buttonText,
     ["--site-accent" as any]: theme.accent ?? theme.primary,
     ["--site-radius" as any]: theme.radius === "xl" ? "1.5rem" : "1rem",
-    ["--site-fontHeading" as any]: theme.fontHeading ?? "inherit",
-    ["--site-fontBody" as any]: theme.fontBody ?? "inherit",
+    ["--site-fontHeading" as any]: headingFont,
+    ["--site-fontBody" as any]: bodyFont,
     ["--site-h1-size" as any]: theme.textStyles?.h1.size ?? "2.75rem",
     ["--site-h1-weight" as any]: theme.textStyles?.h1.weight ?? 600,
     ["--site-h1-line" as any]: theme.textStyles?.h1.lineHeight ?? "1.1",

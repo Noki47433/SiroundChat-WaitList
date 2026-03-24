@@ -1,0 +1,97 @@
+{
+  "template": "restaurant",
+  "motion_level": "none",
+  "brand": {
+    "business_name": "Juniper & Salt",
+    "city": "Austin",
+    "accent_hex": "#3E270F"
+  },
+  "header": {
+    "nav_items": ["Menu", "About", "Gallery", "Contact"],
+    "primary_cta_label": "Reserve a table",
+    "primary_cta_url": "https://example.com/book"
+  },
+  "hero": {
+    "headline": "Modern coastal cooking",
+    "subhead": "Seasonal plates and a room built for long dinners.",
+    "primary_cta_label": "Reserve a table",
+    "primary_cta_url": "https://example.com/book",
+    "secondary_cta_label": "View menu",
+    "secondary_cta_url": "https://example.com/menu",
+    "hero_image": {
+      "src": "https://cdn.example.com/hero.jpg",
+      "alt": "Dining room",
+      "crop_desktop": "16:9",
+      "crop_mobile": "4:5"
+    }
+  },
+  "proof": {
+    "items": ["4.8 Google", "Since 2018"]
+  },
+  "signature": {
+    "items": [
+      {
+        "title": "Charred octopus",
+        "desc": "Smoked paprika and lemon aioli.",
+        "price": "18",
+        "image": {
+          "src": "https://cdn.example.com/d1.jpg",
+          "alt": "Octopus plated",
+          "crop": "1:1"
+        }
+      },
+      {
+        "title": "Sea bass crudo",
+        "desc": "Citrus, fennel, olive oil.",
+        "price": "16",
+        "image": {
+          "src": "https://cdn.example.com/d2.jpg",
+          "alt": "Crudo close-up",
+          "crop": "1:1"
+        }
+      },
+      {
+        "title": "Basque cheesecake",
+        "desc": "Burnt top and berry compote.",
+        "price": "10",
+        "image": {
+          "src": "https://cdn.example.com/d3.jpg",
+          "alt": "Cheesecake slice",
+          "crop": "4:3"
+        }
+      }
+    ]
+  },
+  "menu": {
+    "variant": "categories",
+    "menu_url": "https://example.com/menu"
+  },
+  "story": {
+    "paragraph": "We cook like the seasons matter. Expect bright flavors and fire-forward technique."
+  },
+  "logistics": {
+    "variant": "map_hours_contact",
+    "address": "123 South Congress Ave, Austin, TX",
+    "hours": ["Tue-Thu 5-10pm", "Fri 5-11pm", "Sat 4-11pm"],
+    "phone": "+1 (512) 555-0199",
+    "map_url": "https://maps.example.com/juniper",
+    "policies": ["Walk-ins welcome at bar.", "18% added for parties of 6+."]
+  },
+  "reviews": {
+    "items": [
+      {
+        "quote": "Best dinner we had all year.",
+        "name": "Cam"
+      }
+    ]
+  },
+  "newsletter": {
+    "headline": "Get menu drops",
+    "subhead": "Events and chef notes."
+  },
+  "footer": {
+    "email": "hello@juniperandsalt.com",
+    "instagram_url": "https://instagram.com/juniperandsalt",
+    "micro_legal": "All rights reserved."
+  }
+}

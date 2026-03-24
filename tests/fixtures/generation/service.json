@@ -1,0 +1,13 @@
+{
+  "businessName": "Blue Ridge Plumbing",
+  "businessType": "home-services",
+  "subtype": "plumbing",
+  "location": "Nashville, TN",
+  "services": ["Emergency Plumbing", "Water Heater Repair", "Drain Cleaning"],
+  "targetCustomer": "homeowners",
+  "toneProfile": "professional",
+  "ctaIntent": "quote",
+  "proofAssets": ["Google review import available"],
+  "photosAvailable": false,
+  "description": "Local plumbing team focused on fast response and clear quotes."
+}

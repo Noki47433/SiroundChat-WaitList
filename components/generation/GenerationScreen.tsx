@@ -4,6 +4,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { GenerationCanvas } from "@/components/generation/GenerationCanvas";
 import { GenerationSidebar } from "@/components/generation/GenerationSidebar";
+import {
+  CONTENT_LANGUAGES,
+  CTA_GOALS,
+  QUALITY_MODES,
+  createEmptyGenerationBrief,
+  isGenerationBriefComplete,
+  normalizeContentLanguage,
+  normalizeGenerationBriefForForm,
+  normalizeQualityMode,
+  primaryGoalLabel,
+  sanitizeGenerationBrief,
+  type GenerationBriefData
+} from "@/lib/builder/generation-config";
 import { TEMPLATE_META } from "@/lib/website-builder/templates/registry";
 import { useGenerationStore } from "@/state/generation";
 import type { GenerationBrief } from "@/state/generation";
@@ -45,6 +58,107 @@ const resolveTemplateId = (templateId?: string | null, industry?: string | null)
   }
   if (normalized.includes("service")) return "auto-modern";
   return "auto-modern";
+};
+
+const isHexColor = (value?: string | null) =>
+  Boolean(value && /^#(?:[0-9a-fA-F]{3}){1,2}$/.test(value.trim()));
+
+const normalizeTextOrNull = (value: unknown) => {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length ? trimmed : null;
+};
+
+const normalizeEmailOrNull = (value: unknown) => {
+  const normalized = normalizeTextOrNull(value);
+  if (!normalized) return null;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized) ? normalized : null;
+};
+
+const normalizeSocials = (value: unknown) => {
+  if (!value || typeof value !== "object") return {};
+  const source = value as Record<string, unknown>;
+  const next: Record<string, string | null> = {};
+  for (const [key, raw] of Object.entries(source)) {
+    const normalized = normalizeTextOrNull(raw);
+    if (normalized !== null) next[key] = normalized;
+  }
+  return next;
+};
+
+const normalizeFeatures = (value: unknown) => {
+  const source = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  return {
+    includeServices: Boolean(source.includeServices ?? true),
+    includeTestimonials: Boolean(source.includeTestimonials),
+    includePricing: Boolean(source.includePricing),
+    includeFaq: Boolean(source.includeFaq),
+    includeContact: Boolean(source.includeContact ?? true),
+    includeReservation: Boolean(source.includeReservation),
+    includeGallery: Boolean(source.includeGallery)
+  };
+};
+
+const formatIndustryValidationError = (data: any) => {
+  const validation = data?.validation ?? data?.quality;
+  const issues = Array.isArray(validation?.issues) ? validation.issues : [];
+  if (!issues.length) return data?.error || "Generate failed";
+
+  const criticalIssues = issues.filter((issue: { severity?: string }) => issue?.severity === "critical");
+  const prioritized = criticalIssues.length ? criticalIssues : issues;
+  const lines = prioritized
+    .slice(0, 4)
+    .map((issue: { message?: string; sectionId?: string }) =>
+      issue?.sectionId ? `${issue.message} (${issue.sectionId})` : issue?.message
+    )
+    .filter(Boolean);
+
+  const prefix = validation?.score ? `Quality score ${validation.score}. ` : "";
+  return `${prefix}${lines.join(" • ")}`;
+};
+
+const normalizeStoredBrief = (value: any, siteId: string): GenerationBrief | null => {
+  if (!value || typeof value !== "object") return null;
+  const tone = normalizeTextOrNull(value.tone) ?? "professional";
+  return {
+    siteId,
+    businessId: String(value.businessId ?? value.business_id ?? ""),
+    businessName: normalizeTextOrNull(value.businessName ?? value.business_name) ?? "",
+    industry: normalizeTextOrNull(value.industry) ?? "Service",
+    contentLanguage: normalizeContentLanguage(value.contentLanguage ?? value.language ?? value.content_language),
+    qualityMode: normalizeQualityMode(value.qualityMode),
+    generationBrief: normalizeGenerationBriefForForm(
+      value.generationBrief ?? value.brief ?? value.generation_brief,
+      tone
+    ),
+    tone,
+    pagesMode: normalizeTextOrNull(value.pagesMode ?? value.pages_mode) ?? "one",
+    templateId: normalizeTextOrNull(value.templateId ?? value.template_id) ?? undefined,
+    primaryColor: normalizeTextOrNull(value.primaryColor ?? value.primary_color) ?? "#111827",
+    secondaryColor: normalizeTextOrNull(value.secondaryColor ?? value.secondary_color) ?? "#F3F4F6",
+    fontFamily:
+      normalizeTextOrNull(value.fontFamily ?? value.font_family) ??
+      "Sora, Inter, system-ui, sans-serif",
+    logoUrl: normalizeTextOrNull(value.logoUrl ?? value.logo_url),
+    description: normalizeTextOrNull(value.description) ?? "",
+    contact: {
+      email: normalizeEmailOrNull(value.contact?.email ?? value.contact_email),
+      phone: normalizeTextOrNull(value.contact?.phone ?? value.contact_phone),
+      address: normalizeTextOrNull(value.contact?.address ?? value.contact_address)
+    },
+    openingHours: normalizeTextOrNull(value.openingHours ?? value.opening_hours),
+    socials: normalizeSocials(value.socials),
+    features: {
+      ...normalizeFeatures(value.features),
+      includeReservation: Boolean(
+        value.features?.includeReservation ?? value.include_reservation
+      )
+    },
+    hasOwnPhotos: Boolean(value.hasOwnPhotos ?? value.has_own_photos),
+    chatbotEmbedSnippet: normalizeTextOrNull(
+      value.chatbotEmbedSnippet ?? value.chatbot_embed_snippet
+    )
+  };
 };
 
 export function GenerationScreen({ siteId }: GenerationScreenProps) {
@@ -93,7 +207,7 @@ export function GenerationScreen({ siteId }: GenerationScreenProps) {
     try {
       const stored = window.localStorage.getItem(`sc_generation_brief:${siteId}`);
       if (!stored) return null;
-      return JSON.parse(stored);
+      return normalizeStoredBrief(JSON.parse(stored), siteId);
     } catch {
       return null;
     }
@@ -114,38 +228,16 @@ export function GenerationScreen({ siteId }: GenerationScreenProps) {
       if (!response.ok) return null;
       const data = await response.json();
       if (!data?.id || !data?.business_id) return null;
-      const resolvedTemplateId = resolveTemplateId(data.template_id, data.industry);
-      return {
-        siteId,
-        businessId: data.business_id,
-        businessName: data.business_name ?? "",
-        industry: data.industry ?? "Service",
-        description: data.description ?? "",
-        tone: data.tone ?? "friendly",
-        pagesMode: data.pages_mode ?? "one",
-        templateId: resolvedTemplateId,
-        primaryColor: data.primary_color ?? "#111827",
-        secondaryColor: data.secondary_color ?? "#F3F4F6",
-        fontFamily: data.font_family ?? "Sora, Inter, system-ui, sans-serif",
-        logoUrl: data.logo_url ?? null,
-        contact: {
-          email: data.contact_email ?? null,
-          phone: data.contact_phone ?? null,
-          address: data.contact_address ?? null
+      const normalized = normalizeStoredBrief(
+        {
+          ...data,
+          templateId: resolveTemplateId(data.template_id, data.industry),
+          contentLanguage: data.content_language,
+          generationBrief: data.generation_brief
         },
-        openingHours: data.opening_hours ?? null,
-        socials: data.socials ?? {},
-        features: {
-          includeServices: data.include_services ?? true,
-          includeTestimonials: data.include_testimonials ?? false,
-          includePricing: data.include_pricing ?? false,
-          includeFaq: data.include_faq ?? false,
-          includeContact: data.include_contact ?? true,
-          includeReservation: data.include_reservation ?? false,
-          includeGallery: data.include_gallery ?? false
-        },
-        hasOwnPhotos: Boolean(data.has_own_photos)
-      };
+        siteId
+      );
+      return normalized;
     } catch {
       return null;
     }
@@ -179,23 +271,57 @@ export function GenerationScreen({ siteId }: GenerationScreenProps) {
     resetProgress();
     startFakeProgress(false, 0);
 
-    const resolvedTemplateId = resolveTemplateId(payload?.templateId, payload?.industry);
-    const normalizedPayload = {
-      tone: payload?.tone ?? "professional",
-      pagesMode: payload?.pagesMode ?? "one",
-      templateId: resolvedTemplateId,
-      primaryColor: payload?.primaryColor ?? "#111827",
-      secondaryColor: payload?.secondaryColor ?? "#F3F4F6",
-      fontFamily: payload?.fontFamily ?? "Sora, Inter, system-ui, sans-serif",
-      contact: payload?.contact ?? {
-        email: null,
-        phone: null,
-        address: null
-      },
-      socials: payload?.socials ?? {},
-      features: payload?.features ?? {},
-      ...payload
+    const businessName = normalizeTextOrNull(payload?.businessName) ?? "Business";
+    const industry = normalizeTextOrNull(payload?.industry) ?? "Service";
+    const description =
+      normalizeTextOrNull(payload?.description) ?? `${businessName} ${industry} website`;
+    const resolvedTemplateId = resolveTemplateId(payload?.templateId, industry);
+    const tone = normalizeTextOrNull(payload?.tone) ?? "professional";
+    const generationBrief = sanitizeGenerationBrief(
+      payload?.generationBrief ?? payload?.brief,
+      tone
+    );
+    if (!isGenerationBriefComplete(generationBrief)) {
+      throw new Error("Complete the generation brief before starting generation.");
+    }
+
+    const contactRaw = payload?.contact && typeof payload.contact === "object" ? payload.contact : {};
+    const contact = {
+      email: normalizeEmailOrNull((contactRaw as Record<string, unknown>).email),
+      phone: normalizeTextOrNull((contactRaw as Record<string, unknown>).phone),
+      address: normalizeTextOrNull((contactRaw as Record<string, unknown>).address)
     };
+
+    const normalizedPayload = {
+      siteId,
+      businessId: payload?.businessId,
+      businessName,
+      industry,
+      description,
+      tone,
+      language: normalizeContentLanguage(payload?.contentLanguage ?? payload?.language),
+      qualityMode: normalizeQualityMode(payload?.qualityMode),
+      brief: generationBrief,
+      pagesMode: payload?.pagesMode === "multi" ? "multi" : "one",
+      templateId: resolvedTemplateId,
+      primaryColor: isHexColor(payload?.primaryColor) ? payload.primaryColor : "#111827",
+      secondaryColor: isHexColor(payload?.secondaryColor) ? payload.secondaryColor : "#F3F4F6",
+      fontFamily: normalizeTextOrNull(payload?.fontFamily) ?? "Sora, Inter, system-ui, sans-serif",
+      logoUrl: normalizeTextOrNull(payload?.logoUrl),
+      openingHours: normalizeTextOrNull(payload?.openingHours),
+      contact,
+      socials: normalizeSocials(payload?.socials),
+      targetCustomer: generationBrief.audience,
+      services: generationBrief.topServices,
+      proofAssets: generationBrief.proofPoints,
+      features: normalizeFeatures(payload?.features),
+      hasOwnPhotos: Boolean(payload?.hasOwnPhotos),
+      chatbotEmbedSnippet: normalizeTextOrNull(payload?.chatbotEmbedSnippet)
+    };
+
+    if (!isValidUuid(normalizedPayload.businessId)) {
+      throw new Error("Missing business context for generation. Please refresh and try again.");
+    }
 
     window.localStorage.setItem(`sc_generation_brief:${siteId}`, JSON.stringify(normalizedPayload));
 
@@ -208,7 +334,17 @@ export function GenerationScreen({ siteId }: GenerationScreenProps) {
       });
       if (!response.ok) {
         const data = await response.json().catch(() => null);
-        const message = data?.error ?? "Generate failed";
+        const validationMessage =
+          data?.code === "INDUSTRY_V2_VALIDATION_FAILED" ? formatIndustryValidationError(data) : null;
+        const qualityIssues = Array.isArray(data?.quality?.issues)
+          ? data.quality.issues
+              .map((issue: { message?: string; suggestion?: string }) =>
+                issue?.suggestion ? `${issue.message} ${issue.suggestion}` : issue?.message
+              )
+              .filter(Boolean)
+              .join(" ")
+          : null;
+        const message = validationMessage || qualityIssues || data?.error || "Generate failed";
         throw new Error(message);
       }
       setStatus("done");
@@ -246,10 +382,11 @@ export function GenerationScreen({ siteId }: GenerationScreenProps) {
         if (!fallback) return;
         const merged = stored
           ? {
-              ...stored,
               ...fallback,
-              goal: stored.goal ?? fallback.goal,
-              pages: stored.pages ?? fallback.pages
+              ...stored,
+              generationBrief: stored.generationBrief ?? fallback.generationBrief,
+              contentLanguage: stored.contentLanguage ?? fallback.contentLanguage,
+              qualityMode: stored.qualityMode ?? fallback.qualityMode
             }
           : fallback;
         setBrief(merged);
@@ -303,8 +440,15 @@ export function GenerationScreen({ siteId }: GenerationScreenProps) {
 
   const handleSaveBrief = () => {
     if (!draft) return;
-    setBrief(draft);
-    window.localStorage.setItem(`sc_generation_brief:${siteId}`, JSON.stringify(draft));
+    const normalizedDraft = {
+      ...draft,
+      contentLanguage: normalizeContentLanguage(draft.contentLanguage),
+      qualityMode: normalizeQualityMode(draft.qualityMode),
+      generationBrief: sanitizeGenerationBrief(draft.generationBrief, draft.tone ?? "professional")
+    };
+    setBrief(normalizedDraft);
+    setDraft(normalizedDraft);
+    window.localStorage.setItem(`sc_generation_brief:${siteId}`, JSON.stringify(normalizedDraft));
     setShowEdit(false);
   };
 
@@ -389,7 +533,14 @@ export function GenerationScreen({ siteId }: GenerationScreenProps) {
                   className="mt-2 h-9 w-full rounded-xl border border-[#e5e1d8] px-3 text-sm"
                   value={draft?.tone ?? "professional"}
                   onChange={(event) =>
-                    setDraft((prev) => ({ ...(prev ?? ({} as any)), tone: event.target.value }))
+                    setDraft((prev) => ({
+                      ...(prev ?? ({} as any)),
+                      tone: event.target.value,
+                      generationBrief: {
+                        ...(prev?.generationBrief ?? createEmptyGenerationBrief(event.target.value)),
+                        tone: event.target.value
+                      }
+                    }))
                   }
                 >
                   <option value="professional">Professional</option>
@@ -399,38 +550,121 @@ export function GenerationScreen({ siteId }: GenerationScreenProps) {
                 </select>
               </label>
               <label className="block">
-                <span className="text-[10px] uppercase tracking-[0.2em] text-neutral-400">Primary goal</span>
+                <span className="text-[10px] uppercase tracking-[0.2em] text-neutral-400">Content language</span>
+                <select
+                  className="mt-2 h-9 w-full rounded-xl border border-[#e5e1d8] px-3 text-sm"
+                  value={draft?.contentLanguage ?? "en"}
+                  onChange={(event) =>
+                    setDraft((prev) => ({
+                      ...(prev ?? ({} as any)),
+                      contentLanguage: normalizeContentLanguage(event.target.value)
+                    }))
+                  }
+                >
+                  {CONTENT_LANGUAGES.map((language) => (
+                    <option key={language.value} value={language.value}>
+                      {language.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="text-[10px] uppercase tracking-[0.2em] text-neutral-400">Quality mode</span>
+                <select
+                  className="mt-2 h-9 w-full rounded-xl border border-[#e5e1d8] px-3 text-sm"
+                  value={draft?.qualityMode ?? "balanced"}
+                  onChange={(event) =>
+                    setDraft((prev) => ({
+                      ...(prev ?? ({} as any)),
+                      qualityMode: normalizeQualityMode(event.target.value)
+                    }))
+                  }
+                >
+                  {QUALITY_MODES.map((mode) => (
+                    <option key={mode} value={mode}>
+                      {mode}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="text-[10px] uppercase tracking-[0.2em] text-neutral-400">Audience</span>
                 <input
                   className="mt-2 h-9 w-full rounded-xl border border-[#e5e1d8] px-3 text-sm"
-                  value={draft?.goal ?? ""}
+                  value={draft?.generationBrief?.audience ?? ""}
                   onChange={(event) =>
-                    setDraft((prev) => ({ ...(prev ?? ({} as any)), goal: event.target.value }))
+                    setDraft((prev) => ({
+                      ...(prev ?? ({} as any)),
+                      generationBrief: {
+                        ...(prev?.generationBrief ?? createEmptyGenerationBrief(prev?.tone ?? "professional")),
+                        audience: event.target.value
+                      }
+                    }))
                   }
                 />
               </label>
-              <div>
-                <span className="text-[10px] uppercase tracking-[0.2em] text-neutral-400">Pages</span>
-                <div className="mt-2 grid gap-2 text-xs text-neutral-700">
-                  {["Home", "About", "Services", "Contact"].map((page) => {
-                    const pages = draft?.pages ?? [];
-                    const checked = pages.includes(page);
-                    return (
-                      <label key={page} className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={(event) => {
-                            const next = event.target.checked
-                              ? [...pages, page]
-                              : pages.filter((item) => item !== page);
-                            setDraft((prev) => ({ ...(prev ?? ({} as any)), pages: next }));
-                          }}
-                        />
-                        {page}
-                      </label>
-                    );
-                  })}
-                </div>
+              <label className="block">
+                <span className="text-[10px] uppercase tracking-[0.2em] text-neutral-400">Core offer</span>
+                <input
+                  className="mt-2 h-9 w-full rounded-xl border border-[#e5e1d8] px-3 text-sm"
+                  value={draft?.generationBrief?.coreOffer ?? ""}
+                  onChange={(event) =>
+                    setDraft((prev) => ({
+                      ...(prev ?? ({} as any)),
+                      generationBrief: {
+                        ...(prev?.generationBrief ?? createEmptyGenerationBrief(prev?.tone ?? "professional")),
+                        coreOffer: event.target.value
+                      }
+                    }))
+                  }
+                />
+              </label>
+              <label className="block">
+                <span className="text-[10px] uppercase tracking-[0.2em] text-neutral-400">Primary CTA goal</span>
+                <select
+                  className="mt-2 h-9 w-full rounded-xl border border-[#e5e1d8] px-3 text-sm"
+                  value={draft?.generationBrief?.primaryCtaGoal ?? "contact"}
+                  onChange={(event) =>
+                    setDraft((prev) => ({
+                      ...(prev ?? ({} as any)),
+                      generationBrief: {
+                        ...(prev?.generationBrief ?? createEmptyGenerationBrief(prev?.tone ?? "professional")),
+                        primaryCtaGoal: event.target.value as GenerationBriefData["primaryCtaGoal"]
+                      }
+                    }))
+                  }
+                >
+                  {CTA_GOALS.map((goal) => (
+                    <option key={goal} value={goal}>
+                      {primaryGoalLabel(goal)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="space-y-2">
+                <span className="text-[10px] uppercase tracking-[0.2em] text-neutral-400">Top services</span>
+                {[0, 1, 2].map((index) => (
+                  <input
+                    key={`service-${index}`}
+                    className="h-9 w-full rounded-xl border border-[#e5e1d8] px-3 text-sm"
+                    value={draft?.generationBrief?.topServices?.[index] ?? ""}
+                    onChange={(event) =>
+                      setDraft((prev) => {
+                        const current = prev?.generationBrief ?? createEmptyGenerationBrief(prev?.tone ?? "professional");
+                        const topServices = [...current.topServices];
+                        topServices[index] = event.target.value;
+                        return {
+                          ...(prev ?? ({} as any)),
+                          generationBrief: {
+                            ...current,
+                            topServices
+                          }
+                        };
+                      })
+                    }
+                    placeholder={`Top service ${index + 1}`}
+                  />
+                ))}
               </div>
               <div className="flex gap-2 pt-2">
                 <button

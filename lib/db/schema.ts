@@ -41,6 +41,9 @@ export interface Database {
           greeting: string | null;
           tone: string | null;
           timezone: string | null;
+          onboarding_data: Json;
+          generated_starter_knowledge: string | null;
+          onboarding_completed_at: string | null;
           created_at: string;
           updated_at: string | null;
         };
@@ -54,6 +57,9 @@ export interface Database {
           greeting?: string | null;
           tone?: string | null;
           timezone?: string | null;
+          onboarding_data?: Json;
+          generated_starter_knowledge?: string | null;
+          onboarding_completed_at?: string | null;
           created_at?: string;
           updated_at?: string | null;
         };
@@ -501,7 +507,14 @@ export interface Database {
           site_id: string | null;
           page_path: string;
           page_title: string | null;
-          event_type: "page_view" | "cta_click" | "lead_submitted" | "chat_open" | "chat_started";
+          event_type:
+            | "page_view"
+            | "cta_click"
+            | "lead_submitted"
+            | "chat_open"
+            | "chat_started"
+            | "reservation_started"
+            | "reservation_completed";
           channel: "website" | "chatbot" | "form";
           cta_type: "call" | "whatsapp" | "email" | "directions" | "booking" | "other" | null;
           lead_type: "form" | "chat" | null;
@@ -519,7 +532,14 @@ export interface Database {
           site_id?: string | null;
           page_path: string;
           page_title?: string | null;
-          event_type: "page_view" | "cta_click" | "lead_submitted" | "chat_open" | "chat_started";
+          event_type:
+            | "page_view"
+            | "cta_click"
+            | "lead_submitted"
+            | "chat_open"
+            | "chat_started"
+            | "reservation_started"
+            | "reservation_completed";
           channel: "website" | "chatbot" | "form";
           cta_type?: "call" | "whatsapp" | "email" | "directions" | "booking" | "other" | null;
           lead_type?: "form" | "chat" | null;
@@ -532,6 +552,70 @@ export interface Database {
           occurred_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["website_analytics_events"]["Insert"]>;
+      };
+      chatbot_update_entries: {
+        Row: {
+          id: string;
+          business_id: string;
+          input_text: string;
+          status: "pending_review" | "applied" | "discarded";
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          business_id: string;
+          input_text: string;
+          status?: "pending_review" | "applied" | "discarded";
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["chatbot_update_entries"]["Insert"]>;
+      };
+      chatbot_update_rules: {
+        Row: {
+          id: string;
+          business_id: string;
+          entry_id: string | null;
+          category:
+            | "offer"
+            | "closure"
+            | "reservation_constraint"
+            | "recommendation"
+            | "service_notice"
+            | "faq"
+            | "general_notice";
+          title: string;
+          body: string;
+          keywords: string[];
+          metadata: Json;
+          enabled: boolean;
+          approval_status: "pending" | "approved" | "discarded";
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          business_id: string;
+          entry_id?: string | null;
+          category:
+            | "offer"
+            | "closure"
+            | "reservation_constraint"
+            | "recommendation"
+            | "service_notice"
+            | "faq"
+            | "general_notice";
+          title: string;
+          body: string;
+          keywords?: string[];
+          metadata?: Json;
+          enabled?: boolean;
+          approval_status?: "pending" | "approved" | "discarded";
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["chatbot_update_rules"]["Insert"]>;
       };
       reservations: {
         Row: {

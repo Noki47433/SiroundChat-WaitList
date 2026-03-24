@@ -1,11 +1,6 @@
 "use client";
 
 import { motion } from "framer-motion";
-import dynamic from "next/dynamic";
-
-const HeroShaderGradient = dynamic(() => import("@/app/_components/HeroShaderGradient"), {
-  ssr: false,
-});
 
 type HeroProps = { isLoggedIn?: boolean };
 

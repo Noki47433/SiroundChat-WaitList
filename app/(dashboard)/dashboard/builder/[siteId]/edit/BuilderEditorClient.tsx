@@ -2284,7 +2284,7 @@ export function BuilderEditorClient({ initialSite, canPublish }: BuilderEditorCl
             ) : null}
             {!canPublish || publishNeedsUpgrade ? (
               <Link
-                href="/dashboard/billing?blocked=publish_website"
+                href="/billing?blocked=publish_website"
                 className="rounded-xl border border-amber-200 bg-amber-100 px-3 py-2 text-xs font-semibold text-amber-900"
               >
                 Upgrade
@@ -2311,7 +2311,7 @@ export function BuilderEditorClient({ initialSite, canPublish }: BuilderEditorCl
           <div className="mx-auto flex max-w-[1400px] flex-wrap items-center justify-between gap-3 px-4 py-2 text-xs text-amber-900">
             <span>Your current plan does not include website publishing. Upgrade to unlock it.</span>
             <Link
-              href="/dashboard/billing?blocked=publish_website"
+              href="/billing?blocked=publish_website"
               className="rounded-full border border-amber-300 bg-amber-100 px-3 py-1 font-semibold"
             >
               Upgrade now

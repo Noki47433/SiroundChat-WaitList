@@ -1,7 +1,15 @@
 // Summary: App-wide root layout applying fonts, global styles, and metadata; secondary framework wrapper.
 import type { Metadata } from "next";
 import Script from "next/script";
-import { Inter } from "next/font/google";
+import {
+  Cormorant_Garamond,
+  Inter,
+  Manrope,
+  Playfair_Display,
+  Plus_Jakarta_Sans,
+  Sora,
+  Space_Grotesk
+} from "next/font/google";
 import { Suspense } from "react";
 import GoogleAnalytics from "./components/GoogleAnalyticsClient";
 import "./globals.css";
@@ -9,7 +17,31 @@ import "./globals.css";
 
 const inter = Inter({
   subsets: ["latin"],
-  variable: "--font-sans",
+  variable: "--font-inter",
+  display: "swap"
+});
+
+const sora = Sora({ subsets: ["latin"], variable: "--font-sora", display: "swap" });
+const manrope = Manrope({ subsets: ["latin"], variable: "--font-manrope", display: "swap" });
+const spaceGrotesk = Space_Grotesk({
+  subsets: ["latin"],
+  variable: "--font-space-grotesk",
+  display: "swap"
+});
+const playfair = Playfair_Display({
+  subsets: ["latin"],
+  variable: "--font-playfair",
+  display: "swap"
+});
+const plusJakartaSans = Plus_Jakarta_Sans({
+  subsets: ["latin"],
+  variable: "--font-jakarta",
+  display: "swap"
+});
+const cormorant = Cormorant_Garamond({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-cormorant",
   display: "swap"
 });
 
@@ -64,7 +96,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className={`${inter.variable} min-h-screen bg-bg-page text-ink antialiased font-sans`}>
+      <body
+        className={`${inter.variable} ${sora.variable} ${manrope.variable} ${spaceGrotesk.variable} ${playfair.variable} ${plusJakartaSans.variable} ${cormorant.variable} min-h-screen bg-bg-page text-ink antialiased`}
+        style={{ fontFamily: "var(--font-inter), system-ui, sans-serif" }}
+      >
         {GA_ID ? (
           <>
             <Script

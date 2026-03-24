@@ -6,13 +6,14 @@ import type { Entitlements, PlanDefinition, PlanId } from "@/src/billing/plans";
 type SubscriptionRecord = {
   id: string;
   business_id: string;
+  billing_plan_id: "website_19" | "chatbot_19" | "bundle_29";
   plan_id: PlanId;
-  status: "active" | "trialing" | "past_due" | "canceled";
-  current_period_start: string;
+  status: "pending_setup" | "active" | "trialing" | "past_due" | "canceled";
+  trial_end: string | null;
   current_period_end: string;
-  cancel_at_period_end: boolean;
   created_at: string;
   updated_at: string;
+  is_access_active: boolean;
 };
 
 type SubscriptionPayload = {
@@ -27,7 +28,6 @@ type State = {
   payload: SubscriptionPayload | null;
 };
 
-const cache = new Map<string, SubscriptionPayload>();
 const inflight = new Map<string, Promise<SubscriptionPayload>>();
 
 const keyFor = (workspaceId?: string) => workspaceId ?? "__current_workspace__";
@@ -46,32 +46,20 @@ const fetchSubscription = async (workspaceId?: string) => {
 
 export function invalidateEntitlementsCache(workspaceId?: string) {
   const keys = new Set([keyFor(undefined), keyFor(workspaceId)]);
-  keys.forEach((key) => {
-    cache.delete(key);
-    inflight.delete(key);
-  });
+  keys.forEach((key) => inflight.delete(key));
 }
 
 export function useEntitlements(workspaceId?: string) {
   const cacheKey = useMemo(() => keyFor(workspaceId), [workspaceId]);
-  const cached = cache.get(cacheKey) ?? null;
 
   const [state, setState] = useState<State>(() => ({
-    loading: !cached,
+    loading: true,
     error: null,
-    payload: cached
+    payload: null
   }));
 
   useEffect(() => {
     let active = true;
-
-    const fromCache = cache.get(cacheKey) ?? null;
-    if (fromCache) {
-      setState({ loading: false, error: null, payload: fromCache });
-      return () => {
-        active = false;
-      };
-    }
 
     setState((prev) => ({ ...prev, loading: true, error: null }));
 
@@ -86,7 +74,6 @@ export function useEntitlements(workspaceId?: string) {
     pending
       .then((payload) => {
         if (!active) return;
-        cache.set(cacheKey, payload);
         setState({ loading: false, error: null, payload });
       })
       .catch((error) => {
