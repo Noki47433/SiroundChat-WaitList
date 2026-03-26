@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isPrelaunchUserAllowed } from "@/lib/auth/prelaunch";
 import { createFeedbackReport } from "@/lib/feedback/mutations";
 import { listMyFeedbackReports } from "@/lib/feedback/queries";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
@@ -28,6 +29,10 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
+    if (!isPrelaunchUserAllowed(user)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
     const { searchParams } = new URL(request.url);
     const limitParam = Number(searchParams.get("limit") ?? 10);
     const limit = Number.isFinite(limitParam) ? limitParam : 10;
@@ -53,6 +58,10 @@ export async function POST(request: Request) {
 
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    if (!isPrelaunchUserAllowed(user)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const payload = await request.json();

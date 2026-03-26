@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { isPrelaunchUserAllowed } from "@/lib/auth/prelaunch";
 import { getOpenAIClient } from "@/lib/ai/client";
 import { buildSectionPatch } from "@/lib/builder/generation/patch";
 import { getGenerationPolicy } from "@/lib/builder/generation/policy";
@@ -86,6 +87,10 @@ export async function POST(request: Request) {
 
   if (!userData?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (!isPrelaunchUserAllowed(userData.user)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const payload = await request.json().catch(() => null);

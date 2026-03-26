@@ -7,7 +7,7 @@ import {
   isMissingUpdateInfoSchemaError,
   syncEntryStatus
 } from "@/lib/chatbot/update-info";
-import { getSupabaseServerAdminClient } from "@/lib/supabase/serverAdmin";
+import { getSupabaseServerAdminClientIfAvailable } from "@/lib/supabase/serverAdmin";
 import { log } from "@/lib/utils/log";
 
 const SubmitEntrySchema = z.object({
@@ -99,7 +99,13 @@ const serialize = async (supabase: any, businessId: string) => {
 export async function GET() {
   const { context, response } = await requireBusinessUser();
   if (response) return response;
-  const admin = getSupabaseServerAdminClient() as any;
+  const admin = getSupabaseServerAdminClientIfAvailable() as any;
+  if (!admin) {
+    log("error", "Update info configuration unavailable due to missing server admin config", {
+      businessId: context.businessId
+    });
+    return NextResponse.json({ error: "Update Info is unavailable right now." }, { status: 500 });
+  }
 
   try {
     const data = await serialize(admin, context.businessId);
@@ -129,7 +135,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const supabase = getSupabaseServerAdminClient() as any;
+  const supabase = getSupabaseServerAdminClientIfAvailable() as any;
+  if (!supabase) {
+    log("error", "Update info mutation unavailable due to missing server admin config", {
+      businessId: context.businessId,
+      action: parsed.data.action
+    });
+    return NextResponse.json({ error: "Update Info is unavailable right now." }, { status: 500 });
+  }
 
   try {
     if (parsed.data.action === "submit_entry") {

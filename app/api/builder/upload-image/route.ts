@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
+import { isPrelaunchUserAllowed } from "@/lib/auth/prelaunch";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
-import { getSupabaseAdminClient } from "@/lib/supabase/admin";
+import { getSupabaseAdminClientIfAvailable } from "@/lib/supabase/admin";
 import { BUILDER_ASSETS_BUCKET } from "@/lib/builder/storage";
 import { getOwnedBuilderSite } from "@/lib/builder/site-access";
+import { getBusinessEntitlementAccess } from "@/lib/server/billing-access";
 
 export const runtime = "nodejs";
 
@@ -47,6 +49,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  if (!isPrelaunchUserAllowed(userData.user)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const formData = await request.formData();
 
   // ---- siteId ----
@@ -89,13 +95,22 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Site not found" }, { status: 404 });
   }
 
+  const billingAccess = await getBusinessEntitlementAccess(site.business_id, "website_builder");
+  if (!billingAccess.allowed) {
+    return NextResponse.json({ error: "Website uploads are not available on the current plan" }, { status: 403 });
+  }
+
   // ---- Upload ----
   const extension = resolveExtension(file);
   const fileName = `${kind}-${Date.now()}.${extension}`;
   const storagePath = `sites/${siteId}/${fileName}`;
 
   const arrayBuffer = await file.arrayBuffer();
-  const admin = getSupabaseAdminClient();
+  const admin = getSupabaseAdminClientIfAvailable();
+  if (!admin) {
+    console.error("[BUILDER_UPLOAD_IMAGE_CONFIG_MISSING]", { siteId, userId: userData.user.id });
+    return NextResponse.json({ error: "Image uploads are unavailable right now." }, { status: 500 });
+  }
 
   const uploadRes = await admin.storage.from(BUILDER_ASSETS_BUCKET).upload(storagePath, Buffer.from(arrayBuffer), {
     contentType: file.type || "application/octet-stream",

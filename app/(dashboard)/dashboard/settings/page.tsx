@@ -7,7 +7,7 @@ import { NotificationSettingsPanel } from "@/app/(dashboard)/dashboard/_componen
 import { WrappedLauncher } from "@/app/(dashboard)/dashboard/_components/WrappedLauncher";
 import { FeedbackCard } from "@/app/(dashboard)/dashboard/settings/_components/FeedbackCard";
 import { listMyFeedbackReports } from "@/lib/feedback/queries";
-import { getSupabaseAdminClient } from "@/lib/supabase/admin";
+import { getSupabaseAdminClientIfAvailable } from "@/lib/supabase/admin";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { PaywallGate } from "@/src/components/billing/PaywallGate";
 
@@ -100,7 +100,7 @@ export default async function DashboardSettingsPage() {
   const embedSnippet = widgetKey ? `<script src="${origin}/api/widget/loader?key=${widgetKey}" async></script>` : "";
   const webhookEndpoint = `${origin}/api/webhooks/${business.id}`;
 
-  const admin = getSupabaseAdminClient();
+  const admin = getSupabaseAdminClientIfAvailable();
   const myFeedbackReports = await listMyFeedbackReports({ supabase, userId: user.id, limit: 10 });
   const { data: existingSettings } = await (supabase as any)
     .from("business_notification_settings")
@@ -109,7 +109,7 @@ export default async function DashboardSettingsPage() {
     .maybeSingle();
 
   let notificationSettings = existingSettings ?? null;
-  if (!notificationSettings) {
+  if (!notificationSettings && admin) {
     const { data: created } = await (admin as any)
       .from("business_notification_settings")
       .insert({ business_id: business.id })

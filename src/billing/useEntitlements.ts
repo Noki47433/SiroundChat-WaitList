@@ -10,10 +10,14 @@ type SubscriptionRecord = {
   plan_id: PlanId;
   status: "pending_setup" | "active" | "trialing" | "past_due" | "canceled";
   trial_end: string | null;
-  current_period_end: string;
+  current_period_end: string | null;
   created_at: string;
   updated_at: string;
   is_access_active: boolean;
+  pending_payment_kind?: "setup" | "renewal" | null;
+  pending_payment_plan_id?: PlanId | null;
+  pending_payment_created_at?: string | null;
+  pending_payment_is_stale?: boolean;
 };
 
 type SubscriptionPayload = {

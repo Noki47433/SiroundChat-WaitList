@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isPrelaunchUserAllowed } from "@/lib/auth/prelaunch";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import { isAuthDisabled } from "@/lib/config/auth";
 import { listAllOwnedBuilderSites } from "@/lib/builder/site-access";
@@ -16,6 +17,10 @@ export async function GET() {
 
   if (!userData?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (!isPrelaunchUserAllowed(userData.user)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const sites = await listAllOwnedBuilderSites<any>(

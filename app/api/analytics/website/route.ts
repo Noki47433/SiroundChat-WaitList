@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { isPrelaunchUserAllowed } from "@/lib/auth/prelaunch";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import { isAuthDisabled } from "@/lib/config/auth";
-import { getSupabaseAdminClient } from "@/lib/supabase/admin";
+import { getSupabaseAdminClientIfAvailable } from "@/lib/supabase/admin";
 import { listOwnedBusinessIds } from "@/lib/builder/site-access";
+import { getBusinessEntitlementAccess } from "@/lib/server/billing-access";
 
 export const runtime = "nodejs";
 
@@ -477,6 +479,10 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  if (!isPrelaunchUserAllowed(user)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const ownedBusinessIds = await listOwnedBusinessIds(user.id);
   if (!ownedBusinessIds.length) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -486,7 +492,11 @@ export async function GET(request: Request) {
     return NextResponse.json(buildDemoResponse(ownedBusinessIds[0], range, mode));
   }
 
-  const db = getSupabaseAdminClient() as any;
+  const db = getSupabaseAdminClientIfAvailable() as any;
+  if (!db) {
+    console.error("[WEBSITE_ANALYTICS_CONFIG_MISSING]", { userId: user.id, siteId });
+    return NextResponse.json({ error: "Website analytics are unavailable right now." }, { status: 500 });
+  }
   const days = RANGE_DAYS[range];
   const now = new Date();
   const start = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
@@ -520,19 +530,24 @@ export async function GET(request: Request) {
     .eq("id", selectedBusinessId)
     .maybeSingle();
 
+  const billingAccess = await getBusinessEntitlementAccess(selectedBusinessId, "advanced_analytics");
+  if (!billingAccess.allowed) {
+    return NextResponse.json({ error: "Advanced analytics are not available on the current plan" }, { status: 403 });
+  }
+
   timeZone = (business?.timezone as string | null) ?? "UTC";
 
   let currentQuery = db
     .from("website_analytics_events")
     .select("event_type, channel, cta_type, lead_type, page_path, page_title, session_id, country_code, occurred_at")
-    .in("business_id", ownedBusinessIds)
+    .eq("business_id", selectedBusinessId)
     .gte("occurred_at", startIso)
     .lt("occurred_at", endIso);
 
   let prevQuery = db
     .from("website_analytics_events")
     .select("event_type, channel, session_id")
-    .in("business_id", ownedBusinessIds)
+    .eq("business_id", selectedBusinessId)
     .gte("occurred_at", prevStartIso)
     .lt("occurred_at", prevEndIso);
 

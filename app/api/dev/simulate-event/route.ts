@@ -4,7 +4,7 @@ import { guardAdminRoute } from "@/lib/admin/guards";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const EVENT_TYPES = ["message", "lead", "session", "escalation", "payment_failed"] as const;
+const EVENT_TYPES = ["message", "lead", "session", "escalation"] as const;
 type EventType = (typeof EVENT_TYPES)[number];
 
 const pickRandom = <T,>(items: readonly T[]) => items[Math.floor(Math.random() * items.length)];
@@ -148,54 +148,5 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ ok: true, kind, businessId, conversationId, data });
   }
-
-  const { data: subscription } = await supabase
-    .from("subscriptions")
-    .select("id")
-    .eq("business_id", businessId)
-    .order("updated_at", { ascending: false })
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (!subscription?.id) {
-    const { data: createdSubscription, error: createSubscriptionError } = await supabase
-      .from("subscriptions")
-      .insert({
-        business_id: businessId,
-        plan: "pro",
-        status: "active",
-        mrr_eur: 149
-      })
-      .select("id")
-      .single();
-
-    if (createSubscriptionError || !createdSubscription?.id) {
-      return NextResponse.json(
-        { error: createSubscriptionError?.message ?? "Failed to create subscription" },
-        { status: 500 }
-      );
-    }
-
-    const { data, error } = await supabase
-      .from("subscriptions")
-      .update({ status: "past_due" })
-      .eq("id", createdSubscription.id)
-      .select("id, status, updated_at")
-      .single();
-
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-    return NextResponse.json({ ok: true, kind, businessId, conversationId, data });
-  }
-
-  const { data, error } = await supabase
-    .from("subscriptions")
-    .update({ status: "past_due" })
-    .eq("id", subscription.id)
-    .select("id, status, updated_at")
-    .single();
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
-  return NextResponse.json({ ok: true, kind, businessId, conversationId, data });
+  return NextResponse.json({ error: "Unsupported simulation kind" }, { status: 400 });
 }

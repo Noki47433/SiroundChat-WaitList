@@ -1,9 +1,14 @@
 import { SYSTEM_PROMPT, UNKNOWN_REPLY } from "@/lib/ai/system-prompt";
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
+import { isPrelaunchUserAllowed } from "@/lib/auth/prelaunch";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import { retrieveRelevantChunks } from "@/lib/ai/retrieve";
 import { log } from "@/lib/utils/log";
+import {
+  canAccessBillingWorkspace,
+  getBusinessEntitlementAccess
+} from "@/lib/server/billing-access";
 
 const CHAT_MODEL = "gpt-4o-mini";
 
@@ -19,12 +24,26 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  if (!isPrelaunchUserAllowed(user)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const body = await req.json().catch(() => null);
   const businessId = body?.businessId as string;
   const messages = (body?.messages as Message[]) ?? [];
 
   if (!businessId || !messages.length) {
     return NextResponse.json({ error: "businessId and messages required" }, { status: 400 });
+  }
+
+  const canAccess = await canAccessBillingWorkspace(user.id, businessId);
+  if (!canAccess) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const billingAccess = await getBusinessEntitlementAccess(businessId, "chatbot_knowledge_base");
+  if (!billingAccess.allowed) {
+    return NextResponse.json({ error: "Knowledge-assisted chat is not available on the current plan" }, { status: 403 });
   }
 
   const last = messages[messages.length - 1];
@@ -34,7 +53,8 @@ export async function POST(req: Request) {
 
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
-    return NextResponse.json({ error: "Missing OPENAI_API_KEY" }, { status: 500 });
+    console.error("[CHAT_RAG_CONFIG_MISSING]");
+    return NextResponse.json({ error: "Chat is unavailable right now." }, { status: 500 });
   }
 
   const openai = new OpenAI({ apiKey });

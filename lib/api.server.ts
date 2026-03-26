@@ -18,6 +18,7 @@ import type {
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { getTenantFromSession } from "@/lib/utils/tenant";
 import { addDays, startOfDayInTimeZone } from "@/lib/utils/timezone";
+import { getWorkspaceSubscription } from "@/src/billing/getSubscription";
 
 const toneExamples: ToneExamples = {
   professional: [
@@ -233,20 +234,19 @@ const mapSender = (sender: string): ConversationMessage["sender"] => {
 };
 
 export async function getOrgSummary(): Promise<OrgSummary> {
-  const { supabase, business } = await getBusinessContext();
+  const { business } = await getBusinessContext();
   if (!business) {
     return { id: "", name: "Your business", plan: "starter" };
   }
 
-  const { data: subscription } = await supabase
-    .from("subscriptions")
-    .select("plan")
-    .eq("business_id", business.id)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .single();
-
-  const plan = subscription?.plan === "pro" ? "pro" : "starter";
+  const subscription = await getWorkspaceSubscription(business.id);
+  const plan =
+    subscription.status === "trialing" ||
+    subscription.status === "active" ||
+    subscription.status === "past_due" ||
+    subscription.status === "pending_setup"
+      ? "pro"
+      : "starter";
 
   return {
     id: business.id,

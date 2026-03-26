@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireBusinessUser } from "@/lib/server/business-auth";
-import { getSupabaseAdminClient } from "@/lib/supabase/admin";
+import { getSupabaseAdminClientIfAvailable } from "@/lib/supabase/admin";
 
 const DEFAULT_LIMIT = 20;
 
@@ -17,7 +17,11 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const admin = getSupabaseAdminClient() as any;
+  const admin = getSupabaseAdminClientIfAvailable() as any;
+  if (!admin) {
+    console.error("[NOTIFICATIONS_LIST_CONFIG_MISSING]", { businessId });
+    return NextResponse.json({ error: "Notifications are unavailable right now." }, { status: 500 });
+  }
 
   const { data: notifications } = await admin
     .from("notifications")

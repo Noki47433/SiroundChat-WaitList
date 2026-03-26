@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { getSupabaseAdminClient } from "@/lib/supabase/admin";
+import { isPrelaunchEmailAllowed, normalizeEmail } from "@/lib/auth/prelaunch";
+import { getSupabaseAdminClientIfAvailable } from "@/lib/supabase/admin";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import { RegisterSchema } from "@/lib/validation/auth";
 import type { Database } from "@/lib/db/schema";
@@ -21,13 +22,20 @@ export async function POST(request: Request) {
     }
 
     const { name, email, password, businessName, industry } = parsed.data;
-    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedEmail = normalizeEmail(email);
+    if (!isPrelaunchEmailAllowed(normalizedEmail)) {
+      return NextResponse.json({ error: "Registration is not available yet." }, { status: 403 });
+    }
     const fallbackName = normalizedEmail.split("@")[0] || "SiroundChat User";
     const safeName = (name ?? "").trim() || fallbackName;
     const safeBusinessName = (businessName ?? "").trim() || `${safeName} Business`;
     const safeIndustry = industry ?? "other";
 
-    const admin = getSupabaseAdminClient();
+    const admin = getSupabaseAdminClientIfAvailable();
+    if (!admin) {
+      console.error("[AUTH_REGISTER_CONFIG_MISSING]");
+      return NextResponse.json({ error: "Registration is unavailable right now." }, { status: 500 });
+    }
     const db = admin as any;
 
     const { data: userResult, error: userError } = await admin.auth.admin.createUser({
@@ -54,7 +62,7 @@ export async function POST(request: Request) {
         );
       }
       console.error("[AUTH_REGISTER_CREATE_USER_ERROR]", userError);
-      return NextResponse.json({ error: message }, { status: 500 });
+      return NextResponse.json({ error: "Registration is unavailable right now." }, { status: 500 });
     }
 
     const userId = userResult.user.id;
@@ -73,29 +81,18 @@ export async function POST(request: Request) {
       console.error("[AUTH_REGISTER_BUSINESS_INSERT_ERROR]", businessError);
     }
 
-    if (business?.id) {
-      const { error: subscriptionError } = await db.from("subscriptions").insert({
-        business_id: business.id,
-        plan: "free",
-        status: "active"
-      } as Database["public"]["Tables"]["subscriptions"]["Insert"]);
-      if (subscriptionError) {
-        console.error("[AUTH_REGISTER_SUBSCRIPTION_INSERT_ERROR]", subscriptionError);
-      }
-    }
-
     const supabase = getSupabaseRouteClient();
     const { error: signInError } = await supabase.auth.signInWithPassword({
       email: normalizedEmail,
       password
     });
     if (signInError) {
-      return NextResponse.json({ error: signInError.message }, { status: 401 });
+      return NextResponse.json({ error: "Account created, but sign-in failed." }, { status: 401 });
     }
 
     return NextResponse.json({ redirect, userId, businessId: business?.id ?? null }, { status: 201 });
   } catch (error) {
     console.error("[AUTH_REGISTER_UNHANDLED_ERROR]", error);
-    return NextResponse.json({ error: "Registration failed due to a server configuration error." }, { status: 500 });
+    return NextResponse.json({ error: "Registration is unavailable right now." }, { status: 500 });
   }
 }

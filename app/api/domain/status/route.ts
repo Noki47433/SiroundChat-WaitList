@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isPrelaunchUserAllowed } from "@/lib/auth/prelaunch";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import { getTenantFromSession } from "@/lib/utils/tenant";
 import { isAuthDisabled } from "@/lib/config/auth";
@@ -18,9 +19,23 @@ export async function GET(request: Request) {
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    if (!isPrelaunchUserAllowed(user)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
     const tenant = await getTenantFromSession(user.id);
     if (!tenant.businessId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { data: site } = await (supabase as any)
+      .from("builder_sites")
+      .select("id")
+      .eq("id", siteId)
+      .eq("business_id", tenant.businessId)
+      .maybeSingle();
+
+    if (!site?.id) {
+      return NextResponse.json({ error: "Site not found" }, { status: 404 });
     }
 
     const { data: domain } = await (supabase as any)

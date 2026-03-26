@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
+import { isPrelaunchUserAllowed } from "@/lib/auth/prelaunch";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import { ensureBusinessRow } from "@/lib/tenant";
 import { saveWidgetConfig } from "@/lib/utils/local-store";
@@ -38,6 +39,10 @@ export async function POST(request: Request) {
 
   if (!user && !authDisabled) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (user && !isPrelaunchUserAllowed(user)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const payload = await request.json().catch(() => null);

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireBusinessUser } from "@/lib/server/business-auth";
-import { getSupabaseAdminClient } from "@/lib/supabase/admin";
+import { getSupabaseAdminClientIfAvailable } from "@/lib/supabase/admin";
 import {
   assignLaneIndexes,
   ensureRestaurantBootstrap,
@@ -46,7 +46,11 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Invalid from/to range" }, { status: 400 });
   }
 
-  const admin = getSupabaseAdminClient();
+  const admin = getSupabaseAdminClientIfAvailable();
+  if (!admin) {
+    console.error("[RESERVATIONS_LIST_CONFIG_MISSING]", { restaurantId, userId: context.userId });
+    return NextResponse.json({ error: "Reservations are unavailable right now." }, { status: 500 });
+  }
   const restaurant = await ensureRestaurantBootstrap(admin as any, restaurantId, context.userId);
   if (!restaurant) {
     return NextResponse.json({ error: "Restaurant not found" }, { status: 404 });

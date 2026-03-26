@@ -7,6 +7,10 @@ import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import { ensureBusinessRow, getTenantFromSession } from "@/lib/tenant";
 import { addEmbeddingsLocal } from "@/lib/utils/local-store";
 import { isAuthDisabled } from "@/lib/config/auth";
+import {
+  canAccessBillingWorkspace,
+  getBusinessEntitlementAccess
+} from "@/lib/server/billing-access";
 
 const IngestSchema = z
   .object({
@@ -45,6 +49,18 @@ export async function POST(req: Request) {
     }
 
     if (!businessId) return NextResponse.json({ error: "Business not found for user" }, { status: 404 });
+
+    if (user) {
+      const canAccess = await canAccessBillingWorkspace(user.id, businessId);
+      if (!canAccess) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+
+      const billingAccess = await getBusinessEntitlementAccess(businessId, "chatbot_knowledge_base");
+      if (!billingAccess.allowed) {
+        return NextResponse.json({ error: "Knowledge ingestion is not available on the current plan" }, { status: 403 });
+      }
+    }
 
     const CHUNK_LENGTH = 800;
     const text = (parsed.content ?? parsed.text ?? "").trim();

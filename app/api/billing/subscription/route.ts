@@ -1,35 +1,13 @@
 import { NextResponse } from "next/server";
-import { getSupabaseRouteClient } from "@/lib/supabase/server";
+import { isPrelaunchUserAllowed } from "@/lib/auth/prelaunch";
 import { resolveBillingEntitlements } from "@/lib/billing/entitlements";
-import { getTenantFromSession } from "@/lib/utils/tenant";
+import {
+  normalizeWorkspaceId,
+  resolveBillingWorkspaceSelection
+} from "@/lib/server/billing-access";
+import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import { getWorkspaceSubscription } from "@/src/billing/getSubscription";
 import { getPlanDefinition } from "@/src/billing/plans";
-
-const normalizeUuid = (value: string | null) => (value ?? "").trim().replace(/[<>]/g, "");
-
-const resolveIsAdmin = async (supabase: any, userId: string) => {
-  const { data } = await (supabase as any)
-    .from("profiles")
-    .select("role")
-    .eq("id", userId)
-    .maybeSingle();
-
-  return data?.role === "admin";
-};
-
-const assertMembership = async (supabase: any, userId: string, businessId: string) => {
-  const { data: business } = await (supabase as any)
-    .from("businesses")
-    .select("id, owner_id, owner_user_id")
-    .eq("id", businessId)
-    .maybeSingle();
-
-  if (!business?.id) return false;
-
-  const ownerId = (business.owner_user_id ?? business.owner_id) as string | null;
-  if (ownerId && ownerId === userId) return true;
-  return resolveIsAdmin(supabase, userId);
-};
 
 export const dynamic = "force-dynamic";
 
@@ -43,23 +21,34 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { searchParams } = new URL(request.url);
-  const requestedWorkspaceId = normalizeUuid(searchParams.get("workspaceId"));
-
-  const tenant = await getTenantFromSession(user.id);
-  const workspaceId = requestedWorkspaceId || tenant.businessId;
-
-  if (!workspaceId) {
-    return NextResponse.json({ error: "workspaceId required" }, { status: 400 });
-  }
-
-  const canAccess = await assertMembership(supabase, user.id, workspaceId);
-  if (!canAccess) {
+  if (!isPrelaunchUserAllowed(user)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
+  const { searchParams } = new URL(request.url);
+  const requestedWorkspaceId = normalizeWorkspaceId(searchParams.get("workspaceId"));
+  const selection = await resolveBillingWorkspaceSelection(user.id, requestedWorkspaceId, {
+    allowAdmin: true,
+    userEmail: user.email ?? null
+  });
+
+  if (!selection.businessId) {
+    if (selection.error === "workspace_ambiguous") {
+      return NextResponse.json(
+        { error: "workspaceId is required when your account has multiple workspaces." },
+        { status: 400 }
+      );
+    }
+
+    if (selection.error === "workspace_forbidden") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    return NextResponse.json({ error: "workspaceId required" }, { status: 400 });
+  }
+
   try {
-    const subscription = await getWorkspaceSubscription(workspaceId);
+    const subscription = await getWorkspaceSubscription(selection.businessId);
     const entitlements = resolveBillingEntitlements(
       subscription.billing_plan_id,
       subscription.is_access_active
@@ -75,7 +64,7 @@ export async function GET(request: Request) {
       { status: 200 }
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to load subscription";
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error("[BILLING_SUBSCRIPTION_ERROR]", error);
+    return NextResponse.json({ error: "Failed to load subscription" }, { status: 500 });
   }
 }

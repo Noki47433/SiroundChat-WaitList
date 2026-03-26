@@ -1,77 +1,158 @@
 import { NextResponse } from "next/server";
-import crypto from "crypto";
+import {
+  decodePayseraData,
+  verifyPayseraCallbackSignature
+} from "@/lib/billing/paysera";
+import { getSupabaseServerAdminClient } from "@/lib/supabase/serverAdmin";
 
 export const runtime = "nodejs";
 
-const SIGN_PASSWORD = process.env.PAYSERA_SIGN_PASSWORD ?? "";
+const getField = (value: unknown) =>
+  typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 
-function verify(data: string, sign: string) {
-  const hash = crypto.createHash("md5").update(data + SIGN_PASSWORD).digest("hex");
-  const expected = Buffer.from(hash.toLowerCase(), "utf8");
-  const provided = Buffer.from(sign.toLowerCase(), "utf8");
+const parseMinorUnitAmount = (value: unknown) => {
+  const raw = getField(value);
+  if (!raw) return null;
 
-  if (expected.length !== provided.length) {
-    return false;
+  const normalized = raw.replace(",", ".").trim();
+  if (/^\d+$/.test(normalized)) {
+    return Number.parseInt(normalized, 10);
   }
 
-  return crypto.timingSafeEqual(expected, provided);
-}
+  const amount = Number.parseFloat(normalized);
+  if (!Number.isFinite(amount)) return null;
+  return Math.round(amount * 100);
+};
 
-function getField(value: FormDataEntryValue | null) {
-  return typeof value === "string" && value.trim() ? value.trim() : null;
-}
+const extractAmountCents = (payload: Record<string, unknown>) => {
+  const directMinorCandidates = [payload.amount, payload.payamount];
+  for (const candidate of directMinorCandidates) {
+    const parsed = parseMinorUnitAmount(candidate);
+    if (parsed !== null) return parsed;
+  }
 
-function decodePayseraData(data: string) {
-  const base64 = data.replace(/-/g, "+").replace(/_/g, "/");
-  const padding = "=".repeat((4 - (base64.length % 4 || 4)) % 4);
-  const decoded = Buffer.from(`${base64}${padding}`, "base64").toString("utf8");
+  const majorUnitCandidates = [payload.request_amount, payload.pay_amount];
+  for (const candidate of majorUnitCandidates) {
+    const parsed = parseMinorUnitAmount(candidate);
+    if (parsed !== null) return parsed;
+  }
 
+  return null;
+};
+
+const extractCurrency = (payload: Record<string, unknown>) =>
+  (
+    getField(payload.currency) ??
+    getField(payload.request_currency) ??
+    getField(payload.paycurrency) ??
+    getField(payload.pay_currency)
+  )?.toUpperCase() ?? null;
+
+const buildTrustedPayload = (decoded: Record<string, unknown>, transport: "get" | "post") => ({
+  provider: "paysera",
+  transport,
+  received_at: new Date().toISOString(),
+  decoded
+});
+
+const readFormEntries = async (request: Request) => {
   try {
-    const parsed = JSON.parse(decoded);
-    if (parsed && typeof parsed === "object") {
-      return parsed as Record<string, unknown>;
-    }
+    const formData = await request.formData();
+    return new URLSearchParams(
+      Array.from(formData.entries()).flatMap(([key, value]) =>
+        typeof value === "string" ? [[key, value] as const] : []
+      )
+    );
   } catch {
-    // Fall back to Paysera's query-string payload format.
+    return null;
+  }
+};
+
+const extractEnvelope = async (request: Request) => {
+  const url = new URL(request.url);
+  const queryParams = new URLSearchParams(url.searchParams);
+
+  if (request.method === "POST") {
+    const formEntries = await readFormEntries(request);
+    if (formEntries) {
+      formEntries.forEach((value, key) => {
+        queryParams.set(key, value);
+      });
+    }
   }
 
-  return Object.fromEntries(new URLSearchParams(decoded));
-}
+  const data = getField(queryParams.get("data"));
+  const ss1 = getField(queryParams.get("ss1"));
+  const sign = getField(queryParams.get("sign"));
 
-export async function POST(req: Request) {
-  // Verifies the Paysera callback on the server before any billing changes.
-  if (!SIGN_PASSWORD) {
+  return {
+    data,
+    ss1,
+    sign,
+    transport: request.method === "POST" ? "post" : "get"
+  } as const;
+};
+
+const handleCallback = async (request: Request) => {
+  if (!process.env.PAYSERA_SIGN_PASSWORD) {
     return new NextResponse("Unavailable", { status: 500 });
   }
 
-  let formData: FormData;
-  try {
-    formData = await req.formData();
-  } catch {
+  const envelope = await extractEnvelope(request);
+  if (!envelope.data || (!envelope.ss1 && !envelope.sign)) {
     return new NextResponse("Invalid payload", { status: 400 });
   }
 
-  const data = getField(formData.get("data"));
-  const sign = getField(formData.get("sign")) ?? getField(formData.get("ss1"));
-
-  if (!data || !sign) {
-    return new NextResponse("Invalid payload", { status: 400 });
-  }
-
-  if (!verify(data, sign)) {
+  if (!verifyPayseraCallbackSignature({ data: envelope.data, ss1: envelope.ss1, sign: envelope.sign })) {
     return new NextResponse("Invalid signature", { status: 400 });
   }
 
   let decoded: Record<string, unknown>;
   try {
-    decoded = decodePayseraData(data);
+    decoded = decodePayseraData(envelope.data);
   } catch {
     return new NextResponse("Invalid payload", { status: 400 });
   }
 
-  if (decoded.status === "1" || decoded.status === 1) {
-    // TODO: After verified callback handling is wired to billing, activate the subscription here on the server only.
+  const admin = getSupabaseServerAdminClient() as any;
+  const trustedPayload = buildTrustedPayload(decoded, envelope.transport);
+  const payseraOrderId = getField(decoded.orderid);
+  const providerStatus = getField(decoded.status);
+  const amountCents = extractAmountCents(decoded);
+  const currency = extractCurrency(decoded);
+  const providerProjectId = getField(decoded.projectid);
+  const providerTestMode = getField(decoded.test) === "1";
+
+  const { data, error } = await admin.rpc("billing_finalize_paysera_callback", {
+    p_paysera_orderid: payseraOrderId,
+    p_provider_status: providerStatus,
+    p_amount_cents: amountCents,
+    p_currency: currency,
+    p_provider_project_id: providerProjectId,
+    p_provider_test_mode: providerTestMode,
+    p_raw_payload: trustedPayload
+  });
+
+  if (error) {
+    console.error("[BILLING_PAYSERA_CALLBACK_FINALIZE_ERROR]", {
+      orderId: payseraOrderId,
+      status: providerStatus,
+      error
+    });
+    return new NextResponse("Retry", { status: 500 });
   }
 
-  return new NextResponse("OK");
+  if (data && typeof data === "object") {
+    return new NextResponse("OK");
+  }
+
+  return new NextResponse("Retry", { status: 500 });
+};
+
+export async function GET(request: Request) {
+  return handleCallback(request);
+}
+
+export async function POST(request: Request) {
+  return handleCallback(request);
 }

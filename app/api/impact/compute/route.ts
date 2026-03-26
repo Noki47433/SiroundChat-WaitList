@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
+import { isPrelaunchUserAllowed } from "@/lib/auth/prelaunch";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
-import { getSupabaseAdminClient } from "@/lib/supabase/admin";
+import { getSupabaseAdminClientIfAvailable } from "@/lib/supabase/admin";
 import { addDays, getRollingRangeInTimeZone } from "@/lib/utils/timezone";
 
 export const runtime = "nodejs";
@@ -88,7 +89,7 @@ const isHumanTakeover = (row: ConversationRow) =>
   Boolean(row.takeover_enabled || row.takeover_by || row.takeover_ended_at);
 
 const computeHelpedConversations = async (
-  admin: ReturnType<typeof getSupabaseAdminClient>,
+  admin: NonNullable<ReturnType<typeof getSupabaseAdminClientIfAvailable>>,
   conversationRows: ConversationRow[],
   startIso: string,
   endIso: string
@@ -193,6 +194,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  if (!isPrelaunchUserAllowed(user)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const { data: business, error: businessError } = await (supabase as any)
     .from("businesses")
     .select("id, timezone")
@@ -218,7 +223,11 @@ export async function POST(request: Request) {
   const endIso = end.toISOString();
   const prevStartIso = prevStart.toISOString();
 
-  const admin = getSupabaseAdminClient();
+  const admin = getSupabaseAdminClientIfAvailable();
+  if (!admin) {
+    console.error("[IMPACT_COMPUTE_CONFIG_MISSING]", { businessId: business.id, period });
+    return NextResponse.json({ error: "Impact summaries are unavailable right now." }, { status: 500 });
+  }
 
   const { data: existing } = await (admin as any)
     .from("business_impact_summaries")

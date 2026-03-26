@@ -1,13 +1,15 @@
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { isPrelaunchUserAllowed } from "@/lib/auth/prelaunch";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
-import { getSupabaseAdminClient } from "@/lib/supabase/admin";
+import { getSupabaseAdminClientIfAvailable } from "@/lib/supabase/admin";
 import { ensureBusinessRow } from "@/lib/utils/tenant";
 import { isAuthDisabled } from "@/lib/config/auth";
 import { getWidgetConfig, saveWidgetConfig } from "@/lib/utils/local-store";
 import type { WidgetTheme } from "@/lib/types/core";
 import { logActivity } from "@/lib/activity/log";
+import { getBusinessEntitlementAccess } from "@/lib/server/billing-access";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -196,7 +198,6 @@ const ensureWidgetKey = async (admin: any, row: BusinessRow) => {
 export async function GET() {
   try {
     const supabase = getSupabaseRouteClient();
-    const admin = getSupabaseAdminClient();
 
     const {
       data: { user }
@@ -206,9 +207,24 @@ export async function GET() {
       return jsonNoStore({ error: "Unauthorized" }, { status: 401 });
     }
 
+    if (user && !isPrelaunchUserAllowed(user)) {
+      return jsonNoStore({ error: "Forbidden" }, { status: 403 });
+    }
+
     const tenant = user ? await ensureBusinessRow({ userId: user.id }) : null;
     if (!tenant?.businessId) {
       return jsonNoStore({ error: "Business not found" }, { status: 404 });
+    }
+
+    const billingAccess = await getBusinessEntitlementAccess(tenant.businessId, "chatbot");
+    if (!billingAccess.allowed) {
+      return jsonNoStore({ error: "Chatbot settings are not available on the current plan" }, { status: 403 });
+    }
+
+    const admin = getSupabaseAdminClientIfAvailable();
+    if (!admin) {
+      console.error("[BOT_SETTINGS_GET_CONFIG_MISSING]", { businessId: tenant.businessId });
+      return jsonNoStore({ error: "Bot settings are unavailable right now." }, { status: 500 });
     }
 
     const row = await fetchBusinessRow(admin, tenant.businessId);
@@ -241,7 +257,6 @@ export async function GET() {
 export async function PATCH(req: Request) {
   try {
     const supabase = getSupabaseRouteClient();
-    const admin = getSupabaseAdminClient();
 
     const {
       data: { user }
@@ -251,9 +266,24 @@ export async function PATCH(req: Request) {
       return jsonNoStore({ error: "Unauthorized" }, { status: 401 });
     }
 
+    if (user && !isPrelaunchUserAllowed(user)) {
+      return jsonNoStore({ error: "Forbidden" }, { status: 403 });
+    }
+
     const tenant = user ? await ensureBusinessRow({ userId: user.id }) : null;
     if (!tenant?.businessId) {
       return jsonNoStore({ error: "Business not found" }, { status: 404 });
+    }
+
+    const billingAccess = await getBusinessEntitlementAccess(tenant.businessId, "chatbot");
+    if (!billingAccess.allowed) {
+      return jsonNoStore({ error: "Chatbot settings are not available on the current plan" }, { status: 403 });
+    }
+
+    const admin = getSupabaseAdminClientIfAvailable();
+    if (!admin) {
+      console.error("[BOT_SETTINGS_PATCH_CONFIG_MISSING]", { businessId: tenant.businessId });
+      return jsonNoStore({ error: "Bot settings are unavailable right now." }, { status: 500 });
     }
 
     const parsed = UpdateBotSettingsSchema.parse(await req.json());

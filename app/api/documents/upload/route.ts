@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "crypto";
+import { isPrelaunchUserAllowed } from "@/lib/auth/prelaunch";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
-import { getSupabaseAdminClient } from "@/lib/supabase/admin";
+import { getSupabaseAdminClientIfAvailable } from "@/lib/supabase/admin";
 import { processDocument } from "@/lib/ai/document-processing";
 import { log } from "@/lib/utils/log";
 import { isAuthDisabled } from "@/lib/config/auth";
+import {
+  canAccessBillingWorkspace,
+  getBusinessEntitlementAccess
+} from "@/lib/server/billing-access";
 
 const BUCKET = "business-docs";
 
@@ -15,7 +20,6 @@ const isFile = (value: FormDataEntryValue): value is File => typeof File !== "un
 
 export async function POST(request: Request) {
   const supabase = getSupabaseRouteClient();
-  const admin = getSupabaseAdminClient();
   const authDisabled = isAuthDisabled();
   const {
     data: { user }
@@ -23,6 +27,10 @@ export async function POST(request: Request) {
 
   if (!authDisabled && !user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (user && !isPrelaunchUserAllowed(user)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const formData = await request.formData();
@@ -37,17 +45,21 @@ export async function POST(request: Request) {
   }
 
   if (user) {
-    // Verify business ownership (single-owner). For team access, extend to membership table.
-    const { data: business, error: businessError } = await supabase
-      .from("businesses")
-      .select("id")
-      .eq("id", businessId)
-      .eq("owner_id", user.id)
-      .single();
-
-    if (businessError || !business) {
+    const canAccess = await canAccessBillingWorkspace(user.id, businessId);
+    if (!canAccess) {
       return NextResponse.json({ error: "Business not found or not owned" }, { status: 403 });
     }
+
+    const billingAccess = await getBusinessEntitlementAccess(businessId, "chatbot_knowledge_base");
+    if (!billingAccess.allowed) {
+      return NextResponse.json({ error: "Knowledge uploads are not available on the current plan" }, { status: 403 });
+    }
+  }
+
+  const admin = getSupabaseAdminClientIfAvailable();
+  if (!admin) {
+    log("error", "Document upload unavailable due to missing server admin config", { businessId });
+    return NextResponse.json({ error: "Document uploads are unavailable right now." }, { status: 500 });
   }
 
   const createdDocs = [] as any[];

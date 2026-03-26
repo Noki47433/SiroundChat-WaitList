@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
+import { isPrelaunchUserAllowed } from "@/lib/auth/prelaunch";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import { processDocument } from "@/lib/ai/document-processing";
+import {
+  canAccessBillingWorkspace,
+  getBusinessEntitlementAccess
+} from "@/lib/server/billing-access";
 
 export const runtime = "nodejs";
 
@@ -12,6 +17,10 @@ export async function POST(request: Request) {
 
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (!isPrelaunchUserAllowed(user)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const json = await request.json().catch(() => null);
@@ -31,22 +40,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Document not found" }, { status: 404 });
   }
 
-  const { data: business } = await supabase
-    .from("businesses")
-    .select("id")
-    .eq("id", doc.business_id)
-    .eq("owner_id", user.id)
-    .single();
-
-  if (!business) {
+  const canAccess = await canAccessBillingWorkspace(user.id, doc.business_id);
+  if (!canAccess) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const billingAccess = await getBusinessEntitlementAccess(doc.business_id, "chatbot_knowledge_base");
+  if (!billingAccess.allowed) {
+    return NextResponse.json({ error: "Knowledge retraining is not available on the current plan" }, { status: 403 });
   }
 
   try {
     await processDocument(documentId);
     return NextResponse.json({ ok: true });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error("[DOCUMENT_RETRAIN_ERROR]", error);
+    return NextResponse.json({ error: "Failed to retrain document" }, { status: 500 });
   }
 }

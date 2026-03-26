@@ -286,14 +286,19 @@ export async function getOrgSummary(): Promise<OrgSummary> {
   }
 
   const { data: subscription } = await supabase
-    .from("subscriptions")
-    .select("plan")
+    .from("billing_subscriptions")
+    .select("status")
     .eq("business_id", business.id)
+    .order("updated_at", { ascending: false })
     .order("created_at", { ascending: false })
     .limit(1)
     .single();
 
-  const plan = subscription?.plan === "pro" ? "pro" : "starter";
+  const status = typeof subscription?.status === "string" ? subscription.status : null;
+  const plan =
+    status === "trialing" || status === "active" || status === "past_due" || status === "pending_setup"
+      ? "pro"
+      : "starter";
 
   return {
     id: business.id,

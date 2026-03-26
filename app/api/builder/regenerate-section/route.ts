@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { isPrelaunchUserAllowed } from "@/lib/auth/prelaunch";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import { regenerateSection } from "@/lib/builder/ai";
 import { SectionKeys, SiteContentSchema } from "@/lib/builder/types";
@@ -16,6 +17,10 @@ export async function POST(request: Request) {
 
   if (!userData?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (!isPrelaunchUserAllowed(userData.user)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const payload = await request.json().catch(() => null);

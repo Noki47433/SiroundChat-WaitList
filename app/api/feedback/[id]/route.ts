@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isPrelaunchUserAllowed } from "@/lib/auth/prelaunch";
 import { getMyFeedbackReport } from "@/lib/feedback/queries";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
 
@@ -21,6 +22,10 @@ export async function GET(
 
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    if (!isPrelaunchUserAllowed(user)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const row = await getMyFeedbackReport(params.id, { supabase, userId: user.id });

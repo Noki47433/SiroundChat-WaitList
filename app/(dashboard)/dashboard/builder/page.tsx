@@ -9,6 +9,16 @@ export const dynamic = "force-dynamic";
 
 export default async function BuilderDashboardPage() {
   const { user } = await requireUser("/dashboard/builder/new");
+  if (!user?.id) {
+    return (
+      <div className="space-y-4">
+        <p className="text-xs uppercase tracking-[0.2em] text-white/40">Website Builder</p>
+        <h2 className="text-3xl font-semibold">Create your first site</h2>
+        <p className="text-sm text-white/60">Log in to start building your website.</p>
+      </div>
+    );
+  }
+
   const tenant = await getTenantFromSession(user?.id);
   let businessId = tenant.businessId;
 

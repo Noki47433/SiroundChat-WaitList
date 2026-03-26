@@ -3,6 +3,7 @@ import type { PlanId as EntitlementPlanId } from "@/src/billing/plans";
 export const TRIAL_DAYS = 14;
 export const BILLING_CURRENCY = "EUR";
 export const SETUP_AMOUNT_CENTS = 100;
+export const PENDING_PAYMENT_STALE_MINUTES = 30;
 
 export const BILLING_PLAN_IDS = ["website_19", "chatbot_19", "bundle_29"] as const;
 export type BillingPlanId = (typeof BILLING_PLAN_IDS)[number];

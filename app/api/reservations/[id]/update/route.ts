@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireBusinessUser } from "@/lib/server/business-auth";
-import { getSupabaseAdminClient } from "@/lib/supabase/admin";
+import { getSupabaseAdminClientIfAvailable } from "@/lib/supabase/admin";
 import {
   computeUsedCapacityForInterval,
   ensureRestaurantBootstrap,
@@ -49,7 +49,11 @@ export async function PATCH(request: Request, { params }: { params: { id: string
   }
 
   const restaurantId = (current.restaurant_id as string) || context.businessId;
-  const admin = getSupabaseAdminClient();
+  const admin = getSupabaseAdminClientIfAvailable();
+  if (!admin) {
+    console.error("[RESERVATION_UPDATE_CONFIG_MISSING]", { reservationId, userId: context.userId });
+    return NextResponse.json({ error: "Reservations are unavailable right now." }, { status: 500 });
+  }
   const restaurant = await ensureRestaurantBootstrap(admin as any, restaurantId, context.userId);
   if (!restaurant) {
     return NextResponse.json({ error: "Restaurant not found" }, { status: 404 });

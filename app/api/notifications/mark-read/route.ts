@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireBusinessUser } from "@/lib/server/business-auth";
-import { getSupabaseAdminClient } from "@/lib/supabase/admin";
+import { getSupabaseAdminClientIfAvailable } from "@/lib/supabase/admin";
 
 export async function POST(request: Request) {
   const payload = await request.json().catch(() => null);
@@ -13,7 +13,11 @@ export async function POST(request: Request) {
   const { context, response } = await requireBusinessUser();
   if (response) return response;
 
-  const admin = getSupabaseAdminClient() as any;
+  const admin = getSupabaseAdminClientIfAvailable() as any;
+  if (!admin) {
+    console.error("[NOTIFICATIONS_MARK_READ_CONFIG_MISSING]", { notificationId });
+    return NextResponse.json({ error: "Notifications are unavailable right now." }, { status: 500 });
+  }
 
   const { data: notification } = await admin
     .from("notifications")

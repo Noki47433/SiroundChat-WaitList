@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { isPrelaunchUserAllowed } from "@/lib/auth/prelaunch";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
-import { getSupabaseAdminClient } from "@/lib/supabase/admin";
+import { getSupabaseAdminClientIfAvailable } from "@/lib/supabase/admin";
 import { SiteDocumentSchema } from "@/lib/website-builder/schema";
 import type { SiteDocument, SiteSection } from "@/lib/website-builder/types";
 import { buildSitePath, slugify } from "@/lib/builder/utils";
@@ -761,6 +762,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  if (!isPrelaunchUserAllowed(userData.user)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const payload = await request.json().catch(() => null);
   const parsed = PayloadSchema.safeParse(payload);
   if (!parsed.success) {
@@ -865,7 +870,11 @@ export async function POST(request: Request) {
   );
 
   try {
-    const adminClient = getSupabaseAdminClient();
+    const adminClient = getSupabaseAdminClientIfAvailable();
+    if (!adminClient) {
+      console.error("[BUILDER_PUBLISH_CONFIG_MISSING]", { siteId, userId: userData.user.id });
+      return NextResponse.json({ error: "Publishing is unavailable right now." }, { status: 500 });
+    }
     const storage = adminClient.storage.from(BUILDER_SITES_BUCKET);
     const indexPath = `published/${slug}/index.html`;
     const cssPath = `published/${slug}/styles.css`;
@@ -927,10 +936,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ url: publishedUrl });
   } catch (error) {
     console.error("[BUILDER_PUBLISH_ERROR]", error);
-    await (getSupabaseAdminClient() as any)
-      .from("builder_sites")
-      .update({ status: "error" })
-      .eq("id", siteId);
+    const adminClient = getSupabaseAdminClientIfAvailable();
+    if (adminClient) {
+      await (adminClient as any)
+        .from("builder_sites")
+        .update({ status: "error" })
+        .eq("id", siteId);
+    }
 
     return NextResponse.json({ error: "Failed to publish site" }, { status: 500 });
   }

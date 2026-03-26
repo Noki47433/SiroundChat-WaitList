@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { isPrelaunchUserAllowed } from "@/lib/auth/prelaunch";
 import { getOpenAIClient } from "@/lib/ai/client";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
+import { getTenantFromSession } from "@/lib/utils/tenant";
+import { getBusinessEntitlementAccess } from "@/lib/server/billing-access";
 import type { SiteSection } from "@/lib/website-builder/types";
 
 export const runtime = "nodejs";
@@ -46,6 +49,20 @@ export async function POST(request: Request) {
   const { data: userData } = await supabase.auth.getUser();
   if (!userData?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (!isPrelaunchUserAllowed(userData.user)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const tenant = await getTenantFromSession(userData.user.id);
+  if (!tenant.businessId) {
+    return NextResponse.json({ error: "Business not found" }, { status: 404 });
+  }
+
+  const billingAccess = await getBusinessEntitlementAccess(tenant.businessId, "website_builder");
+  if (!billingAccess.allowed) {
+    return NextResponse.json({ error: "Website generation is not available on the current plan" }, { status: 403 });
   }
 
   const payload = await request.json().catch(() => null);

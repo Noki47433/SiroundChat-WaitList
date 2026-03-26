@@ -3,6 +3,7 @@ import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { ensureBusinessRow } from "@/lib/utils/tenant";
 import { isAuthDisabled } from "@/lib/config/auth";
+import { getBusinessEntitlementAccess } from "@/lib/server/billing-access";
 
 export const runtime = "nodejs";
 
@@ -82,6 +83,13 @@ export async function POST(request: Request) {
 
     if (!businessId) {
       return NextResponse.json({ error: "businessId required" }, { status: 400 });
+    }
+
+    if (!authDisabled) {
+      const billingAccess = await getBusinessEntitlementAccess(businessId, "chatbot");
+      if (!billingAccess.allowed) {
+        return NextResponse.json({ error: "Logo uploads are not available on the current plan" }, { status: 403 });
+      }
     }
 
     // ---- upload ----

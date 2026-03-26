@@ -6,6 +6,8 @@ export default function BillingSuccessPage({
   searchParams?: Record<string, string | string[] | undefined>;
 }) {
   const demoMode = searchParams?.demo === "1";
+  const workspaceId = typeof searchParams?.workspaceId === "string" ? searchParams.workspaceId : null;
+  const billingHref = workspaceId ? `/billing?workspaceId=${encodeURIComponent(workspaceId)}` : "/billing";
 
   return (
     <div className="min-h-dvh bg-[#03060c] px-4 py-10 sm:px-6 lg:px-8">
@@ -14,10 +16,10 @@ export default function BillingSuccessPage({
         <p className="mt-3 text-sm text-white/75">
           {demoMode
             ? "Local billing demo mode is active, so your workspace trial was enabled immediately."
-            : "We are activating your trial. If it does not activate within 1 minute, refresh your billing page."}
+            : "Your payment is still pending server-side verification. Access changes only after the verified Paysera callback updates billing."}
         </p>
         <div className="mt-6 flex gap-3">
-          <Link href="/billing" className="rounded-full bg-white px-5 py-2 text-sm font-semibold text-black">
+          <Link href={billingHref} className="rounded-full bg-white px-5 py-2 text-sm font-semibold text-black">
             Go to billing
           </Link>
           <Link href="/dashboard" className="rounded-full border border-white/20 px-5 py-2 text-sm text-white/80">

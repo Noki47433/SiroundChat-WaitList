@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
+import { isPrelaunchUserAllowed } from "@/lib/auth/prelaunch";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
+import {
+  canAccessBillingWorkspace,
+  getBusinessEntitlementAccess
+} from "@/lib/server/billing-access";
 
 export const dynamic = "force-dynamic";
 
@@ -18,19 +23,22 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  if (!isPrelaunchUserAllowed(user)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   if (!businessId) {
     return NextResponse.json({ error: "businessId required" }, { status: 400 });
   }
 
-  const { data: business } = await supabase
-    .from("businesses")
-    .select("id")
-    .eq("id", businessId)
-    .eq("owner_id", user.id)
-    .single();
-
-  if (!business) {
+  const canAccess = await canAccessBillingWorkspace(user.id, businessId);
+  if (!canAccess) {
     return NextResponse.json({ error: "Business not found or not owned" }, { status: 403 });
+  }
+
+  const billingAccess = await getBusinessEntitlementAccess(businessId, "chatbot_knowledge_base");
+  if (!billingAccess.allowed) {
+    return NextResponse.json({ error: "Knowledge uploads are not available on the current plan" }, { status: 403 });
   }
 
   const { data, error } = await supabase

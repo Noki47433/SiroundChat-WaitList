@@ -1,9 +1,7 @@
 import "server-only";
 import { createHash, timingSafeEqual } from "crypto";
 import {
-  BILLING_CURRENCY,
-  SETUP_AMOUNT_CENTS,
-  type BillingPlanId
+  BILLING_CURRENCY
 } from "@/lib/billing/plans";
 
 const PAYSERA_CHECKOUT_URL = "https://www.paysera.com/pay/";
@@ -18,21 +16,11 @@ type CallbackInput = {
 
 type CheckoutRequestInput = {
   orderId: string;
-  callbackUrl: string;
-  acceptUrl: string;
-  cancelUrl: string;
-  planId: BillingPlanId;
-};
-
-type RenewalRequestInput = {
-  orderId: string;
   amountCents: number;
-  currency: string;
+  currency?: string;
   callbackUrl: string;
   acceptUrl: string;
   cancelUrl: string;
-  issuedToken: string;
-  planId: BillingPlanId;
 };
 
 const toBuffer = (value: string) => Buffer.from(value, "utf8");
@@ -76,6 +64,8 @@ export const hasPayseraCheckoutConfig = () =>
 export const shouldUsePayseraDemoMode = () =>
   process.env.NODE_ENV !== "production" && !hasPayseraCheckoutConfig();
 
+export const getPayseraProjectId = () => requiredEnv().projectId;
+
 const createMd5 = (value: string) => createHash("md5").update(value, "utf8").digest("hex");
 
 const safeEqualHex = (left: string, right: string) => {
@@ -112,25 +102,24 @@ const signedCheckoutPayload = (fields: Record<string, SerializableValue>) => {
   return { data, sign };
 };
 
-export const buildSetupCheckoutRedirectUrl = ({
+export const buildCheckoutRedirectUrl = ({
   orderId,
+  amountCents,
+  currency = BILLING_CURRENCY,
   callbackUrl,
   acceptUrl,
-  cancelUrl,
-  planId
+  cancelUrl
 }: CheckoutRequestInput) => {
   const { projectId } = requiredEnv();
   const { data, sign } = signedCheckoutPayload({
     projectid: projectId,
     orderid: orderId,
-    amount: SETUP_AMOUNT_CENTS,
-    currency: BILLING_CURRENCY,
+    amount: amountCents,
+    currency,
     accepturl: acceptUrl,
     cancelurl: cancelUrl,
     callbackurl: callbackUrl,
-    token_strategy: "required",
-    method_key: "card",
-    billing_plan_id: planId,
+    payment: "card",
     version: "1.6"
   });
 
@@ -138,53 +127,4 @@ export const buildSetupCheckoutRedirectUrl = ({
   redirectUrl.searchParams.set("data", data);
   redirectUrl.searchParams.set("sign", sign);
   return redirectUrl.toString();
-};
-
-export const createRecurringPayseraPayment = async ({
-  orderId,
-  amountCents,
-  currency,
-  callbackUrl,
-  acceptUrl,
-  cancelUrl,
-  issuedToken,
-  planId
-}: RenewalRequestInput) => {
-  const { projectId } = requiredEnv();
-  const { data, sign } = signedCheckoutPayload({
-    projectid: projectId,
-    orderid: orderId,
-    amount: amountCents,
-    currency,
-    callbackurl: callbackUrl,
-    accepturl: acceptUrl,
-    cancelurl: cancelUrl,
-    token_strategy: "required",
-    method_key: "card",
-    recurring: "1",
-    issued_token: issuedToken,
-    billing_plan_id: planId,
-    version: "1.6"
-  });
-
-  const response = await fetch(PAYSERA_CHECKOUT_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded"
-    },
-    body: new URLSearchParams({ data, sign }).toString(),
-    cache: "no-store"
-  });
-
-  const bodyText = await response.text();
-
-  if (!response.ok) {
-    throw new Error(`Paysera recurring request failed (${response.status})`);
-  }
-
-  return {
-    ok: true,
-    status: response.status,
-    body: bodyText
-  };
 };

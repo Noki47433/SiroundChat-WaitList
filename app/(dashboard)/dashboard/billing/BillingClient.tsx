@@ -7,7 +7,9 @@ import { useSearchParams } from "next/navigation";
 import { Check, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
 import { useToast } from "@/components/ui/toast";
 import {
+  PENDING_PAYMENT_STALE_MINUTES,
   BILLING_PLANS,
+  type BillingPaymentKind,
   type BillingPlanId,
   type BillingSubscriptionStatus
 } from "@/lib/billing/plans";
@@ -31,6 +33,10 @@ type SubscriptionRecord = {
   current_period_end: string | null;
   created_at: string;
   updated_at: string;
+  pending_payment_kind: BillingPaymentKind | null;
+  pending_payment_plan_id: BillingPlanId | null;
+  pending_payment_created_at: string | null;
+  pending_payment_is_stale: boolean;
 };
 
 type BillingClientProps = {
@@ -45,13 +51,6 @@ type CompareRow = {
   chatbot_19: string;
   importance: string;
 };
-
-const BLOCKING_STATUSES = new Set<BillingSubscriptionStatus>([
-  "pending_setup",
-  "trialing",
-  "active",
-  "past_due"
-]);
 
 const PLAN_FEATURES: Record<BillingPlanId, string[]> = {
   website_19: [
@@ -132,11 +131,24 @@ const formatDate = (value: string | null) => {
   });
 };
 
-const statusLabel = (status: BillingSubscriptionStatus) => {
-  if (status === "pending_setup") return "Pending setup payment";
-  if (status === "trialing") return "Trialing";
-  if (status === "active") return "Active";
-  if (status === "past_due") return "Past due";
+const statusLabel = (subscription: SubscriptionRecord) => {
+  if (subscription.pending_payment_kind === "renewal" && !subscription.pending_payment_is_stale) {
+    return "Pending renewal payment";
+  }
+  if (
+    subscription.status === "pending_setup" &&
+    subscription.pending_payment_kind === "setup" &&
+    !subscription.pending_payment_is_stale
+  ) {
+    return "Pending setup payment";
+  }
+  if (subscription.pending_payment_kind && subscription.pending_payment_is_stale) {
+    return "Checkout expired";
+  }
+  if (subscription.status === "pending_setup") return "Pending setup";
+  if (subscription.status === "trialing") return "Trialing";
+  if (subscription.status === "active") return "Active";
+  if (subscription.status === "past_due") return "Past due";
   return "Canceled";
 };
 
@@ -149,24 +161,36 @@ export function BillingClient({ workspaceId, initialSubscription }: BillingClien
   const [pendingPlanId, setPendingPlanId] = useState<BillingPlanId | null>(null);
   const [showCompare, setShowCompare] = useState(false);
 
-  const hasBlockingSubscription = useMemo(
-    () => BLOCKING_STATUSES.has(subscription.status),
+  const hasActiveAccessState = useMemo(
+    () => subscription.status === "trialing" || subscription.status === "active",
     [subscription.status]
   );
+  const hasLivePendingSetup = useMemo(
+    () =>
+      subscription.status === "pending_setup" &&
+      subscription.pending_payment_kind === "setup" &&
+      !subscription.pending_payment_is_stale,
+    [subscription.pending_payment_is_stale, subscription.pending_payment_kind, subscription.status]
+  );
+  const hasLivePendingRenewal = useMemo(
+    () => subscription.pending_payment_kind === "renewal" && !subscription.pending_payment_is_stale,
+    [subscription.pending_payment_is_stale, subscription.pending_payment_kind]
+  );
+  const checkoutBlocked = hasActiveAccessState || hasLivePendingSetup || hasLivePendingRenewal;
 
   const orderedPlans = useMemo(() => {
     const planMap = new Map(BILLING_PLANS.map((plan) => [plan.id, plan]));
     return PLAN_RENDER_ORDER.map((id) => planMap.get(id)).filter(Boolean) as typeof BILLING_PLANS;
   }, []);
 
-  const startCardRequiredTrial = async (planId: BillingPlanId) => {
+  const startCheckout = async (planId: BillingPlanId) => {
     setPendingPlanId(planId);
 
     try {
       const response = await fetch("/api/billing/start-trial", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plan_id: planId })
+        body: JSON.stringify({ plan_id: planId, workspaceId })
       });
 
       const data = (await response.json().catch(() => null)) as
@@ -174,13 +198,13 @@ export function BillingClient({ workspaceId, initialSubscription }: BillingClien
         | null;
 
       if (!response.ok || !data?.redirectUrl) {
-        throw new Error(data?.error ?? "Failed to start trial");
+        throw new Error(data?.error ?? "Failed to start checkout");
       }
 
       window.location.href = data.redirectUrl;
     } catch (error) {
       push({
-        title: "Could not start trial",
+        title: "Could not start checkout",
         message: error instanceof Error ? error.message : "Unexpected error",
         variant: "error"
       });
@@ -200,7 +224,7 @@ export function BillingClient({ workspaceId, initialSubscription }: BillingClien
         <div className="space-y-2">
           <h1 className={`text-4xl tracking-tight text-white ${headingFont.className}`}>Billing</h1>
           <p className="text-base text-white/75">
-            Start a 14-day trial with a required card verification payment of <span className="font-semibold text-white">€1.00</span>.
+            First-time setup charges <span className="font-semibold text-white">€1.00</span> and starts the 14-day trial only after callback confirmation. Expired workspaces renew at the selected monthly price after verified payment.
           </p>
           <p className="text-xs text-white/45">Workspace: {workspaceId}</p>
         </div>
@@ -214,7 +238,7 @@ export function BillingClient({ workspaceId, initialSubscription }: BillingClien
         <div className="rounded-[1.6rem] border border-white/15 bg-white/[0.04] p-5 text-sm text-white/82 backdrop-blur-xl">
           <p>
             <span className="text-white/60">Status:</span>{" "}
-            <span className="font-semibold text-white">{statusLabel(subscription.status)}</span>
+            <span className="font-semibold text-white">{statusLabel(subscription)}</span>
           </p>
           <p>
             <span className="text-white/60">Trial end:</span> {formatDate(subscription.trial_end)}
@@ -222,6 +246,15 @@ export function BillingClient({ workspaceId, initialSubscription }: BillingClien
           <p>
             <span className="text-white/60">Current period end:</span> {formatDate(subscription.current_period_end)}
           </p>
+          {subscription.pending_payment_kind ? (
+            <p>
+              <span className="text-white/60">Pending checkout:</span>{" "}
+              {subscription.pending_payment_kind === "setup" ? "Setup payment" : "Renewal payment"}
+              {subscription.pending_payment_plan_id ? ` for ${subscription.pending_payment_plan_id}` : ""}
+              {subscription.pending_payment_created_at ? ` started ${formatDate(subscription.pending_payment_created_at)}` : ""}
+              {subscription.pending_payment_is_stale ? " (expired, safe to retry)" : ""}
+            </p>
+          ) : null}
         </div>
 
         <div className="grid gap-5 lg:grid-cols-3">
@@ -229,7 +262,7 @@ export function BillingClient({ workspaceId, initialSubscription }: BillingClien
             const isCurrentPlan = subscription.billing_plan_id === plan.id;
             const isPending = pendingPlanId === plan.id;
             const isBundle = plan.id === "bundle_29";
-            const buttonDisabled = hasBlockingSubscription || isPending || Boolean(pendingPlanId);
+            const buttonDisabled = checkoutBlocked || isPending || Boolean(pendingPlanId);
 
             return (
               <div
@@ -295,7 +328,7 @@ export function BillingClient({ workspaceId, initialSubscription }: BillingClien
 
                     <button
                       type="button"
-                      onClick={() => startCardRequiredTrial(plan.id)}
+                      onClick={() => startCheckout(plan.id)}
                       disabled={buttonDisabled}
                       data-tutorial-target="billing-switch-plan"
                       className="mt-6 inline-flex w-full items-center justify-center rounded-full bg-white px-4 py-2.5 text-sm font-semibold text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:bg-white/60"
@@ -305,8 +338,10 @@ export function BillingClient({ workspaceId, initialSubscription }: BillingClien
                           <Loader2 className="h-4 w-4 animate-spin" />
                           Redirecting...
                         </span>
-                      ) : isCurrentPlan && hasBlockingSubscription ? (
-                        "Current plan selected"
+                      ) : isCurrentPlan && hasActiveAccessState ? (
+                        "Current plan active"
+                      ) : hasLivePendingSetup || hasLivePendingRenewal ? (
+                        "Checkout pending"
                       ) : (
                         "Choose Plan"
                       )}
@@ -358,9 +393,11 @@ export function BillingClient({ workspaceId, initialSubscription }: BillingClien
           ) : null}
         </div>
 
-        {hasBlockingSubscription ? (
+        {checkoutBlocked ? (
           <p className="text-sm text-white/72">
-            Manage billing: <span className="text-white/50">coming soon</span>
+            {hasActiveAccessState
+              ? "Manual renewal opens only after the current billing period ends."
+              : `Pending checkout remains non-active until callback verification. If it expires, retry after ${PENDING_PAYMENT_STALE_MINUTES} minutes.`}
           </p>
         ) : null}
 

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { guardPrivateRouteUser } from "@/lib/auth/route-guard";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import { getTenantFromSession } from "@/lib/utils/tenant";
 
@@ -13,28 +14,24 @@ type RequireBusinessUserResult =
   | { context: AuthContext; response: NextResponse };
 
 export async function requireBusinessUser(): Promise<RequireBusinessUserResult> {
-  const supabase = getSupabaseRouteClient();
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
-
-  if (!user) {
+  const guard = await guardPrivateRouteUser();
+  if (!guard.ok) {
     return {
-      context: { userId: "", businessId: "", supabase },
-      response: NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+      context: { userId: "", businessId: "", supabase: guard.supabase },
+      response: guard.response
     };
   }
 
-  const tenant = await getTenantFromSession(user.id);
+  const tenant = await getTenantFromSession(guard.user.id);
   if (!tenant.businessId) {
     return {
-      context: { userId: user.id, businessId: "", supabase },
+      context: { userId: guard.user.id, businessId: "", supabase: guard.supabase },
       response: NextResponse.json({ error: "Business not found" }, { status: 404 })
     };
   }
 
   return {
-    context: { userId: user.id, businessId: tenant.businessId, supabase },
+    context: { userId: guard.user.id, businessId: tenant.businessId, supabase: guard.supabase },
     response: null
   };
 }

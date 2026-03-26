@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { isPrelaunchUserAllowed } from "@/lib/auth/prelaunch";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
-import { getSupabaseServerAdminClient } from "@/lib/supabase/serverAdmin";
+import { getSupabaseServerAdminClientIfAvailable } from "@/lib/supabase/serverAdmin";
 import { buildFallbackContent } from "@/lib/builder/ai";
 import {
   CTA_GOALS,
@@ -191,11 +192,20 @@ const getOwnedSite = async (admin: any, siteId: string, userId: string, select: 
 
 export async function GET(request: Request) {
   const supabase = getSupabaseRouteClient();
-  const admin = getSupabaseServerAdminClient();
   const { data: userData } = await supabase.auth.getUser();
 
   if (!userData?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (!isPrelaunchUserAllowed(userData.user)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const admin = getSupabaseServerAdminClientIfAvailable();
+  if (!admin) {
+    console.error("[BUILDER_SITE_GET_CONFIG_MISSING]", { userId: userData.user.id });
+    return NextResponse.json({ error: "Builder is unavailable right now." }, { status: 500 });
   }
 
   const { searchParams } = new URL(request.url);
@@ -225,11 +235,20 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const supabase = getSupabaseRouteClient();
-  const admin = getSupabaseServerAdminClient();
   const { data: userData } = await supabase.auth.getUser();
 
   if (!userData?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (!isPrelaunchUserAllowed(userData.user)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const admin = getSupabaseServerAdminClientIfAvailable();
+  if (!admin) {
+    console.error("[BUILDER_SITE_POST_CONFIG_MISSING]", { userId: userData.user.id });
+    return NextResponse.json({ error: "Builder is unavailable right now." }, { status: 500 });
   }
 
   const payload = await request.json().catch(() => null);
@@ -368,11 +387,20 @@ export async function POST(request: Request) {
 
 export async function PATCH(request: Request) {
   const supabase = getSupabaseRouteClient();
-  const admin = getSupabaseServerAdminClient();
   const { data: userData } = await supabase.auth.getUser();
 
   if (!userData?.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (!isPrelaunchUserAllowed(userData.user)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const admin = getSupabaseServerAdminClientIfAvailable();
+  if (!admin) {
+    console.error("[BUILDER_SITE_PATCH_CONFIG_MISSING]", { userId: userData.user.id });
+    return NextResponse.json({ error: "Builder is unavailable right now." }, { status: 500 });
   }
 
   const payload = await request.json().catch(() => null);

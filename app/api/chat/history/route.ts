@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isPrelaunchUserAllowed } from "@/lib/auth/prelaunch";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import { getTenantFromSession } from "@/lib/utils/tenant";
 import { DashboardConversationQuerySchema } from "@/lib/validation/chat";
@@ -41,9 +42,27 @@ export async function GET(request: Request) {
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  if (!isPrelaunchUserAllowed(user)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   const db = supabase as any;
+  const tenant = await getTenantFromSession(user.id);
+  if (!tenant.businessId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
   if (conversationId) {
+    const { data: conversation } = await db
+      .from("chat_conversations")
+      .select("id")
+      .eq("id", conversationId)
+      .eq("business_id", tenant.businessId)
+      .maybeSingle();
+
+    if (!conversation?.id) {
+      return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
+    }
+
     const { data: messages } = await db
       .from("chat_messages")
       .select("id, sender, message_text, created_at")
@@ -60,11 +79,6 @@ export async function GET(request: Request) {
         createdAt: msg.created_at
       }))
     });
-  }
-
-  const tenant = await getTenantFromSession();
-  if (!tenant.businessId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const parsed = DashboardConversationQuerySchema.safeParse({

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import Ajv, { type ValidateFunction } from "ajv";
+import { isPrelaunchUserAllowed } from "@/lib/auth/prelaunch";
 import { getOpenAIClient } from "@/lib/ai/client";
 import { selectTemplateKey } from "@/lib/builder/utils";
 import { emitGenerationEvent } from "@/lib/builder/generation/analytics";
@@ -24,7 +25,7 @@ import {
   sanitizeGenerationBrief
 } from "@/lib/builder/generation-config";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
-import { getSupabaseServerAdminClient } from "@/lib/supabase/serverAdmin";
+import { getSupabaseServerAdminClientIfAvailable } from "@/lib/supabase/serverAdmin";
 import { SiteDocumentSchema } from "@/lib/website-builder/schema";
 import type { SiteDocument, SiteSection, SiteThemeTokens } from "@/lib/website-builder/types";
 import { hasEntitlement, resolveEntitlements } from "@/src/billing/entitlements";
@@ -886,7 +887,11 @@ const generateDeterministicPayload = async (args: {
 export async function POST(request: Request) {
   const startedAt = Date.now();
   const supabase = getSupabaseRouteClient();
-  const admin = getSupabaseServerAdminClient();
+  const admin = getSupabaseServerAdminClientIfAvailable();
+  if (!admin) {
+    console.error("[BUILDER_GENERATE_CONFIG_MISSING]");
+    return NextResponse.json({ error: "Builder generation is unavailable right now." }, { status: 500 });
+  }
   let analyticsContext: {
     businessId?: string;
     siteId?: string;
@@ -899,6 +904,10 @@ export async function POST(request: Request) {
     const { data: userData } = await supabase.auth.getUser();
     if (!userData?.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    if (!isPrelaunchUserAllowed(userData.user)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const payload = await request.json().catch(() => null);
@@ -926,7 +935,18 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Site not found" }, { status: 404 });
     }
 
-    const { plan: builderPlan } = await getBuilderPlanForRoute(input.businessId);
+    const { plan: builderPlan, flags } = await getBuilderPlanForRoute(input.businessId);
+    if (!flags.canRegenerate) {
+      return NextResponse.json(
+        {
+          error: "Your current plan does not include website generation.",
+          code: "PLAN_UPGRADE_REQUIRED",
+          blocked: "website_builder",
+          upgradeUrl: "/billing?blocked=website_builder"
+        },
+        { status: 403 }
+      );
+    }
     const isBundlePlan = builderPlan === "bundle";
     const canAttachChatbotEmbed = hasEntitlement(
       resolveEntitlements(builderPlan),

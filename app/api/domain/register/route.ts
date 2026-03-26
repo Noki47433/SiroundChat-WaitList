@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { isPrelaunchUserAllowed } from "@/lib/auth/prelaunch";
 import { getTenantFromSession } from "@/lib/utils/tenant";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import { isAuthDisabled } from "@/lib/config/auth";
@@ -14,6 +15,9 @@ export async function POST(request: Request) {
     } = await supabase.auth.getUser();
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (!isPrelaunchUserAllowed(user)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
     userId = user.id;
   }

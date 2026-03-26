@@ -1,4 +1,4 @@
-import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { getSupabaseServerAdminClient } from "@/lib/supabase/serverAdmin";
 import { scoreBusinessRisk } from "@/lib/admin/risk";
 
 export const ADMIN_RANGE_DAYS = {
@@ -274,6 +274,20 @@ type SubscriptionRow = {
   updated_at: string | null;
 };
 
+type BillingSubscriptionSourceRow = {
+  id: string;
+  business_id: string;
+  plan_id: string | null;
+  status: string | null;
+  created_at: string;
+  updated_at: string | null;
+};
+
+type BillingPlanPriceRow = {
+  id: string;
+  price_cents: number;
+};
+
 type DailyMetricRow = {
   business_id: string;
   day: string;
@@ -498,6 +512,71 @@ const latestByBusiness = (subscriptions: SubscriptionRow[]) => {
   return map;
 };
 
+const toSubscriptionRows = (
+  subscriptions: BillingSubscriptionSourceRow[],
+  priceByPlanId: Map<string, number>
+): SubscriptionRow[] =>
+  subscriptions.map((subscription) => ({
+    id: subscription.id,
+    business_id: subscription.business_id,
+    plan: subscription.plan_id,
+    status: subscription.status,
+    mrr_eur: priceByPlanId.get(subscription.plan_id ?? "") ?? 0,
+    created_at: subscription.created_at,
+    updated_at: subscription.updated_at
+  }));
+
+const fetchBillingSubscriptionRows = async (
+  supabase: any,
+  options: {
+    all?: boolean;
+    businessId?: string;
+    businessIds?: string[];
+    limit?: number;
+  }
+): Promise<SubscriptionRow[]> => {
+  const planQuery = (supabase as any).from("billing_plans").select("id, price_cents");
+  let subscriptionQuery = (supabase as any)
+    .from("billing_subscriptions")
+    .select("id, business_id, plan_id, status, created_at, updated_at")
+    .order("updated_at", { ascending: false })
+    .order("created_at", { ascending: false });
+
+  if (options.all) {
+    // No business filter.
+  } else if (options.businessId) {
+    subscriptionQuery = subscriptionQuery.eq("business_id", options.businessId);
+  } else if (options.businessIds?.length) {
+    subscriptionQuery = subscriptionQuery.in("business_id", options.businessIds);
+  } else {
+    return [];
+  }
+
+  if (typeof options.limit === "number" && options.limit > 0) {
+    subscriptionQuery = subscriptionQuery.limit(options.limit);
+  }
+
+  const [subscriptionsResult, plansResult] = await Promise.all([subscriptionQuery, planQuery]);
+  if (subscriptionsResult.error) {
+    console.error("[ADMIN_BILLING_SUBSCRIPTIONS_ERROR]", subscriptionsResult.error);
+    return [];
+  }
+
+  if (plansResult.error) {
+    console.error("[ADMIN_BILLING_PLANS_ERROR]", plansResult.error);
+    return [];
+  }
+
+  const priceByPlanId = new Map(
+    ((plansResult.data ?? []) as BillingPlanPriceRow[]).map((plan) => [plan.id, plan.price_cents / 100])
+  );
+
+  return toSubscriptionRows(
+    (subscriptionsResult.data ?? []) as BillingSubscriptionSourceRow[],
+    priceByPlanId
+  );
+};
+
 const mrrForDay = (subscription: SubscriptionRow, day: string) => {
   const status = (subscription.status ?? "").toLowerCase();
   const mrr = toNumber(subscription.mrr_eur);
@@ -614,7 +693,7 @@ type BaseDataOptions = {
 };
 
 const getBaseData = async (options: BaseDataOptions) => {
-  const supabase = getSupabaseServerClient();
+  const supabase = getSupabaseServerAdminClient();
 
   const businessesLimit = Math.max(1, options.businessesLimit ?? 500);
   const metricsToDay = options.metricsToDay ?? toYmd(toDateOnly(new Date()));
@@ -649,15 +728,11 @@ const getBaseData = async (options: BaseDataOptions) => {
     businessesLimit
   );
 
-  const [subscriptionsResult, metricsResult, eventsResult] = await Promise.all([
-    // Bounded subscription history used for latest plan/status + churn windows.
-    (supabase as any)
-      .from("subscriptions")
-      .select("id, business_id, plan, status, mrr_eur, created_at, updated_at")
-      .in("business_id", businessIds)
-      .order("updated_at", { ascending: false })
-      .order("created_at", { ascending: false })
-      .limit(subscriptionsLimit),
+  const [subscriptions, metricsResult, eventsResult] = await Promise.all([
+    fetchBillingSubscriptionRows(supabase as any, {
+      businessIds,
+      limit: subscriptionsLimit
+    }),
     // Read only the metrics window required by the caller (no raw messages scans).
     (supabase as any)
       .from("business_metrics_daily")
@@ -681,7 +756,7 @@ const getBaseData = async (options: BaseDataOptions) => {
   return {
     supabase,
     businesses,
-    subscriptions: (subscriptionsResult.data ?? []) as SubscriptionRow[],
+    subscriptions,
     metrics: (metricsResult.data ?? []) as DailyMetricRow[],
     events: (eventsResult.data ?? []) as EventRow[]
   };
@@ -1109,11 +1184,11 @@ export async function getAdminBusinessDetailData(
   const previousEnd = toYmd(addDays(today, -rangeDays));
   const currentEnd = toYmd(today);
 
-  const supabase = getSupabaseServerClient();
+  const supabase = getSupabaseServerAdminClient();
 
   const [
     businessResult,
-    subscriptionsResult,
+    subscriptions,
     metricsResult,
     leadsResult,
     conversationsResult,
@@ -1128,12 +1203,7 @@ export async function getAdminBusinessDetailData(
         .select("id, name, business_name, industry, city, phone, website_url, plan, status, created_at")
         .eq("id", businessId)
         .maybeSingle(),
-      (supabase as any)
-        .from("subscriptions")
-        .select("id, business_id, plan, status, mrr_eur, created_at, updated_at")
-        .eq("business_id", businessId)
-        .order("updated_at", { ascending: false })
-        .order("created_at", { ascending: false }),
+      fetchBillingSubscriptionRows(supabase as any, { businessId }),
       (supabase as any)
         .from("business_metrics_daily")
         .select(
@@ -1186,7 +1256,6 @@ export async function getAdminBusinessDetailData(
   const business = businessResult.data as BusinessRow | null;
   if (!business) return null;
 
-  const subscriptions = (subscriptionsResult.data ?? []) as SubscriptionRow[];
   const latestSub = subscriptions[0];
   const metrics = (metricsResult.data ?? []) as DailyMetricRow[];
   const currentMetrics = metrics.filter((row) => row.day >= currentStart && row.day <= currentEnd);
@@ -1406,7 +1475,7 @@ export async function getAdminBusinessDetailData(
 }
 
 export async function getAdminLiveData(): Promise<AdminLiveData> {
-  const supabase = getSupabaseServerClient();
+  const supabase = getSupabaseServerAdminClient();
 
   const [businessesResult, openConversationsResult, messagesResult, eventsResult] = await Promise.all([
     (supabase as any).from("businesses").select("id, name, business_name"),
@@ -1482,7 +1551,7 @@ export async function getAdminConversationsData(filters?: {
   from?: string | null;
   to?: string | null;
 }): Promise<AdminConversationRow[]> {
-  const supabase = getSupabaseServerClient();
+  const supabase = getSupabaseServerAdminClient();
 
   let query = (supabase as any)
     .from("conversations")
@@ -1539,13 +1608,8 @@ export async function getAdminRevenueData(rangeInput?: string | null): Promise<R
   const today = toDateOnly(new Date());
   const dayKeys = buildDayKeys(today, rangeDays);
 
-  const supabase = getSupabaseServerClient();
-  const { data: subscriptionsData } = await (supabase as any)
-    .from("subscriptions")
-    .select("id, business_id, plan, status, mrr_eur, created_at, updated_at")
-    .order("created_at", { ascending: true });
-
-  const subscriptions = (subscriptionsData ?? []) as SubscriptionRow[];
+  const supabase = getSupabaseServerAdminClient();
+  const subscriptions = await fetchBillingSubscriptionRows(supabase as any, { all: true, limit: 10000 });
   const latestSubs = latestByBusiness(subscriptions);
 
   const mrrSeries = buildSubscriptionMrrSeries(dayKeys, latestSubs);
@@ -1602,7 +1666,7 @@ export async function getAdminCostsData(rangeInput?: string | null): Promise<Cos
   const fromDay = toYmd(addDays(today, -(rangeDays - 1)));
   const baselineFromDay = toYmd(addDays(today, -13));
 
-  const supabase = getSupabaseServerClient();
+  const supabase = getSupabaseServerAdminClient();
 
   const [businessesResult, metricsResult] = await Promise.all([
     (supabase as any).from("businesses").select("id, name, business_name"),

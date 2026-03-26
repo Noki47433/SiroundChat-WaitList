@@ -1,8 +1,12 @@
 import "server-only";
-import { getSupabaseServerAdminClient } from "@/lib/supabase/serverAdmin";
+import { getSupabaseServerAdminClientIfAvailable } from "@/lib/supabase/serverAdmin";
 
 const getOwnedBusiness = async (businessId: string, userId: string) => {
-  const admin = getSupabaseServerAdminClient() as any;
+  const admin = getSupabaseServerAdminClientIfAvailable() as any;
+  if (!admin) {
+    console.error("[BUILDER_PAGE_CONFIG_MISSING]", { businessId, userId });
+    return null;
+  }
   const { data, error } = await admin
     .from("businesses")
     .select("id")
@@ -21,7 +25,11 @@ const getOwnedBusiness = async (businessId: string, userId: string) => {
 export const listOwnedBusinessIds = async (userId: string): Promise<string[]> => {
   if (!userId) return [];
 
-  const admin = getSupabaseServerAdminClient() as any;
+  const admin = getSupabaseServerAdminClientIfAvailable() as any;
+  if (!admin) {
+    console.error("[BUILDER_OWNED_BUSINESS_CONFIG_MISSING]", { userId });
+    return [];
+  }
   const { data, error } = await admin
     .from("businesses")
     .select("id")
@@ -47,7 +55,11 @@ export const getOwnedBuilderSite = async <T = Record<string, unknown>>(
   userId: string,
   select: string
 ): Promise<T | null> => {
-  const admin = getSupabaseServerAdminClient() as any;
+  const admin = getSupabaseServerAdminClientIfAvailable() as any;
+  if (!admin) {
+    console.error("[BUILDER_PAGE_SITE_CONFIG_MISSING]", { siteId, userId });
+    return null;
+  }
   const selectFields = new Set(
     select
       .split(",")
@@ -93,7 +105,11 @@ export const listOwnedBuilderSites = async <T = Record<string, unknown>>(
     return [];
   }
 
-  const admin = getSupabaseServerAdminClient() as any;
+  const admin = getSupabaseServerAdminClientIfAvailable() as any;
+  if (!admin) {
+    console.error("[BUILDER_PAGE_SITE_LIST_CONFIG_MISSING]", { businessId, userId });
+    return [];
+  }
   const { data, error } = await admin
     .from("builder_sites")
     .select(select)
@@ -117,7 +133,11 @@ export const listAllOwnedBuilderSites = async <T = Record<string, unknown>>(
     return [];
   }
 
-  const admin = getSupabaseServerAdminClient() as any;
+  const admin = getSupabaseServerAdminClientIfAvailable() as any;
+  if (!admin) {
+    console.error("[BUILDER_ALL_SITE_CONFIG_MISSING]", { userId });
+    return [];
+  }
   const { data, error } = await admin
     .from("builder_sites")
     .select(select)
