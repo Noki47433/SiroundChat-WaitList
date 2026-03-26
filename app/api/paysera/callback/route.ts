@@ -58,11 +58,15 @@ const buildTrustedPayload = (decoded: Record<string, unknown>, transport: "get" 
 const readFormEntries = async (request: Request) => {
   try {
     const formData = await request.formData();
-    return new URLSearchParams(
-      Array.from(formData.entries()).flatMap(([key, value]) =>
-        typeof value === "string" ? [[key, value] as const] : []
-      )
-    );
+    const params: string[][] = [];
+
+    for (const [key, value] of formData.entries()) {
+      if (typeof value === "string") {
+        params.push([key, value]);
+      }
+    }
+
+    return new URLSearchParams(params);
   } catch {
     return null;
   }
