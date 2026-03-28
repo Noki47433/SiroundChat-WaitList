@@ -105,6 +105,14 @@ export function getSiroundChatDemoReply(message: string, locale: DemoLocale = "e
     "orar",
     "kur jeni hapur"
   ];
+  const productPricingPhrases = [
+    "how much does siroundchat cost",
+    "what does siroundchat cost",
+    "price of siroundchat",
+    "pricing of siroundchat",
+    "how much do you cost",
+    "how much is this"
+  ];
   const pricingPhrases = [
     "what are your prices",
     "what are the prices",
@@ -144,6 +152,12 @@ export function getSiroundChatDemoReply(message: string, locale: DemoLocale = "e
     return locale === "sq"
       ? "SiroundChat do t'i pergjigjej kesaj menjehere duke perdorur informacionin e biznesit tend. Per shembull, nese biznesi yt eshte hapur 9:00-22:00, chatbot-i do t'ia jepte klientit ate orar automatikisht."
       : "SiroundChat would answer that instantly using your business information. For example, if your business is open 9am-10pm, the chatbot would reply with those hours automatically.";
+  }
+
+  if (includesAny(normalized, productPricingPhrases)) {
+    return locale === "sq"
+      ? "SiroundChat ka cmime te thjeshta:\n- Chatbot: EUR19/muaj\n- Website: EUR19/muaj\n- Bundle (chatbot + website): EUR29/muaj\n\nMund ta nisesh me nje free trial per te pare si funksionon."
+      : "SiroundChat offers simple pricing:\n- Chatbot: EUR19/month\n- Website: EUR19/month\n- Bundle (chatbot + website): EUR29/month\n\nYou can start with a free trial to see how it works.";
   }
 
   if (includesAny(normalized, pricingPhrases)) {
