@@ -26,6 +26,12 @@ import {
   selectRelevantUpdateRules,
   type ChatbotUpdateRuleRow
 } from "@/lib/chatbot/update-info";
+import {
+  buildSiroundChatDemoSystemPrompt,
+  getSiroundChatDemoFallbackReply,
+  getSiroundChatDemoReply,
+  isSiroundChatDemoBot
+} from "@/lib/chatbot/siroundchat-demo";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -1344,6 +1350,7 @@ export async function POST(req: Request) {
     }
 
     const businessName = toText(biz.business_name) || "this business";
+    const isSiroundChatDemo = isSiroundChatDemoBot({ widgetKey: body.key, businessName });
     const businessTimeZone = toText(biz.timezone) || "Europe/Belgrade";
     const starterKnowledge = toText((biz as { generated_starter_knowledge?: string | null }).generated_starter_knowledge).trim();
     const starterKnowledgeContext =
@@ -1934,38 +1941,70 @@ export async function POST(req: Request) {
     let orchestratorCustomerId: string | null = null;
     const chatLocale = detectChatLocale(body.message, reservationState.locale);
     const hasDietaryIntent = isDietaryOrAllergyIntent(normalizedMessage, messageTokens);
-    const salesOpportunityKind = detectSalesOpportunityKind(body.message, normalizedMessage, messageTokens);
+    const salesOpportunityKind = isSiroundChatDemo ? null : detectSalesOpportunityKind(body.message, normalizedMessage, messageTokens);
 
-    try {
-      const orchestratorResult = await runChatbotOrchestrator(admin as any, {
-        businessId,
+    const directDemoReply = isSiroundChatDemo ? getSiroundChatDemoReply(body.message, chatLocale) : null;
+    if (directDemoReply) {
+      const { data: assistantMessage, error: assistantErr } = await (admin as any)
+        .from("chat_messages")
+        .insert({
+          conversation_id: conversationId,
+          sender: "assistant",
+          message_text: directDemoReply
+        })
+        .select("id")
+        .single();
+
+      if (assistantErr) {
+        log("error", "Failed to persist demo assistant message", { error: assistantErr });
+      }
+
+      const assistantMessageId = assistantMessage?.id ? String(assistantMessage.id) : null;
+      await maybeTrackResponseDelay(Date.now() - requestStartMs, conversationId);
+      const promptFeedback = await consumeFeedbackPrompt(assistantMessageId);
+
+      return NextResponse.json({
+        reply: directDemoReply,
         conversationId,
-        message: body.message,
-        customerSignals: {
-          name: body.name ?? null,
-          email: body.email ?? null,
-          phone: body.phone ?? null,
-          channel: "web_chat"
-        },
-        reservationContext: {
-          partySize: reservationState.party_size,
-          time: reservationState.time
-        }
+        userMessageId: messageId,
+        assistantMessageId,
+        promptFeedback,
+        actions: []
       });
+    }
 
-      orchestratorActions = orchestratorResult.actions as Array<Record<string, unknown>>;
-      orchestratorReply = orchestratorResult.assistantMessage;
-      orchestratorCustomerId = orchestratorResult.customer?.id ?? null;
-      orchestratorActions = orchestratorActions.map((action) =>
-        action?.type === "show_offer"
-          ? {
-              ...action,
-              cta: localizeOfferCta(chatLocale)
-            }
-          : action
-      );
-    } catch (error) {
-      log("warn", "Orchestrator execution failed in chat route", { error, conversationId });
+    if (!isSiroundChatDemo) {
+      try {
+        const orchestratorResult = await runChatbotOrchestrator(admin as any, {
+          businessId,
+          conversationId,
+          message: body.message,
+          customerSignals: {
+            name: body.name ?? null,
+            email: body.email ?? null,
+            phone: body.phone ?? null,
+            channel: "web_chat"
+          },
+          reservationContext: {
+            partySize: reservationState.party_size,
+            time: reservationState.time
+          }
+        });
+
+        orchestratorActions = orchestratorResult.actions as Array<Record<string, unknown>>;
+        orchestratorReply = orchestratorResult.assistantMessage;
+        orchestratorCustomerId = orchestratorResult.customer?.id ?? null;
+        orchestratorActions = orchestratorActions.map((action) =>
+          action?.type === "show_offer"
+            ? {
+                ...action,
+                cta: localizeOfferCta(chatLocale)
+              }
+            : action
+        );
+      } catch (error) {
+        log("warn", "Orchestrator execution failed in chat route", { error, conversationId });
+      }
     }
 
     const orchestratorUpsell = extractUpsellAction(orchestratorActions);
@@ -2072,7 +2111,7 @@ export async function POST(req: Request) {
       };
     };
 
-    const inReservationFlow = isReservationIntent(body.message, reservationState);
+    const inReservationFlow = !isSiroundChatDemo && isReservationIntent(body.message, reservationState);
     const reservationFlowStarting =
       inReservationFlow && (reservationState.mode === "none" || reservationState.mode === "submitted");
     if (inReservationFlow) {
@@ -2822,10 +2861,10 @@ export async function POST(req: Request) {
       contextLength += snippet.length;
     }
 
-    const context = contextParts.join("\n\n");
+    const context = isSiroundChatDemo ? "" : contextParts.join("\n\n");
 
     let faqContext = "";
-    if (messageKeywords.size) {
+    if (!isSiroundChatDemo && messageKeywords.size) {
       const { data: faqRows, error: faqError } = await (admin as any)
         .from("business_faq_items")
         .select("question, answer")
@@ -2871,12 +2910,14 @@ export async function POST(req: Request) {
     }
 
     // 6) Chat
-    const systemPrompt = SYSTEM_PROMPT(businessName, body.tonePreset ?? undefined);
+    const systemPrompt = isSiroundChatDemo
+      ? buildSiroundChatDemoSystemPrompt()
+      : SYSTEM_PROMPT(businessName, body.tonePreset ?? undefined);
 
     const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
       { role: "system", content: systemPrompt },
       { role: "system", content: chatLocale === "sq" ? "Reply in Albanian (Kosovar tone). Do not switch to English unless the user switches." : "Reply in English. Do not switch languages unless the user switches." },
-      ...(starterKnowledgeContext
+      ...(!isSiroundChatDemo && starterKnowledgeContext
         ? [{ role: "system" as const, content: `Starter knowledge:\n${starterKnowledgeContext}` }]
         : []),
       { role: "system", content: context ? `Context:\n${context}` : "Context:\n(No matching context found.)" }
@@ -2911,8 +2952,8 @@ export async function POST(req: Request) {
 
     const languageSwitch = resolveLanguageSwitchReply(body.message);
     const smallTalkReply = languageSwitch?.reply ?? resolveSmallTalkReply(body.message);
-    const directPriceIntent = isDirectPriceIntent(normalizedMessage, messageTokens);
-    let reply = smallTalkReply ?? UNKNOWN_REPLY;
+    const directPriceIntent = !isSiroundChatDemo && isDirectPriceIntent(normalizedMessage, messageTokens);
+    let reply = smallTalkReply ?? (isSiroundChatDemo ? "" : UNKNOWN_REPLY);
 
     if (!smallTalkReply && directPriceIntent) {
       const { data: catalogPriceRows } = await (admin as any)
@@ -2927,14 +2968,18 @@ export async function POST(req: Request) {
     }
 
     // IMPORTANT: only call the model if you have context (keeps your strict “don’t guess business facts” rule)
-    if (!smallTalkReply && !directPriceIntent && (starterKnowledgeContext || context || faqContext)) {
+    if (!smallTalkReply && !directPriceIntent && (isSiroundChatDemo || starterKnowledgeContext || context || faqContext)) {
       const completion = await openai.chat.completions.create({
         model: CHAT_MODEL,
         temperature: 0.2,
         messages
       });
 
-      reply = completion.choices?.[0]?.message?.content?.trim() || UNKNOWN_REPLY;
+      reply = completion.choices?.[0]?.message?.content?.trim() || (isSiroundChatDemo ? getSiroundChatDemoFallbackReply(chatLocale) : UNKNOWN_REPLY);
+    }
+
+    if (isSiroundChatDemo && (!reply || reply.includes(UNKNOWN_REPLY))) {
+      reply = getSiroundChatDemoFallbackReply(chatLocale);
     }
 
     if (orchestratorUpsell) {

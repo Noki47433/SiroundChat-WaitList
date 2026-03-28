@@ -6,7 +6,11 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { ChatbotPreview } from "./ChatbotPreview";
 import { ChatbotConfig, ThemeConfig } from "./chatbotTypes";
-import { FAQ_PRESETS } from "./chatbotFaqPresets";
+import {
+  SIROUNDCHAT_DEMO_BUSINESS_NAME,
+  SIROUNDCHAT_DEMO_FAQS,
+  SIROUNDCHAT_DEMO_GREETING
+} from "@/lib/chatbot/siroundchat-demo";
 
 const HERO_THEME: ThemeConfig = {
   primaryColor: "#6366F1",
@@ -16,13 +20,13 @@ const HERO_THEME: ThemeConfig = {
 };
 
 const HERO_CONFIG: ChatbotConfig = {
-  businessName: "SiroundChat Demo",
-  businessType: "hotel",
-  greeting: "Hi there! I'm here to help with bookings, amenities, and check-in info.",
+  businessName: SIROUNDCHAT_DEMO_BUSINESS_NAME,
+  businessType: "custom",
+  greeting: SIROUNDCHAT_DEMO_GREETING,
   theme: HERO_THEME,
   logoUrl: null,
-  iconId: "hotel-1",
-  faqs: FAQ_PRESETS.hotel
+  iconId: "custom-1",
+  faqs: SIROUNDCHAT_DEMO_FAQS
 };
 
 export function ChatbotHero() {
