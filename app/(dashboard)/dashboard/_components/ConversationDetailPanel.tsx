@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { FormattedChatMessage } from "@/components/chat/FormattedChatMessage";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -212,7 +213,9 @@ export function ConversationDetailPanel({
                   <span>{resolveSenderLabel(message.sender)}</span>
                   <span>{formatTimestamp(message.created_at)}</span>
                 </div>
-                <div className={`rounded-2xl px-4 py-2 text-sm ${bubbleStyle}`}>{message.message_text}</div>
+                <div className={`rounded-2xl px-4 py-2 text-sm ${bubbleStyle}`}>
+                  {isVisitor || isOwner ? message.message_text : <FormattedChatMessage content={message.message_text} />}
+                </div>
               </div>
             </div>
           );

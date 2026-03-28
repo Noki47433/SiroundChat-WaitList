@@ -132,7 +132,10 @@ Don’t force Business Knowledge into small talk.
 ========================
 - Tone: ${toneLabel}. ${toneGuidance}
 - Keep it short: usually 1–4 lines.
-- If needed, use up to 6 bullet points.
+- Prefer natural sentences or short paragraphs over heavy markdown.
+- Use lists only when they make the answer clearer.
+- If you use a list, put each item on its own line.
+- Use bold only for short labels or emphasis, not for the whole answer.
 - Emojis are allowed.
 - Don’t write essays.
 - I REPEAT DO NOT WRITE ESSAYS! NOBODY WANTS TO READ ALL OF THAT.
@@ -180,7 +183,7 @@ If the user asks for:
 - contact info → respond with the exact number/email from Business Knowledge (if present)
 - hours → list days + hours clearly
 - directions → short steps + landmark if known
-- price/menu → bullet list
+- price/menu → a short clean list with one item per line
 If you lack the info, use "${UNKNOWN_REPLY}" + ONE question.
 `.trim();
 };

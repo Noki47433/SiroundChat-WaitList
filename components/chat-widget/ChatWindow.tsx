@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import { AnimatePresence, motion } from "framer-motion";
 import { BadgeDollarSign, Clock3, PhoneCall } from "lucide-react";
 import { ICON_LIBRARY } from "@/app/components/chatbot/ChatbotIconLibrary";
+import { FormattedChatMessage } from "@/components/chat/FormattedChatMessage";
 import { PromptInputBox } from "@/components/ui/ai-prompt-box";
 import { TextShimmer } from "@/components/ui/text-shimmer";
 import type { TonePreset } from "@/lib/types";
@@ -839,7 +840,7 @@ export function ChatWindow({
                                   }
                             }
                           >
-                            {m.text}
+                            {isUser || isOwner ? m.text : <FormattedChatMessage content={m.text} />}
                           </div>
                           {!isUser && m.actions?.length ? (
                             <div className="space-y-2 pt-2">

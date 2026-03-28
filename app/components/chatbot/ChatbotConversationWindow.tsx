@@ -3,6 +3,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { FormattedChatMessage } from "@/components/chat/FormattedChatMessage";
 import { ChatbotConfig } from "./chatbotTypes";
 import { ChatbotTypingIndicator } from "./ChatbotTypingIndicator";
 import { findBestFaqMatch, getFallbackResponse } from "./ChatbotDemoEngine";
@@ -327,7 +328,7 @@ export function ChatbotConversationWindow({ config, interactive = true, autoPlay
                       }
                 }
               >
-                {message.text}
+                {message.sender === "user" ? message.text : <FormattedChatMessage content={message.text} />}
               </div>
             </motion.div>
           ))}

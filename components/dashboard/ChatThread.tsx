@@ -1,5 +1,6 @@
 "use client";
 
+import { FormattedChatMessage } from "@/components/chat/FormattedChatMessage";
 import type { ChatMessage } from "@/lib/types/core";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
@@ -32,7 +33,11 @@ export function ChatThread({ messages, onSend, loading }: ChatThreadProps) {
                   isAgent ? "bg-[#00A3FF] text-white" : "bg-white text-neutral-900"
                 }`}
               >
-                {message.text}
+                {message.sender === "ai" || message.sender === "assistant" ? (
+                  <FormattedChatMessage content={message.text} />
+                ) : (
+                  message.text
+                )}
               </div>
             </div>
           );
