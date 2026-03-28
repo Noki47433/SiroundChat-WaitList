@@ -111,6 +111,22 @@
       "logoUrl": "https://jevqmewqvgcrrjrponwe.supabase.co/storage/v1/object/public/business-logos/logos/78c61a52-25d4-4a93-a9c5-d53ba9363e8d/logo.png",
       "iconId": null,
       "updatedAt": "2026-03-21T20:56:14.067Z"
+    },
+    "7ab3238d-0f3d-432a-bf25-543e96247f33": {
+      "siteId": "7ab3238d-0f3d-432a-bf25-543e96247f33",
+      "greeting": "While you’re offline, I’m answering customers, booking reservations, and capturing leads.\nAsk me anything to see how it works 👇",
+      "businessName": "SiroundChat",
+      "theme": {
+        "primary": "#F59E0B",
+        "accent": "#FBBF24",
+        "secondary": "#FBBF24",
+        "background": "#FFF7E6",
+        "text": "#1F2937",
+        "shape": "rounded"
+      },
+      "logoUrl": "https://jevqmewqvgcrrjrponwe.supabase.co/storage/v1/object/public/business-logos/logos/98aba5f9-7dc1-4d66-a4a2-2fc7d8813641/logo.png",
+      "iconId": null,
+      "updatedAt": "2026-03-28T18:23:41.461Z"
     }
   },
   "embeddings": [],

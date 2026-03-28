@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import { isAuthDisabled } from "@/lib/config/auth";
-import { isPrelaunchModeEnabled, isPrelaunchUserAllowed } from "@/lib/auth/prelaunch";
+import { isPrelaunchModeEnabled } from "@/lib/auth/prelaunch";
+import { userHasLaunchAccess } from "@/lib/server/launch-access";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { resolveRedirectPath } from "@/lib/utils/redirect";
 
@@ -29,8 +30,8 @@ export async function requireUser(redirectTo?: string) {
     redirect(`/auth?next=${encodeURIComponent(safeRedirect)}`);
   }
 
-  if (isPrelaunchModeEnabled() && !isPrelaunchUserAllowed(user)) {
-    redirect("/");
+  if (!(await userHasLaunchAccess(user.id))) {
+    redirect("/request-access?blocked=1");
   }
 
   return { user };

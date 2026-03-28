@@ -70,6 +70,9 @@ export default function LoginPage({ searchParams }: { searchParams?: { redirect?
                 </div>
 
                 <div className="mt-6 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-500">
+                  <Link href="/request-access" className="font-medium text-slate-600 hover:text-slate-900">
+                    Need an invite? Request access
+                  </Link>
                   <Link href="/forgot-password" className="font-medium text-slate-600 hover:text-slate-900">
                     Forgot password?
                   </Link>

@@ -1,10 +1,13 @@
 import "server-only";
 import { redirect } from "next/navigation";
+import {
+  hasEffectiveBillingAccess,
+  resolveBillingEntitlements
+} from "@/lib/billing/entitlements";
 import { getTenantFromSession } from "@/lib/utils/tenant";
 import { getWorkspaceSubscription } from "@/src/billing/getSubscription";
 import {
   hasEntitlement,
-  resolveEntitlements,
   type EntitlementKey,
   type Entitlements
 } from "@/src/billing/entitlements";
@@ -32,8 +35,9 @@ export async function getEntitlementAccess(
   }
 
   const subscription = await getWorkspaceSubscription(targetWorkspaceId);
-  const entitlements = resolveEntitlements(subscription.plan_id);
-  const allowed = subscription.is_access_active && hasEntitlement(entitlements, entitlementKey);
+  const accessActive = hasEffectiveBillingAccess(subscription);
+  const entitlements = resolveBillingEntitlements(subscription.billing_plan_id, subscription.is_access_active);
+  const allowed = accessActive && hasEntitlement(entitlements, entitlementKey);
 
   return { workspaceId: targetWorkspaceId, entitlements, allowed };
 }

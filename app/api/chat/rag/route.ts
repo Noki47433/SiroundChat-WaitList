@@ -1,7 +1,7 @@
 import { SYSTEM_PROMPT, UNKNOWN_REPLY } from "@/lib/ai/system-prompt";
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
-import { isPrelaunchUserAllowed } from "@/lib/auth/prelaunch";
+import { userHasLaunchAccess } from "@/lib/server/launch-access";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import { retrieveRelevantChunks } from "@/lib/ai/retrieve";
 import { log } from "@/lib/utils/log";
@@ -24,7 +24,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  if (!isPrelaunchUserAllowed(user)) {
+  if (!(await userHasLaunchAccess(user.id))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

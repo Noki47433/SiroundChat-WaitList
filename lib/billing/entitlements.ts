@@ -3,11 +3,13 @@ import {
   type BillingPlanId,
   type BillingSubscriptionStatus
 } from "@/lib/billing/plans";
+import { isFreeMode } from "@/lib/env/flags";
 import {
+  PLANS,
   resolveEntitlements,
   type Entitlements,
   type EntitlementKey
-} from "@/src/billing/entitlements";
+} from "@/src/billing/plans";
 
 export type BillingAccessSnapshot = {
   status: BillingSubscriptionStatus;
@@ -57,6 +59,39 @@ export const hasActiveBillingAccess = (
   return false;
 };
 
+export const hasEffectiveBillingAccess = (
+  subscription: BillingAccessSnapshot | null | undefined,
+  now: Date = new Date()
+) => {
+  if (isFreeMode()) {
+    return true;
+  }
+
+  return hasActiveBillingAccess(subscription, now);
+};
+
+export const getFreeModeEntitlements = (): Entitlements => {
+  const entitlementKeys = Object.keys(PLANS[0]?.entitlements ?? {}) as EntitlementKey[];
+  const allEntitlements = {} as Entitlements;
+
+  entitlementKeys.forEach((key) => {
+    const values = PLANS.map((plan) => plan.entitlements[key]);
+    const hasNumericValue = values.some((value) => typeof value === "number");
+
+    if (hasNumericValue) {
+      allEntitlements[key] = Math.max(
+        1,
+        ...values.map((value) => (typeof value === "number" ? value : 0))
+      );
+      return;
+    }
+
+    allEntitlements[key] = true;
+  });
+
+  return allEntitlements;
+};
+
 const lockEntitlements = (entitlements: Entitlements): Entitlements => {
   const locked = {} as Entitlements;
   (Object.keys(entitlements) as EntitlementKey[]).forEach((key) => {
@@ -70,6 +105,10 @@ export const resolveBillingEntitlements = (
   billingPlanId: BillingPlanId,
   hasAccess: boolean
 ): Entitlements => {
+  if (isFreeMode()) {
+    return getFreeModeEntitlements();
+  }
+
   const entitlementPlan = mapBillingPlanToEntitlementPlan(billingPlanId);
   const baseEntitlements = resolveEntitlements(entitlementPlan);
   return hasAccess ? baseEntitlements : lockEntitlements(baseEntitlements);

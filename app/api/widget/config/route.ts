@@ -3,13 +3,13 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { WidgetConfigSchema } from "@/lib/validation/widget";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
+import { getBusinessEntitlementAccess } from "@/lib/server/billing-access";
+import { userHasLaunchAccess } from "@/lib/server/launch-access";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import { ensureBusinessRow, getTenantFromSession } from "@/lib/utils/tenant";
 import { getWidgetConfig, saveWidgetConfig } from "@/lib/utils/local-store";
 import { isAuthDisabled } from "@/lib/config/auth";
 import { FAQ_PRESETS } from "@/app/components/chatbot/chatbotFaqPresets"; // Default FAQs for preview fallback
-import { getWorkspaceSubscription } from "@/src/billing/getSubscription";
-import { hasEntitlement, resolveEntitlements } from "@/src/billing/entitlements";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -83,10 +83,8 @@ const resolveBusinessByWidgetKey = async (widgetKey: string) => {
 };
 
 const hasWidgetAccess = async (businessId: string) => {
-  const subscription = await getWorkspaceSubscription(businessId);
-  if (!subscription.is_access_active) return false;
-  const entitlements = resolveEntitlements(subscription.plan_id);
-  return hasEntitlement(entitlements, "chatbot_embed");
+  const access = await getBusinessEntitlementAccess(businessId, "chatbot_embed");
+  return access.allowed;
 };
 
 const ensureWidgetKeyForBusiness = async (businessId: string) => {
@@ -209,6 +207,10 @@ export async function PUT(request: Request) {
 
     if (!authDisabled && !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    if (user && !(await userHasLaunchAccess(user.id))) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const parsed = WidgetConfigSchema.safeParse(json);

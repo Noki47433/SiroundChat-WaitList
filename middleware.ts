@@ -13,7 +13,6 @@ const hasAuthCookie = (request: NextRequest) =>
 const PRIVATE_PAGE_PREFIXES = ["/dashboard", "/billing", "/admin", "/editor"];
 
 const PRIVATE_API_EXACT_PATHS = new Set([
-  "/api/auth/register",
   "/api/automations",
   "/api/billing/start-trial",
   "/api/billing/subscription",

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { buildGenerationContract } from "@/lib/deterministic-templates";
+import { userHasLaunchAccess } from "@/lib/server/launch-access";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
 
 const normalizeNiche = (value: string): string | null => {
@@ -31,6 +32,7 @@ const parseNicheFromRequest = async (request: Request): Promise<string | null> =
 };
 
 const unauthorized = () => NextResponse.json({ error: "Unauthorized", code: "UNAUTHORIZED" }, { status: 401 });
+const forbidden = () => NextResponse.json({ error: "Forbidden", code: "FORBIDDEN" }, { status: 403 });
 
 const badRequest = (code: string, message: string) =>
   NextResponse.json(
@@ -45,6 +47,7 @@ const handle = async (request: Request) => {
   const supabase = getSupabaseRouteClient();
   const { data } = await supabase.auth.getUser();
   if (!data?.user) return unauthorized();
+  if (!(await userHasLaunchAccess(data.user.id))) return forbidden();
 
   const rawNiche = await parseNicheFromRequest(request);
   if (!rawNiche) {

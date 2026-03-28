@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { resolveRedirectPath } from "@/lib/utils/redirect";
 
@@ -15,7 +16,9 @@ export default function RegisterForm({ redirect, variant = "dark", compact = fal
   const redirectPath = resolveRedirectPath(redirect, "/dashboard");
   const isLight = variant === "light";
 
+  const [businessName, setBusinessName] = useState("");
   const [email, setEmail] = useState("");
+  const [inviteCode, setInviteCode] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -36,7 +39,13 @@ export default function RegisterForm({ redirect, variant = "dark", compact = fal
       const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, redirect: redirectPath })
+        body: JSON.stringify({
+          businessName,
+          email,
+          inviteCode,
+          password,
+          redirect: redirectPath
+        })
       });
 
       const payload = await res.json().catch(() => ({}));
@@ -60,6 +69,21 @@ export default function RegisterForm({ redirect, variant = "dark", compact = fal
 
       <form onSubmit={onSubmit} className="mt-6 space-y-4">
         <div className="space-y-2">
+          <label className={`text-sm ${isLight ? "text-slate-600" : "text-white/80"}`}>Business name</label>
+          <input
+            className={`w-full rounded-xl border px-3 py-2 text-sm focus:outline-none focus:ring-2 ${
+              isLight
+                ? "border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 focus:ring-amber-400/70"
+                : "border-white/10 bg-black/30 text-white placeholder:text-white/40 focus:ring-[#00A3FF]/70"
+            }`}
+            value={businessName}
+            onChange={(e) => setBusinessName(e.target.value)}
+            autoComplete="organization"
+            required
+          />
+        </div>
+
+        <div className="space-y-2">
           <label className={`text-sm ${isLight ? "text-slate-600" : "text-white/80"}`}>Email</label>
           <input
             className={`w-full rounded-xl border px-3 py-2 text-sm focus:outline-none focus:ring-2 ${
@@ -71,6 +95,22 @@ export default function RegisterForm({ redirect, variant = "dark", compact = fal
             onChange={(e) => setEmail(e.target.value)}
             type="email"
             autoComplete="email"
+            required
+          />
+        </div>
+
+        <div className="space-y-2">
+          <label className={`text-sm ${isLight ? "text-slate-600" : "text-white/80"}`}>Invite code</label>
+          <input
+            className={`w-full rounded-xl border px-3 py-2 text-sm uppercase tracking-[0.18em] focus:outline-none focus:ring-2 ${
+              isLight
+                ? "border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 focus:ring-amber-400/70"
+                : "border-white/10 bg-black/30 text-white placeholder:text-white/40 focus:ring-[#00A3FF]/70"
+            }`}
+            value={inviteCode}
+            onChange={(e) => setInviteCode(e.target.value.toUpperCase())}
+            autoCapitalize="characters"
+            placeholder="SC-8QZ1LX"
             required
           />
         </div>
@@ -120,6 +160,13 @@ export default function RegisterForm({ redirect, variant = "dark", compact = fal
         >
           {loading ? "Creating..." : "Create account"}
         </button>
+
+        <p className={`text-sm ${isLight ? "text-slate-500" : "text-white/60"}`}>
+          Don&apos;t have a code?{" "}
+          <Link href="/request-access" className={`font-semibold ${isLight ? "text-amber-600 hover:text-amber-700" : "text-white hover:text-white/80"}`}>
+            Request access
+          </Link>
+        </p>
       </form>
     </div>
   );

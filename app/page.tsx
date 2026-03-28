@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import Link from "next/link";
 import BenefitPitch from "./(public)/components/BenefitPitch";
 import Footer from "./(public)/components/Footer";
 import HeroWaitlist from "./(public)/components/HeroWaitlist";
@@ -18,6 +19,34 @@ export default function Page() {
           </Suspense>
           <BenefitPitch />
           <HowItWorksFAQ />
+          <section className="px-6 py-12 sm:px-8 lg:px-12">
+            <div className="mx-auto max-w-6xl">
+              <div className="rounded-[2rem] border border-slate-200 bg-white/80 p-8 shadow-sm backdrop-blur sm:p-10">
+                <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="max-w-2xl">
+                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-amber-600">
+                      For Serious Businesses
+                    </p>
+                    <h2 className="mt-3 text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">
+                      Need direct onboarding access?
+                    </h2>
+                    <p className="mt-3 text-base text-slate-600 sm:text-lg">
+                      Early access is limited to selected businesses. Request access to be reviewed for an invite code.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-3">
+                    <Link
+                      href="/request-access"
+                      className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-700"
+                    >
+                      Request Access
+                    </Link>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
           <section className="px-6 py-20 sm:px-8 lg:px-12">
             <div className="mx-auto max-w-6xl">
               <div className="mx-auto max-w-2xl text-center">

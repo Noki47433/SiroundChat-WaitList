@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { isPrelaunchUserAllowed } from "@/lib/auth/prelaunch";
+import { userHasLaunchAccess } from "@/lib/server/launch-access";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import { getSupabaseAdminClientIfAvailable } from "@/lib/supabase/admin";
 import { ensureBusinessRow } from "@/lib/utils/tenant";
@@ -207,7 +207,7 @@ export async function GET() {
       return jsonNoStore({ error: "Unauthorized" }, { status: 401 });
     }
 
-    if (user && !isPrelaunchUserAllowed(user)) {
+    if (user && !(await userHasLaunchAccess(user.id))) {
       return jsonNoStore({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -266,7 +266,7 @@ export async function PATCH(req: Request) {
       return jsonNoStore({ error: "Unauthorized" }, { status: 401 });
     }
 
-    if (user && !isPrelaunchUserAllowed(user)) {
+    if (user && !(await userHasLaunchAccess(user.id))) {
       return jsonNoStore({ error: "Forbidden" }, { status: 403 });
     }
 

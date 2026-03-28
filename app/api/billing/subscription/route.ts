@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
-import { isPrelaunchUserAllowed } from "@/lib/auth/prelaunch";
-import { resolveBillingEntitlements } from "@/lib/billing/entitlements";
+import {
+  hasEffectiveBillingAccess,
+  resolveBillingEntitlements
+} from "@/lib/billing/entitlements";
+import { userHasLaunchAccess } from "@/lib/server/launch-access";
 import {
   normalizeWorkspaceId,
   resolveBillingWorkspaceSelection
@@ -21,7 +24,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  if (!isPrelaunchUserAllowed(user)) {
+  if (!(await userHasLaunchAccess(user.id))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -49,6 +52,7 @@ export async function GET(request: Request) {
 
   try {
     const subscription = await getWorkspaceSubscription(selection.businessId);
+    const accessActive = hasEffectiveBillingAccess(subscription);
     const entitlements = resolveBillingEntitlements(
       subscription.billing_plan_id,
       subscription.is_access_active
@@ -57,7 +61,7 @@ export async function GET(request: Request) {
     return NextResponse.json(
       {
         subscription,
-        accessActive: subscription.is_access_active,
+        accessActive,
         planDefinition: getPlanDefinition(subscription.plan_id),
         entitlements
       },

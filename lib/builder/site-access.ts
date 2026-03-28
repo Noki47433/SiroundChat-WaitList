@@ -12,6 +12,7 @@ const getOwnedBusiness = async (businessId: string, userId: string) => {
     .select("id")
     .eq("id", businessId)
     .or(`owner_id.eq.${userId},owner_user_id.eq.${userId}`)
+    .eq("launch_access", true)
     .maybeSingle();
 
   if (error) {
@@ -34,6 +35,7 @@ export const listOwnedBusinessIds = async (userId: string): Promise<string[]> =>
     .from("businesses")
     .select("id")
     .or(`owner_id.eq.${userId},owner_user_id.eq.${userId}`)
+    .eq("launch_access", true)
     .order("created_at", { ascending: false });
 
   if (error) {

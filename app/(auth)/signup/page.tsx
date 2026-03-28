@@ -47,16 +47,16 @@ export default function SignupPage({ searchParams }: { searchParams?: { redirect
                   </div>
 
                   <h1 className="mt-8 text-4xl font-semibold leading-tight text-slate-900 sm:text-5xl">
-                    Launch your AI support hub
+                    Invite-only early access
                   </h1>
                   <p className="mt-4 max-w-md text-base text-slate-600 sm:text-lg">
-                    Create your workspace, customize the bot voice, and start capturing leads today.
+                    Approved businesses can create their account with an invite code and start onboarding immediately.
                   </p>
 
                   <div className="mt-8 rounded-2xl border border-white/80 bg-white/70 p-4 shadow-[0_14px_28px_rgba(15,23,42,0.08)]">
                     <div className="flex items-center gap-3 text-sm text-slate-600">
                       <span className="h-2.5 w-2.5 rounded-full bg-amber-500" />
-                      No credit card required
+                      Invite code required
                     </div>
                   </div>
                 </div>
@@ -65,13 +65,16 @@ export default function SignupPage({ searchParams }: { searchParams?: { redirect
               <section className="bg-white/95 p-8 sm:p-10 lg:p-12">
                 <p className="text-xs uppercase tracking-[0.25em] text-amber-600">Sign up</p>
                 <h2 className="mt-3 text-3xl font-semibold text-slate-900 sm:text-4xl">Create your account</h2>
-                <p className="mt-2 text-sm text-slate-500">Set up your workspace and start building today.</p>
+                <p className="mt-2 text-sm text-slate-500">Use your invite code to create an approved business account.</p>
 
                 <div className="mt-7">
                   <RegisterForm redirect={redirectPath} variant="light" compact />
                 </div>
 
-                <div className="mt-6 text-sm text-slate-500">
+                <div className="mt-6 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-500">
+                  <Link href="/request-access" className="font-medium text-slate-600 hover:text-slate-900">
+                    Don&apos;t have a code? Request access
+                  </Link>
                   Already have an account?{" "}
                   <Link href={`/login${redirectParam}`} className="font-semibold text-amber-600 hover:text-amber-700">
                     Login

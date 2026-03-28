@@ -2,7 +2,7 @@ import "server-only";
 
 import type { User } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
-import { isPrelaunchModeEnabled, isPrelaunchUserAllowed } from "@/lib/auth/prelaunch";
+import { userHasLaunchAccess } from "@/lib/server/launch-access";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
 
 type GuardedRouteUser =
@@ -34,7 +34,7 @@ export async function guardPrivateRouteUser(): Promise<GuardedRouteUser> {
     };
   }
 
-  if (isPrelaunchModeEnabled() && !isPrelaunchUserAllowed(user)) {
+  if (!(await userHasLaunchAccess(user.id))) {
     return {
       ok: false,
       user: null,

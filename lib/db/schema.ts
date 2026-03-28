@@ -34,7 +34,14 @@ export interface Database {
         Row: {
           id: string;
           owner_id: string;
+          owner_user_id?: string | null;
           business_name: string;
+          name?: string | null;
+          phone?: string | null;
+          city?: string | null;
+          website_url?: string | null;
+          plan?: string;
+          status?: string;
           widget_key: string | null;
           logo_url: string | null;
           industry: string | null;
@@ -44,13 +51,22 @@ export interface Database {
           onboarding_data: Json;
           generated_starter_knowledge: string | null;
           onboarding_completed_at: string | null;
+          invite_code_id?: string | null;
+          launch_access?: boolean;
           created_at: string;
           updated_at: string | null;
         };
         Insert: {
           id?: string;
           owner_id: string;
+          owner_user_id?: string | null;
           business_name: string;
+          name?: string | null;
+          phone?: string | null;
+          city?: string | null;
+          website_url?: string | null;
+          plan?: string;
+          status?: string;
           widget_key?: string | null;
           logo_url?: string | null;
           industry?: string | null;
@@ -60,10 +76,84 @@ export interface Database {
           onboarding_data?: Json;
           generated_starter_knowledge?: string | null;
           onboarding_completed_at?: string | null;
+          invite_code_id?: string | null;
+          launch_access?: boolean;
           created_at?: string;
           updated_at?: string | null;
         };
         Update: Partial<Database["public"]["Tables"]["businesses"]["Insert"]>;
+      };
+      access_requests: {
+        Row: {
+          id: string;
+          business_name: string;
+          owner_name: string | null;
+          email: string;
+          phone: string | null;
+          website_url: string | null;
+          instagram_url: string | null;
+          business_type: string | null;
+          note: string | null;
+          status: "pending" | "approved" | "rejected";
+          reviewed_at: string | null;
+          reviewed_by_user_id: string | null;
+          invite_code_id: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          business_name: string;
+          owner_name?: string | null;
+          email: string;
+          phone?: string | null;
+          website_url?: string | null;
+          instagram_url?: string | null;
+          business_type?: string | null;
+          note?: string | null;
+          status?: "pending" | "approved" | "rejected";
+          reviewed_at?: string | null;
+          reviewed_by_user_id?: string | null;
+          invite_code_id?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["access_requests"]["Insert"]>;
+      };
+      invite_codes: {
+        Row: {
+          id: string;
+          code: string;
+          source: string;
+          access_request_id: string | null;
+          assigned_email: string | null;
+          assigned_business_name: string | null;
+          max_uses: number;
+          uses_count: number;
+          is_active: boolean;
+          expires_at: string | null;
+          used_by_user_id: string | null;
+          used_at: string | null;
+          created_by_user_id: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          code: string;
+          source?: string;
+          access_request_id?: string | null;
+          assigned_email?: string | null;
+          assigned_business_name?: string | null;
+          max_uses?: number;
+          uses_count?: number;
+          is_active?: boolean;
+          expires_at?: string | null;
+          used_by_user_id?: string | null;
+          used_at?: string | null;
+          created_by_user_id?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["invite_codes"]["Insert"]>;
       };
       subscriptions: {
         Row: {

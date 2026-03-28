@@ -1,11 +1,14 @@
 import "server-only";
 
-import { isPrelaunchEmailAllowed } from "@/lib/auth/prelaunch";
+import {
+  hasEffectiveBillingAccess,
+  resolveBillingEntitlements
+} from "@/lib/billing/entitlements";
+import { userOwnsLaunchedBusiness } from "@/lib/server/launch-access";
 import { getSupabaseServerAdminClientIfAvailable } from "@/lib/supabase/serverAdmin";
 import { getWorkspaceSubscription } from "@/src/billing/getSubscription";
 import {
   hasEntitlement,
-  resolveEntitlements,
   type EntitlementKey
 } from "@/src/billing/entitlements";
 
@@ -18,6 +21,7 @@ export type BillingWorkspaceSelectionError =
 export type BillingWorkspaceSummary = {
   id: string;
   business_name: string | null;
+  launch_access: boolean;
 };
 
 type ResolveBillingWorkspaceOptions = {
@@ -51,7 +55,7 @@ export const listOwnedBillingBusinesses = async (userId: string): Promise<Billin
   }
   const { data, error } = await admin
     .from("businesses")
-    .select("id, business_name")
+    .select("id, business_name, launch_access")
     .or(`owner_id.eq.${userId},owner_user_id.eq.${userId}`)
     .order("created_at", { ascending: false });
 
@@ -71,8 +75,7 @@ export const canAccessBillingWorkspace = async (
   const normalizedWorkspaceId = normalizeUuid(workspaceId);
   if (!userId || !normalizedWorkspaceId) return false;
 
-  const ownedBusinesses = await listOwnedBillingBusinesses(userId);
-  if (ownedBusinesses.some((business) => business.id === normalizedWorkspaceId)) {
+  if (await userOwnsLaunchedBusiness(userId, normalizedWorkspaceId)) {
     return true;
   }
 
@@ -93,14 +96,8 @@ export const resolveBillingWorkspaceSelection = async (
   error: BillingWorkspaceSelectionError | null;
 }> => {
   const normalizedRequestedWorkspaceId = normalizeUuid(requestedWorkspaceId);
-  if (!isPrelaunchEmailAllowed(options.userEmail)) {
-    return {
-      businessId: null,
-      businesses: [],
-      error: "workspace_forbidden"
-    };
-  }
   const businesses = await listOwnedBillingBusinesses(userId);
+  const eligibleBusinesses = businesses.filter((business) => business.launch_access);
 
   if (normalizedRequestedWorkspaceId) {
     const canAccess = await canAccessBillingWorkspace(userId, normalizedRequestedWorkspaceId, options);
@@ -120,15 +117,15 @@ export const resolveBillingWorkspaceSelection = async (
     };
   }
 
-  if (businesses.length === 1) {
+  if (eligibleBusinesses.length === 1) {
     return {
-      businessId: businesses[0]?.id ?? null,
+      businessId: eligibleBusinesses[0]?.id ?? null,
       businesses,
       error: null
     };
   }
 
-  if (businesses.length > 1) {
+  if (eligibleBusinesses.length > 1) {
     return {
       businessId: null,
       businesses,
@@ -139,7 +136,7 @@ export const resolveBillingWorkspaceSelection = async (
   return {
     businessId: null,
     businesses,
-    error: "workspace_required"
+    error: businesses.length > 0 ? "workspace_forbidden" : "workspace_required"
   };
 };
 
@@ -148,12 +145,14 @@ export const getBusinessEntitlementAccess = async (
   entitlementKey: EntitlementKey
 ) => {
   const subscription = await getWorkspaceSubscription(businessId);
-  const entitlements = resolveEntitlements(subscription.plan_id);
-  const allowed = subscription.is_access_active && hasEntitlement(entitlements, entitlementKey);
+  const accessActive = hasEffectiveBillingAccess(subscription);
+  const entitlements = resolveBillingEntitlements(subscription.billing_plan_id, subscription.is_access_active);
+  const allowed = accessActive && hasEntitlement(entitlements, entitlementKey);
 
   return {
     subscription,
     entitlements,
+    accessActive,
     allowed
   };
 };

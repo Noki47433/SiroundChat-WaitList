@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isPrelaunchUserAllowed } from "@/lib/auth/prelaunch";
+import { userHasLaunchAccess } from "@/lib/server/launch-access";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import { getTenantFromSession } from "@/lib/utils/tenant";
 import { DashboardConversationQuerySchema } from "@/lib/validation/chat";
@@ -42,7 +42,7 @@ export async function GET(request: Request) {
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (!isPrelaunchUserAllowed(user)) {
+  if (!(await userHasLaunchAccess(user.id))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const db = supabase as any;

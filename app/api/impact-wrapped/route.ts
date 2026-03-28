@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { canAccessBillingWorkspace } from "@/lib/server/billing-access";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import type { Period, WrappedRaw } from "@/lib/wrapped/computeWrapped";
 
@@ -153,6 +154,11 @@ export async function GET(request: Request) {
 
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const canAccess = await canAccessBillingWorkspace(user.id, businessId);
+  if (!canAccess) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const demoBusinessId = getDemoBusinessId();

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { userOwnsLaunchedBusiness } from "@/lib/server/launch-access";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -22,14 +23,8 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "businessId required" }, { status: 400 });
   }
 
-  const { data: business } = await supabase
-    .from("businesses")
-    .select("id")
-    .eq("id", businessId)
-    .eq("owner_id", user.id)
-    .single();
-
-  if (!business) {
+  const allowed = await userOwnsLaunchedBusiness(user.id, businessId);
+  if (!allowed) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -67,19 +62,19 @@ export async function GET(request: Request) {
   });
 
   type RagChunkFlags = {
-  hasWhatsApp: boolean;
-  hasEmail: boolean;
-  has383: boolean;
-};
+    hasWhatsApp: boolean;
+    hasEmail: boolean;
+    has383: boolean;
+  };
 
-const flags = (list as Array<Partial<RagChunkFlags>>).reduce<RagChunkFlags>(
-  (acc, chunk) => ({
-    hasWhatsApp: acc.hasWhatsApp || Boolean(chunk.hasWhatsApp),
-    hasEmail: acc.hasEmail || Boolean(chunk.hasEmail),
-    has383: acc.has383 || Boolean(chunk.has383)
-  }),
-  { hasWhatsApp: false, hasEmail: false, has383: false }
-);
+  const flags = (list as Array<Partial<RagChunkFlags>>).reduce<RagChunkFlags>(
+    (acc, chunk) => ({
+      hasWhatsApp: acc.hasWhatsApp || Boolean(chunk.hasWhatsApp),
+      hasEmail: acc.hasEmail || Boolean(chunk.hasEmail),
+      has383: acc.has383 || Boolean(chunk.has383)
+    }),
+    { hasWhatsApp: false, hasEmail: false, has383: false }
+  );
 
   return NextResponse.json({
     total: count ?? 0,

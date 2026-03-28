@@ -7,7 +7,6 @@ import {
   resolveBillingWorkspaceSelection
 } from "@/lib/server/billing-access";
 import { requireUser } from "@/lib/auth/require-user";
-import { isPrelaunchModeEnabled } from "@/lib/auth/prelaunch";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { getWorkspaceSubscription } from "@/src/billing/getSubscription";
 
@@ -25,9 +24,7 @@ const Container = ({ children }: { children: ReactNode }) => (
 );
 
 export default async function StandaloneBillingPage({ searchParams }: BillingPageProps) {
-  if (isPrelaunchModeEnabled()) {
-    await requireUser("/billing");
-  }
+  await requireUser("/billing");
 
   const supabase = getSupabaseServerClient();
   const {

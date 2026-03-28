@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createNotificationIfNotExists } from "@/lib/notifications/engine";
+import { userHasLaunchAccess } from "@/lib/server/launch-access";
 import { addDays, getRollingRangeInTimeZone } from "@/lib/utils/timezone";
 
 export const runtime = "nodejs";
@@ -58,11 +59,17 @@ export async function POST() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const hasLaunchAccess = await userHasLaunchAccess(user.id);
+  if (!hasLaunchAccess) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const { data: business, error: businessError } = await (supabase as any)
     .from("businesses")
     .select("id, timezone")
-    .eq("owner_id", user.id)
-    .order("created_at", { ascending: true })
+    .or(`owner_id.eq.${user.id},owner_user_id.eq.${user.id}`)
+    .eq("launch_access", true)
+    .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 

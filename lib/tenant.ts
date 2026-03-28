@@ -11,10 +11,13 @@ export type Tenant = {
 type BusinessRow = {
   id: string;
   owner_id: string;
+  owner_user_id?: string | null;
   business_name?: string | null;
   industry?: string | null;
   widget_key?: string | null;
   timezone?: string | null;
+  launch_access?: boolean | null;
+  invite_code_id?: string | null;
 };
 
 const generateFallbackUuid = () =>
@@ -89,8 +92,9 @@ export async function getTenantFromSession(userId?: string): Promise<Tenant> {
 
   const { data, error } = await (supabase as any)
     .from("businesses")
-    .select("id, widget_key")
+    .select("id, widget_key, launch_access")
     .or(`owner_id.eq.${resolvedUserId},owner_user_id.eq.${resolvedUserId}`)
+    .order("launch_access", { ascending: false })
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -100,7 +104,7 @@ export async function getTenantFromSession(userId?: string): Promise<Tenant> {
     return { userId: resolvedUserId, businessId: "" };
   }
 
-  const row = data as { id?: string; widget_key?: string | null } | null;
+  const row = data as { id?: string; widget_key?: string | null; launch_access?: boolean | null } | null;
   if (row?.id && !row.widget_key) {
     const widgetKey = generateWidgetKey();
     const { error: widgetError } = await (supabase as any)
@@ -131,8 +135,9 @@ export async function ensureBusinessRow(args: {
   // 1) find existing
   const { data: existing, error: existingError } = await (supabase as any)
     .from("businesses")
-    .select("id, widget_key")
+    .select("id, widget_key, launch_access")
     .or(`owner_id.eq.${args.userId},owner_user_id.eq.${args.userId}`)
+    .order("launch_access", { ascending: false })
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -141,7 +146,7 @@ export async function ensureBusinessRow(args: {
     console.error("[BUSINESS_EXISTING_ERROR]", existingError);
   }
 
-  const existingRow = existing as { id?: string; widget_key?: string | null } | null;
+  const existingRow = existing as { id?: string; widget_key?: string | null; launch_access?: boolean | null } | null;
   if (existingRow?.id) {
     if (!existingRow.widget_key) {
       const widgetKey = generateWidgetKey();
@@ -160,6 +165,7 @@ export async function ensureBusinessRow(args: {
   // 2) create
   const insertPayload: Partial<BusinessRow> = {
     owner_id: args.userId,
+    owner_user_id: args.userId,
     business_name: (args.businessName ?? "Your business").trim() || "Your business",
     industry: (args.industry ?? "other").trim() || "other",
     widget_key: generateWidgetKey()

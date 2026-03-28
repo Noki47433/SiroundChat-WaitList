@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isPrelaunchUserAllowed } from "@/lib/auth/prelaunch";
+import { userHasLaunchAccess } from "@/lib/server/launch-access";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -21,14 +21,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  if (!isPrelaunchUserAllowed(user)) {
+  if (!(await userHasLaunchAccess(user.id))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const { data: business, error: businessError } = await (supabase as any)
     .from("businesses")
     .select("id")
-    .eq("owner_id", user.id)
+    .or(`owner_id.eq.${user.id},owner_user_id.eq.${user.id}`)
+    .eq("launch_access", true)
+    .order("launch_access", { ascending: false })
     .order("created_at", { ascending: true })
     .limit(1)
     .maybeSingle();

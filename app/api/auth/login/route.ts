@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isPrelaunchEmailAllowed, normalizeEmail } from "@/lib/auth/prelaunch";
+import { normalizeEmail } from "@/lib/auth/prelaunch";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import { LoginSchema } from "@/lib/validation/auth";
 import { isAuthDisabled } from "@/lib/config/auth";
@@ -19,10 +19,6 @@ export async function POST(request: Request) {
     }
 
     const email = normalizeEmail(parsed.data.email);
-    if (!isPrelaunchEmailAllowed(email)) {
-      return NextResponse.json({ error: "Access is not available yet." }, { status: 403 });
-    }
-
     const supabase = getSupabaseRouteClient();
     const { error } = await supabase.auth.signInWithPassword({
       ...parsed.data,

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { isPrelaunchUserAllowed } from "@/lib/auth/prelaunch";
+import { userHasLaunchAccess } from "@/lib/server/launch-access";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import { getSupabaseServerAdminClientIfAvailable } from "@/lib/supabase/serverAdmin";
 import { buildFallbackContent } from "@/lib/builder/ai";
@@ -143,6 +143,7 @@ const getOwnedBusiness = async (admin: any, businessId: string, userId: string) 
     .select("id")
     .eq("id", businessId)
     .or(`owner_id.eq.${userId},owner_user_id.eq.${userId}`)
+    .eq("launch_access", true)
     .maybeSingle();
 
   if (error) {
@@ -198,7 +199,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  if (!isPrelaunchUserAllowed(userData.user)) {
+  if (!(await userHasLaunchAccess(userData.user.id))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -241,7 +242,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  if (!isPrelaunchUserAllowed(userData.user)) {
+  if (!(await userHasLaunchAccess(userData.user.id))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -393,7 +394,7 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  if (!isPrelaunchUserAllowed(userData.user)) {
+  if (!(await userHasLaunchAccess(userData.user.id))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

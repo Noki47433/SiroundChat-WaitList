@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { isPrelaunchUserAllowed } from "@/lib/auth/prelaunch";
+import { userHasLaunchAccess } from "@/lib/server/launch-access";
 import { getOwnedBuilderSite } from "@/lib/builder/site-access";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import { getSupabaseServerAdminClient } from "@/lib/supabase/serverAdmin";
@@ -115,7 +115,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    if (!isPrelaunchUserAllowed(userData.user)) {
+    if (!(await userHasLaunchAccess(userData.user.id))) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 

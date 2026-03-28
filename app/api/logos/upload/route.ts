@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
+import { userHasLaunchAccess } from "@/lib/server/launch-access";
 import { ensureBusinessRow } from "@/lib/utils/tenant";
 import { isAuthDisabled } from "@/lib/config/auth";
 import { getBusinessEntitlementAccess } from "@/lib/server/billing-access";
@@ -51,6 +52,10 @@ export async function POST(request: Request) {
 
     if (!authDisabled && !user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    if (user && !(await userHasLaunchAccess(user.id))) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const formData = await request.formData();

@@ -26,7 +26,10 @@ export default async function LeadsPage() {
   const { data: business, error: businessError } = await (supabase as any)
     .from("businesses")
     .select("id, business_name, industry")
-    .eq("owner_id", user.id)
+    .or(`owner_id.eq.${user.id},owner_user_id.eq.${user.id}`)
+    .eq("launch_access", true)
+    .order("created_at", { ascending: false })
+    .limit(1)
     .maybeSingle();
 
   if (businessError) {

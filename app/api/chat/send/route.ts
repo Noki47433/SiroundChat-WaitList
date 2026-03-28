@@ -16,8 +16,7 @@ import {
 import { awardBadgeIfNew, createNotificationIfNotExists } from "@/lib/notifications/engine";
 import { log } from "@/lib/utils/log";
 import { getTimeZoneOffsetMs } from "@/lib/utils/timezone";
-import { getWorkspaceSubscription } from "@/src/billing/getSubscription";
-import { hasEntitlement, resolveEntitlements } from "@/src/billing/entitlements";
+import { getBusinessEntitlementAccess } from "@/lib/server/billing-access";
 import { runChatbotOrchestrator } from "@/lib/chatbot/orchestrator";
 import { scheduleReservationFollowups } from "@/lib/automations/scheduler";
 import {
@@ -1339,12 +1338,8 @@ export async function POST(req: Request) {
     }
 
     const businessId = biz.id as string;
-    const subscription = await getWorkspaceSubscription(businessId);
-    if (!subscription.is_access_active) {
-      return NextResponse.json({ error: "Chatbot access is inactive for this subscription" }, { status: 403 });
-    }
-    const entitlements = resolveEntitlements(subscription.plan_id);
-    if (!hasEntitlement(entitlements, "chatbot")) {
+    const chatbotAccess = await getBusinessEntitlementAccess(businessId, "chatbot");
+    if (!chatbotAccess.allowed) {
       return NextResponse.json({ error: "Chatbot is not available on the current plan" }, { status: 403 });
     }
 

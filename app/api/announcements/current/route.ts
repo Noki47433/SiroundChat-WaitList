@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isPrelaunchUserAllowed } from "@/lib/auth/prelaunch";
+import { userHasLaunchAccess } from "@/lib/server/launch-access";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -12,6 +12,7 @@ const resolveOwnedBusiness = async (supabase: any, userId: string, requestedBusi
       .select("id")
       .eq("id", requestedBusinessId)
       .or(`owner_id.eq.${userId},owner_user_id.eq.${userId}`)
+      .eq("launch_access", true)
       .maybeSingle();
 
     return data?.id ?? null;
@@ -21,6 +22,8 @@ const resolveOwnedBusiness = async (supabase: any, userId: string, requestedBusi
     .from("businesses")
     .select("id")
     .or(`owner_id.eq.${userId},owner_user_id.eq.${userId}`)
+    .eq("launch_access", true)
+    .order("launch_access", { ascending: false })
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -38,7 +41,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  if (!isPrelaunchUserAllowed(user)) {
+  if (!(await userHasLaunchAccess(user.id))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
