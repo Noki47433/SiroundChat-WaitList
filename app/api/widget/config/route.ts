@@ -9,7 +9,7 @@ import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import { ensureBusinessRow, getTenantFromSession } from "@/lib/utils/tenant";
 import { getWidgetConfig, saveWidgetConfig } from "@/lib/utils/local-store";
 import { isAuthDisabled } from "@/lib/config/auth";
-import { FAQ_PRESETS } from "@/app/components/chatbot/chatbotFaqPresets"; // Default FAQs for preview fallback
+import { FAQ_PRESETS } from "@/app/components/chatbot/chatbotFaqPresets";
 import {
   isSiroundChatDemoBot,
   SIROUNDCHAT_DEMO_BUSINESS_NAME,
@@ -152,12 +152,12 @@ export async function GET(request: Request) {
     const config: z.infer<typeof WidgetConfigSchema> =
       stored ?? {
         siteId: configKey,
-        businessName: "SiroundChat demo",
-        greeting: "Pershendetje 👋 We reply instantly thanks to SiroundChat.",
+        businessName: "Website Chatbot",
+        greeting: "Hi there! How can I help today?",
         launcherPosition: "right",
         launcherVariant: "iconWithLabel",
-        businessType: "restaurant", // Default business type for preview content
-        faqs: FAQ_PRESETS.restaurant, // Default FAQ list for preview responses
+        businessType: "custom",
+        faqs: FAQ_PRESETS.custom,
         language: "auto",
         showLogo: true,
         logoUrl: null,

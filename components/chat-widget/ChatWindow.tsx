@@ -199,7 +199,6 @@ export function ChatWindow({
   const [isTyping, setIsTyping] = useState(false);
   const [pendingStatusSteps, setPendingStatusSteps] = useState<string[]>([]);
   const [pendingStatusIndex, setPendingStatusIndex] = useState(0);
-  const [takeoverEnabled, setTakeoverEnabled] = useState(false);
   const [feedbackPrompt, setFeedbackPrompt] = useState<{ conversationId: string; messageId: string } | null>(null);
   const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
@@ -474,11 +473,6 @@ export function ChatWindow({
   }, [conversationId, conversationStorageKey]);
 
   useEffect(() => {
-    if (!conversationId || conversationId === "welcome" || conversationId.startsWith("temp")) return;
-    setTakeoverEnabled(false);
-  }, [conversationId]);
-
-  useEffect(() => {
     setFeedbackPrompt(null);
     setFeedbackSubmitting(false);
     setFeedbackSubmitted(false);
@@ -526,18 +520,6 @@ export function ChatWindow({
             text: row.message_text,
             createdAt: row.created_at
           });
-        }
-      )
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "chat_conversations", filter: `id=eq.${conversationId}` },
-        (payload) => {
-          const row = payload.new as { takeover_enabled?: boolean };
-          const enabled = Boolean(row.takeover_enabled);
-          setTakeoverEnabled(enabled);
-          if (enabled) {
-            setIsTyping(false);
-          }
         }
       )
       .subscribe();
@@ -601,9 +583,7 @@ export function ChatWindow({
     setPendingStatusSteps(resolvePendingStatusSteps(outgoing));
     setPendingStatusIndex(0);
 
-    if (!takeoverEnabled) {
-      setIsTyping(() => true);
-    }
+    setIsTyping(() => true);
 
     try {
       const res = await fetch("/api/chat/send", {
@@ -654,10 +634,6 @@ export function ChatWindow({
           );
           return deduped;
         });
-      }
-
-      if (data.takeover === true) {
-        setTakeoverEnabled(true);
       }
 
 	      if (typeof data.reply === "string") {
@@ -791,18 +767,6 @@ export function ChatWindow({
             }}
           >
             <div className="flex h-full flex-col" style={{ background: panelBackground }}>
-              {takeoverEnabled ? (
-                <div
-                  className="mx-4 mt-4 rounded-xl border px-3 py-2 text-xs font-semibold"
-                  style={{
-                    borderColor: lightBg ? "rgba(15,23,42,0.14)" : "rgba(148,163,184,0.2)",
-                    color: colors.text,
-                    background: inputBackground
-                  }}
-                >
-                  Human takeover active
-                </div>
-              ) : null}
               <div ref={listRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4" aria-live="polite">
                 <AnimatePresence initial={false}>
                   {messages.map((m) => {

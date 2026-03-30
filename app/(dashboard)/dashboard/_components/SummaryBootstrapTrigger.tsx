@@ -40,8 +40,6 @@ export function SummaryBootstrapTrigger({
           continue;
         }
 
-        window.localStorage.setItem(key, String(now));
-
         try {
           const response = await fetch("/api/impact/compute", {
             method: "POST",
@@ -51,11 +49,14 @@ export function SummaryBootstrapTrigger({
           if (!response.ok) {
             const payload = await response.json().catch(() => null);
             console.error("[SUMMARY_BOOTSTRAP_COMPUTE_ERROR]", { period, status: response.status, payload });
+            window.localStorage.removeItem(key);
             continue;
           }
+          window.localStorage.setItem(key, String(Date.now()));
           shouldRefresh = true;
         } catch (error) {
           console.error("[SUMMARY_BOOTSTRAP_REQUEST_ERROR]", { period, error });
+          window.localStorage.removeItem(key);
         }
       }
 

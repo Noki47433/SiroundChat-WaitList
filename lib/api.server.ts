@@ -50,7 +50,7 @@ const toneExamples: ToneExamples = {
 
 const botDefaults: BotSettings = {
   businessName: "SiroundChat",
-  greeting: "Hi! I can help with demos, pricing, and support questions.",
+  greeting: "Hi! How can I help today?",
   tone: "friendly",
   logoUrl: null
 };
@@ -537,12 +537,16 @@ export async function getBillingInfo(): Promise<{ plans: BillingPlan[]; state: B
 }
 
 export async function getAccountProfile(): Promise<AccountProfile> {
-  const { user } = await getBusinessContext();
+  const { supabase, user, business } = await getBusinessContext();
   if (!user) return { ...accountProfile };
+  const { data: profile } = await (supabase as any).from("profiles").select("full_name").eq("id", user.id).maybeSingle();
   const metadata = user.user_metadata ?? {};
   return {
-    name: (typeof metadata.full_name === "string" && metadata.full_name.trim()) || accountProfile.name,
+    name:
+      (typeof profile?.full_name === "string" && profile.full_name.trim()) ||
+      (typeof metadata.full_name === "string" && metadata.full_name.trim()) ||
+      accountProfile.name,
     email: user.email ?? accountProfile.email,
-    timezone: accountProfile.timezone
+    timezone: business?.timezone ?? accountProfile.timezone
   };
 }

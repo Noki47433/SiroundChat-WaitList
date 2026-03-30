@@ -1,5 +1,6 @@
 import { getSupabaseServerAdminClient } from "@/lib/supabase/serverAdmin";
 import { scoreBusinessRisk } from "@/lib/admin/risk";
+import { calculateAiTextCostUsd, estimateLegacyAiMessageUsage } from "@/lib/ai/costs";
 
 export const ADMIN_RANGE_DAYS = {
   "7d": 7,
@@ -328,6 +329,9 @@ type MessageRow = {
   business_id: string;
   sender: string;
   content: string;
+  tokens_in?: number | null;
+  tokens_out?: number | null;
+  cost_usd?: number | null;
   created_at: string;
 };
 
@@ -350,11 +354,6 @@ type ReservationMetricRow = {
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-
-const pctDelta = (current: number, previous: number) => {
-  if (previous === 0) return null;
-  return ((current - previous) / previous) * 100;
-};
 
 const toDateOnly = (value: Date | string) => {
   const date = typeof value === "string" ? new Date(value) : value;
@@ -399,14 +398,24 @@ const toNumber = (value: unknown) => {
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
-const AI_INPUT_COST_PER_MILLION = Number(process.env.ADMIN_AI_INPUT_COST_PER_MILLION_USD ?? "0.15");
-const AI_OUTPUT_COST_PER_MILLION = Number(process.env.ADMIN_AI_OUTPUT_COST_PER_MILLION_USD ?? "0.6");
-
 const deriveAiCostUsd = (tokensIn: number, tokensOut: number, recordedCostUsd: number) => {
-  if (recordedCostUsd > 0) return Number(recordedCostUsd.toFixed(2));
-  const derived = (tokensIn / 1_000_000) * AI_INPUT_COST_PER_MILLION + (tokensOut / 1_000_000) * AI_OUTPUT_COST_PER_MILLION;
-  return Number(derived.toFixed(2));
+  return Number(calculateAiTextCostUsd(tokensIn, tokensOut, recordedCostUsd).toFixed(2));
 };
+
+const deriveMetricRowAiCostUsd = (
+  row: Pick<DailyMetricRow, "tokens_in" | "tokens_out" | "ai_cost_usd"> | null | undefined
+) => {
+  if (!row) return 0;
+  return deriveAiCostUsd(toNumber(row.tokens_in), toNumber(row.tokens_out), toNumber(row.ai_cost_usd));
+};
+
+const sumDerivedAiCost = (rows: DailyMetricRow[], predicate: (row: DailyMetricRow) => boolean) =>
+  Number(
+    rows
+      .filter(predicate)
+      .reduce((sum, row) => sum + deriveMetricRowAiCostUsd(row), 0)
+      .toFixed(2)
+  );
 
 const percentChange = (current: number, previous: number) => {
   if (previous <= 0) return current > 0 ? 100 : 0;
@@ -464,6 +473,22 @@ const buildHealthScore = (input: {
 const sumRows = (rows: DailyMetricRow[], field: keyof DailyMetricRow, predicate: (row: DailyMetricRow) => boolean) =>
   rows.filter(predicate).reduce((sum, row) => sum + toNumber(row[field]), 0);
 
+const metricRowKey = (businessId: string, day: string) => `${businessId}::${day}`;
+
+const createEmptyDailyMetricRow = (businessId: string, day: string): DailyMetricRow => ({
+  business_id: businessId,
+  day,
+  conversations_count: 0,
+  messages_count: 0,
+  ai_messages_count: 0,
+  human_messages_count: 0,
+  leads_count: 0,
+  visitors_count: 0,
+  tokens_in: 0,
+  tokens_out: 0,
+  ai_cost_usd: 0
+});
+
 const buildDailyTotals = (rows: DailyMetricRow[]) => {
   const totals = new Map<string, DailyMetricRow>();
 
@@ -486,6 +511,120 @@ const buildDailyTotals = (rows: DailyMetricRow[]) => {
   });
 
   return totals;
+};
+
+const buildMessageMetricRows = (messages: MessageRow[]) => {
+  const rows = new Map<string, DailyMetricRow>();
+
+  messages.forEach((message) => {
+    const day = toDayKey(message.created_at);
+    if (!day) return;
+
+    const key = metricRowKey(message.business_id, day);
+    const row = rows.get(key) ?? createEmptyDailyMetricRow(message.business_id, day);
+
+    row.messages_count += 1;
+
+    if (message.sender === "ai") {
+      row.ai_messages_count += 1;
+      const recordedTokensIn = toNumber(message.tokens_in);
+      const recordedTokensOut = toNumber(message.tokens_out);
+      const recordedCostUsd = toNumber(message.cost_usd);
+      const estimated =
+        recordedTokensIn > 0 || recordedTokensOut > 0 || recordedCostUsd > 0
+          ? null
+          : estimateLegacyAiMessageUsage(message.content ?? "");
+
+      row.tokens_in += estimated?.inputTokens ?? recordedTokensIn;
+      row.tokens_out += estimated?.outputTokens ?? recordedTokensOut;
+      row.ai_cost_usd += estimated?.costUsd ?? recordedCostUsd;
+    } else if (message.sender === "human") {
+      row.human_messages_count += 1;
+    }
+
+    rows.set(key, row);
+  });
+
+  return Array.from(rows.values());
+};
+
+const mergeMessageMetricRows = (rows: DailyMetricRow[], messageRows: MessageRow[]) => {
+  if (!messageRows.length) return rows;
+
+  const merged = new Map(rows.map((row) => [metricRowKey(row.business_id, row.day), { ...row }]));
+  const messageMetricRows = buildMessageMetricRows(messageRows);
+
+  messageMetricRows.forEach((messageRow) => {
+    const key = metricRowKey(messageRow.business_id, messageRow.day);
+    const existing = merged.get(key) ?? createEmptyDailyMetricRow(messageRow.business_id, messageRow.day);
+
+    existing.messages_count = messageRow.messages_count;
+    existing.ai_messages_count = messageRow.ai_messages_count;
+    existing.human_messages_count = messageRow.human_messages_count;
+    existing.tokens_in = messageRow.tokens_in;
+    existing.tokens_out = messageRow.tokens_out;
+    existing.ai_cost_usd = messageRow.ai_cost_usd;
+
+    merged.set(key, existing);
+  });
+
+  return Array.from(merged.values()).sort((a, b) => {
+    if (a.day === b.day) return a.business_id.localeCompare(b.business_id);
+    return a.day.localeCompare(b.day);
+  });
+};
+
+const fetchPagedRows = async <TRow>(
+  queryFactory: (from: number, to: number) => Promise<{ data?: TRow[] | null; error?: unknown }>,
+  pageSize = 5000,
+  maxPages = 40
+) => {
+  const rows: TRow[] = [];
+
+  for (let page = 0; page < maxPages; page += 1) {
+    const from = page * pageSize;
+    const to = from + pageSize - 1;
+    const { data, error } = await queryFactory(from, to);
+
+    if (error) {
+      console.error("[ADMIN_METRICS_PAGED_QUERY_ERROR]", error);
+      break;
+    }
+
+    const batch = data ?? [];
+    rows.push(...batch);
+
+    if (batch.length < pageSize) {
+      break;
+    }
+  }
+
+  return rows;
+};
+
+const fetchWindowMessageRows = async (supabase: ReturnType<typeof getSupabaseServerAdminClient>, options: {
+  businessIds: string[];
+  fromDay: string;
+  toDay: string;
+}) => {
+  if (!options.businessIds.length) return [] as MessageRow[];
+
+  const rangeStartIso = `${options.fromDay}T00:00:00.000Z`;
+  const rangeEndIso = `${toYmd(addDays(toDateOnly(options.toDay), 1))}T00:00:00.000Z`;
+
+  return fetchPagedRows<MessageRow>(
+    async (from, to) =>
+      (supabase as any)
+        .from("messages")
+        .select("id, conversation_id, business_id, sender, content, tokens_in, tokens_out, cost_usd, created_at")
+        .in("business_id", options.businessIds)
+        .gte("created_at", rangeStartIso)
+        .lt("created_at", rangeEndIso)
+        .order("created_at", { ascending: true })
+        .range(from, to),
+    5000,
+    50
+  );
 };
 
 const formatCurrency = (value: number, currency: "EUR" | "USD") =>
@@ -580,6 +719,8 @@ const fetchBillingSubscriptionRows = async (
 const mrrForDay = (subscription: SubscriptionRow, day: string) => {
   const status = (subscription.status ?? "").toLowerCase();
   const mrr = toNumber(subscription.mrr_eur);
+  const createdAtDay = toYmd(subscription.created_at);
+  if (day < createdAtDay) return 0;
   if (status === "trialing") return 0;
 
   if (status === "canceled") {
@@ -639,7 +780,7 @@ const buildRiskLists = (
     );
     const leadsLast7d = sumRows(businessRows, "leads_count", (row) => row.day >= current7Start && row.day <= toYmd(today));
     const leadsPrev7d = sumRows(businessRows, "leads_count", (row) => row.day >= prev7Start && row.day <= prev7End);
-    const aiCostLast7d = sumRows(businessRows, "ai_cost_usd", (row) => row.day >= current7Start && row.day <= toYmd(today));
+    const aiCostLast7d = sumDerivedAiCost(businessRows, (row) => row.day >= current7Start && row.day <= toYmd(today));
 
     const latestSub = latestSubs.get(business.id);
 
@@ -753,11 +894,17 @@ const getBaseData = async (options: BaseDataOptions) => {
       .limit(Math.max(1, options.eventsLimit ?? 20))
   ]);
 
+  const messageRows = await fetchWindowMessageRows(supabase, {
+    businessIds,
+    fromDay: options.metricsFromDay,
+    toDay: metricsToDay
+  });
+
   return {
     supabase,
     businesses,
     subscriptions,
-    metrics: (metricsResult.data ?? []) as DailyMetricRow[],
+    metrics: mergeMessageMetricRows((metricsResult.data ?? []) as DailyMetricRow[], messageRows),
     events: (eventsResult.data ?? []) as EventRow[]
   };
 };
@@ -771,7 +918,7 @@ export async function getAdminOverviewData(rangeInput?: string | null): Promise<
   const metricsFromDay = toYmd(addDays(today, -(metricsLookbackDays - 1)));
 
   // Overview now relies only on bounded, aggregated reads.
-  const { businesses, subscriptions, metrics, events } = await getBaseData({
+  const { supabase, businesses, subscriptions, metrics, events } = await getBaseData({
     metricsFromDay,
     metricsToDay: todayKey,
     eventsLimit: 20,
@@ -780,6 +927,7 @@ export async function getAdminOverviewData(rangeInput?: string | null): Promise<
   });
   const businessMap = new Map<string, BusinessRow>(businesses.map((business) => [business.id, business]));
   const latestSubs = latestByBusiness(subscriptions);
+  const businessIds = businesses.map((business) => business.id);
 
   const currentMrr = Array.from(latestSubs.values()).reduce((sum, subscription) => {
     const status = (subscription.status ?? "").toLowerCase();
@@ -808,10 +956,31 @@ export async function getAdminOverviewData(rangeInput?: string | null): Promise<
   const prevSevenStart = toYmd(addDays(today, -13));
   const prevSevenEnd = toYmd(addDays(today, -7));
 
-  const aiCost30d = sumRows(metrics, "ai_cost_usd", (row) => row.day >= thirtyStart && row.day <= todayKey);
-  const aiCostPrev30d = sumRows(metrics, "ai_cost_usd", (row) => row.day >= prevThirtyStart && row.day <= prevThirtyEnd);
+  const aiCost30d = sumDerivedAiCost(metrics, (row) => row.day >= thirtyStart && row.day <= todayKey);
+  const aiCostPrev30d = sumDerivedAiCost(metrics, (row) => row.day >= prevThirtyStart && row.day <= prevThirtyEnd);
   const visitors7d = sumRows(metrics, "visitors_count", (row) => row.day >= sevenStart && row.day <= todayKey);
   const visitorsPrev7d = sumRows(metrics, "visitors_count", (row) => row.day >= prevSevenStart && row.day <= prevSevenEnd);
+
+  const nowIso = new Date().toISOString();
+  const current24StartIso = new Date(Date.now() - DAY_MS).toISOString();
+  const previous24StartIso = new Date(Date.now() - DAY_MS * 2).toISOString();
+
+  const [messages24Result, messagesPrev24Result] = businessIds.length
+    ? await Promise.all([
+        (supabase as any)
+          .from("messages")
+          .select("id", { count: "exact", head: true })
+          .in("business_id", businessIds)
+          .gte("created_at", current24StartIso)
+          .lte("created_at", nowIso),
+        (supabase as any)
+          .from("messages")
+          .select("id", { count: "exact", head: true })
+          .in("business_id", businessIds)
+          .gte("created_at", previous24StartIso)
+          .lt("created_at", current24StartIso)
+      ])
+    : [{ count: 0 }, { count: 0 }];
 
   const churnCurrentBase = subscriptions.filter((sub) => {
     if (!sub.updated_at) return false;
@@ -841,14 +1010,20 @@ export async function getAdminOverviewData(rangeInput?: string | null): Promise<
   const dayKeys = buildDayKeys(today, rangeDays);
   const totalsByDay = buildDailyTotals(metrics);
 
-  // "Messages (24h)" now reads from daily aggregates instead of exact counts on raw messages.
-  const messages24 = totalsByDay.get(todayKey)?.messages_count ?? 0;
-  const messagesPrev24 = totalsByDay.get(toYmd(addDays(today, -1)))?.messages_count ?? 0;
+  const messages24 = messages24Result.count ?? 0;
+  const messagesPrev24 = messagesPrev24Result.count ?? 0;
   const messagesSeries = dayKeys.map((day) => totalsByDay.get(day)?.messages_count ?? 0);
   const leadsSeries = dayKeys.map((day) => totalsByDay.get(day)?.leads_count ?? 0);
   const visitorsSeries = dayKeys.map((day) => totalsByDay.get(day)?.visitors_count ?? 0);
-  const aiCostSeries = dayKeys.map((day) => Number((totalsByDay.get(day)?.ai_cost_usd ?? 0).toFixed(2)));
+  const aiCostSeries = dayKeys.map((day) => Number(deriveMetricRowAiCostUsd(totalsByDay.get(day)).toFixed(2)));
   const mrrSeries = buildSubscriptionMrrSeries(dayKeys, latestSubs);
+  const payingSeries = dayKeys.map((day) =>
+    Array.from(latestSubs.values()).filter((subscription) => {
+      const status = (subscription.status ?? "").toLowerCase();
+      return (status === "active" || status === "past_due") && mrrForDay(subscription, day) >= 0;
+    }).length
+  );
+  const trialsSeries = dayKeys.map(() => trials);
   const churnSeries = dayKeys.map((day) => {
     const canceled = subscriptions.filter((sub) => {
       if (!sub.updated_at) return false;
@@ -865,10 +1040,10 @@ export async function getAdminOverviewData(rangeInput?: string | null): Promise<
     return Number((((revenue - cost) / revenue) * 100).toFixed(2));
   });
 
-  const [mrrNow, mrrPrev] = [
-    mrrSeries[mrrSeries.length - 1] ?? currentMrr,
-    mrrSeries[Math.max(0, mrrSeries.length - 2)] ?? null
-  ];
+  const mrrNow = mrrSeries[mrrSeries.length - 1] ?? currentMrr;
+  const mrrPrev = mrrSeries.length > 1 ? (mrrSeries[mrrSeries.length - 2] ?? 0) : 0;
+  const payingPrev = payingSeries.length > 1 ? (payingSeries[payingSeries.length - 2] ?? 0) : 0;
+  const trialsPrev = trialsSeries.length > 1 ? (trialsSeries[trialsSeries.length - 2] ?? 0) : 0;
 
   const planDistributionMap = new Map<string, number>();
   Array.from(latestSubs.values()).forEach((subscription) => {
@@ -898,7 +1073,7 @@ export async function getAdminOverviewData(rangeInput?: string | null): Promise<
       label: "MRR (EUR)",
       value: currentMrr,
       displayValue: formatCurrency(currentMrr, "EUR"),
-      delta: mrrPrev ? pctDelta(mrrNow, mrrPrev) : null,
+      delta: percentChange(mrrNow, mrrPrev),
       series: mrrSeries
     },
     {
@@ -906,33 +1081,23 @@ export async function getAdminOverviewData(rangeInput?: string | null): Promise<
       label: "Paying Businesses",
       value: payingBusinesses,
       displayValue: String(payingBusinesses),
-      delta: null,
-      series: dayKeys.map((_, index) => {
-        let total = 0;
-        latestSubs.forEach((subscription) => {
-          const status = (subscription.status ?? "").toLowerCase();
-          const day = dayKeys[index];
-          if ((status === "active" || status === "past_due") && mrrForDay(subscription, day) >= 0) {
-            total += 1;
-          }
-        });
-        return total;
-      })
+      delta: percentChange(payingBusinesses, payingPrev),
+      series: payingSeries
     },
     {
       key: "trials",
       label: "Trials",
       value: trials,
       displayValue: String(trials),
-      delta: null,
-      series: dayKeys.map(() => trials)
+      delta: percentChange(trials, trialsPrev),
+      series: trialsSeries
     },
     {
       key: "churn",
       label: "Churn (30d)",
       value: churn30d,
       displayValue: `${churn30d.toFixed(1)}%`,
-      delta: pctDelta(churn30d, churnPrev30d),
+      delta: percentChange(churn30d, churnPrev30d),
       series: churnSeries,
       suffix: "%"
     },
@@ -941,7 +1106,7 @@ export async function getAdminOverviewData(rangeInput?: string | null): Promise<
       label: "Messages (24h)",
       value: messages24,
       displayValue: String(messages24),
-      delta: pctDelta(messages24, messagesPrev24),
+      delta: percentChange(messages24, messagesPrev24),
       series: messagesSeries
     },
     {
@@ -949,7 +1114,7 @@ export async function getAdminOverviewData(rangeInput?: string | null): Promise<
       label: "AI Cost (30d)",
       value: aiCost30d,
       displayValue: formatCurrency(aiCost30d, "USD"),
-      delta: pctDelta(aiCost30d, aiCostPrev30d),
+      delta: percentChange(aiCost30d, aiCostPrev30d),
       series: aiCostSeries
     },
     {
@@ -957,7 +1122,7 @@ export async function getAdminOverviewData(rangeInput?: string | null): Promise<
       label: "Gross Margin %",
       value: grossMargin,
       displayValue: `${grossMargin.toFixed(1)}%`,
-      delta: pctDelta(grossMargin, grossMarginPrev),
+      delta: percentChange(grossMargin, grossMarginPrev),
       series: grossMarginSeries,
       suffix: "%"
     },
@@ -966,7 +1131,7 @@ export async function getAdminOverviewData(rangeInput?: string | null): Promise<
       label: "Website Visitors (7d)",
       value: visitors7d,
       displayValue: String(visitors7d),
-      delta: pctDelta(visitors7d, visitorsPrev7d),
+      delta: percentChange(visitors7d, visitorsPrev7d),
       series: visitorsSeries
     }
   ];
@@ -1192,7 +1357,6 @@ export async function getAdminBusinessDetailData(
     metricsResult,
     leadsResult,
     conversationsResult,
-    messagesResult,
     eventsResult,
     reservationsResult,
     websiteEventsResult
@@ -1224,13 +1388,6 @@ export async function getAdminBusinessDetailData(
         .eq("business_id", businessId)
         .order("last_message_at", { ascending: false })
         .limit(80),
-      (supabase as any)
-        .from("messages")
-        .select("id, conversation_id, business_id, sender, content, created_at")
-        .eq("business_id", businessId)
-        .gte("created_at", addDays(today, -rangeDays).toISOString())
-        .order("created_at", { ascending: false })
-        .limit(800),
       (supabase as any)
         .from("events")
         .select("id, business_id, type, title, body, severity, created_at")
@@ -1268,13 +1425,21 @@ export async function getAdminBusinessDetailData(
     lead_type: string | null;
   }>;
   const conversations = (conversationsResult.data ?? []) as ConversationRow[];
-  const messages = (messagesResult.data ?? []) as MessageRow[];
   const events = (eventsResult.data ?? []) as EventRow[];
   const reservations = (reservationsResult.data ?? []) as ReservationMetricRow[];
   const websiteEvents = (websiteEventsResult.data ?? []) as WebsiteAnalyticsRow[];
+  const messages = await fetchWindowMessageRows(supabase, {
+    businessIds: [businessId],
+    fromDay: currentStart,
+    toDay: currentEnd
+  });
 
   const dayKeys = buildDayKeys(today, rangeDays);
-  const metricsByDay = new Map(currentMetrics.map((row) => [row.day, row]));
+  const metricsByDay = new Map(
+    mergeMessageMetricRows(currentMetrics, messages)
+      .filter((row) => row.day >= currentStart && row.day <= currentEnd)
+      .map((row) => [row.day, row])
+  );
 
   const usageSeries = dayKeys.map((day) => {
     const row = metricsByDay.get(day);
@@ -1288,7 +1453,7 @@ export async function getAdminBusinessDetailData(
       visitors: row?.visitors_count ?? 0,
       tokensIn: row?.tokens_in ?? 0,
       tokensOut: row?.tokens_out ?? 0,
-      cost: Number((row?.ai_cost_usd ?? 0).toFixed(2))
+      cost: Number(deriveMetricRowAiCostUsd(row).toFixed(2))
     };
   });
 
@@ -1312,7 +1477,7 @@ export async function getAdminBusinessDetailData(
       acc.leads += toNumber(row.leads_count);
       acc.tokensIn += toNumber(row.tokens_in);
       acc.tokensOut += toNumber(row.tokens_out);
-      acc.cost += toNumber(row.ai_cost_usd);
+      acc.cost += deriveMetricRowAiCostUsd(row);
       return acc;
     },
     { conversations: 0, leads: 0, tokensIn: 0, tokensOut: 0, cost: 0 }
@@ -1684,15 +1849,21 @@ export async function getAdminCostsData(rangeInput?: string | null): Promise<Cos
     name: row.name ?? row.business_name
   }));
   const businessMap = new Map(businesses.map((business) => [business.id, business]));
-  const metrics = (metricsResult.data ?? []) as DailyMetricRow[];
+  const businessIds = businesses.map((business) => business.id);
+  const messageRows = await fetchWindowMessageRows(supabase, {
+    businessIds,
+    fromDay: baselineFromDay,
+    toDay: toYmd(today)
+  });
+  const metrics = mergeMessageMetricRows((metricsResult.data ?? []) as DailyMetricRow[], messageRows);
 
   const currentRows = metrics.filter((row) => row.day >= fromDay && row.day <= toYmd(today));
 
-  const totalAiCostUsd = currentRows.reduce((sum, row) => sum + toNumber(row.ai_cost_usd), 0);
+  const totalAiCostUsd = Number(currentRows.reduce((sum, row) => sum + deriveMetricRowAiCostUsd(row), 0).toFixed(2));
 
   const costByBusiness = Array.from(
     currentRows.reduce((map, row) => {
-      map.set(row.business_id, (map.get(row.business_id) ?? 0) + toNumber(row.ai_cost_usd));
+      map.set(row.business_id, (map.get(row.business_id) ?? 0) + deriveMetricRowAiCostUsd(row));
       return map;
     }, new Map<string, number>())
   )
@@ -1712,10 +1883,12 @@ export async function getAdminCostsData(rangeInput?: string | null): Promise<Cos
     }, new Map<string, DailyMetricRow[]>())
   )
     .map(([businessId, rows]) => {
-      const todayCost = rows.filter((row) => row.day === toYmd(today)).reduce((sum, row) => sum + toNumber(row.ai_cost_usd), 0);
+      const todayCost = rows
+        .filter((row) => row.day === toYmd(today))
+        .reduce((sum, row) => sum + deriveMetricRowAiCostUsd(row), 0);
       const baselineRows = rows.filter((row) => row.day >= toYmd(addDays(today, -7)) && row.day < toYmd(today));
       const baseline = baselineRows.length
-        ? baselineRows.reduce((sum, row) => sum + toNumber(row.ai_cost_usd), 0) / baselineRows.length
+        ? baselineRows.reduce((sum, row) => sum + deriveMetricRowAiCostUsd(row), 0) / baselineRows.length
         : 0;
       return {
         businessId,
@@ -1745,7 +1918,7 @@ export async function getAdminCostsData(rangeInput?: string | null): Promise<Cos
     anomalies,
     series: dayKeys.map((day) => ({
       day,
-      cost: Number((totalsByDay.get(day)?.ai_cost_usd ?? 0).toFixed(2)),
+      cost: Number(deriveMetricRowAiCostUsd(totalsByDay.get(day)).toFixed(2)),
       tokensIn: totalsByDay.get(day)?.tokens_in ?? 0,
       tokensOut: totalsByDay.get(day)?.tokens_out ?? 0
     }))

@@ -133,11 +133,12 @@ const getKiaKosovaDemoWrapped = (period: Period): WrappedRaw => {
 };
 
 export async function GET(request: Request) {
+  const allowFixtures = process.env.NODE_ENV !== "production";
   const url = new URL(request.url);
   const businessId = url.searchParams.get("businessId");
   const period = url.searchParams.get("period") as Period | null;
-  const forceMock = url.searchParams.get("mock") === "1";
-  const forceDemo = url.searchParams.get("demo") === "1";
+  const forceMock = allowFixtures && url.searchParams.get("mock") === "1";
+  const forceDemo = allowFixtures && url.searchParams.get("demo") === "1";
 
   if (!businessId) {
     return NextResponse.json({ error: "Missing businessId" }, { status: 400 });
@@ -163,14 +164,14 @@ export async function GET(request: Request) {
 
   const demoBusinessId = getDemoBusinessId();
   const matchesDemoBusiness =
-    businessId.toLowerCase().includes("kia") || (demoBusinessId ? businessId === demoBusinessId : false);
-  const useDemo = forceDemo || process.env.NEXT_PUBLIC_WRAPPED_DEMO === "1" || matchesDemoBusiness;
+    allowFixtures && (businessId.toLowerCase().includes("kia") || (demoBusinessId ? businessId === demoBusinessId : false));
+  const useDemo = allowFixtures && (forceDemo || process.env.NEXT_PUBLIC_WRAPPED_DEMO === "1" || matchesDemoBusiness);
 
   if (useDemo) {
     return NextResponse.json({ ok: true, data: getKiaKosovaDemoWrapped(period), demo: true });
   }
 
-  const useMock = forceMock || process.env.NEXT_PUBLIC_WRAPPED_MOCK === "1";
+  const useMock = allowFixtures && (forceMock || process.env.NEXT_PUBLIC_WRAPPED_MOCK === "1");
 
   if (useMock) {
     return NextResponse.json({ ok: true, data: buildMock(period), mock: true });
@@ -185,7 +186,8 @@ export async function GET(request: Request) {
     .limit(2);
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("[IMPACT_WRAPPED_LOOKUP_ERROR]", error);
+    return NextResponse.json({ error: "Failed to load impact summary" }, { status: 500 });
   }
 
   const current = summaries?.[0] ?? null;

@@ -1540,12 +1540,7 @@ export function BuilderEditorClient({ initialSite, canPublish }: BuilderEditorCl
         installedAt: now,
         enabled: true,
         config:
-          appId === "live-chat"
-            ? {
-                script:
-                  "(function(){var btn=document.createElement('button');btn.innerText='Chat with us';btn.style.cssText='position:fixed;bottom:24px;right:24px;z-index:9999;padding:10px 16px;border-radius:999px;border:none;background:#111827;color:white;font-weight:600';btn.onclick=function(){alert('Live chat is connected. Replace this demo script with your provider.');};document.body.appendChild(btn);})();"
-              }
-            : appId === "analytics"
+          appId === "analytics"
               ? { measurementId: "" }
               : appId === "booking-widget"
                 ? { embedUrl: "" }

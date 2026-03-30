@@ -56,4 +56,54 @@ export async function insertWebsiteAnalyticsEvent(
   if (error) {
     throw error;
   }
+
+  if (input.eventType !== "page_view" || !input.sessionId) {
+    return;
+  }
+
+  try {
+    const occurredAt = input.occurredAt ? new Date(input.occurredAt) : new Date();
+    if (Number.isNaN(occurredAt.getTime())) {
+      return;
+    }
+
+    const dayStart = new Date(Date.UTC(occurredAt.getUTCFullYear(), occurredAt.getUTCMonth(), occurredAt.getUTCDate()));
+    const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+
+    const { count, error: countError } = await (client as any)
+      .from("website_analytics_events")
+      .select("id", { count: "exact", head: true })
+      .eq("business_id", input.businessId)
+      .eq("event_type", "page_view")
+      .eq("session_id", input.sessionId)
+      .gte("occurred_at", dayStart.toISOString())
+      .lt("occurred_at", dayEnd.toISOString());
+
+    if (countError || count !== 1) {
+      if (countError) {
+        console.error("[WEBSITE_ANALYTICS_VISITOR_COUNT_ERROR]", countError);
+      }
+      return;
+    }
+
+    const { error: metricsError } = await (client as any).rpc("bump_daily_metrics", {
+      target_business_id: input.businessId,
+      target_day: dayStart.toISOString().slice(0, 10),
+      conv_inc: 0,
+      msg_inc: 0,
+      ai_msg_inc: 0,
+      human_msg_inc: 0,
+      lead_inc: 0,
+      visitor_inc: 1,
+      tokens_in_inc: 0,
+      tokens_out_inc: 0,
+      cost_inc: 0
+    });
+
+    if (metricsError) {
+      console.error("[WEBSITE_ANALYTICS_VISITOR_METRICS_ERROR]", metricsError);
+    }
+  } catch (error) {
+    console.error("[WEBSITE_ANALYTICS_VISITOR_ENRICHMENT_ERROR]", error);
+  }
 }

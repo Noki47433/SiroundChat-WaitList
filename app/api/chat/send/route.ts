@@ -32,6 +32,8 @@ import {
   getSiroundChatDemoReply,
   isSiroundChatDemoBot
 } from "@/lib/chatbot/siroundchat-demo";
+import { calculateAiTextCostUsd } from "@/lib/ai/costs";
+import { isHumanTakeoverEnabled } from "@/lib/chat/takeover";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -1425,6 +1427,92 @@ export async function POST(req: Request) {
       }
     };
 
+    const recordAssistantUsage = async (params: {
+      assistantMessageId: string | null;
+      promptTokens: number;
+      completionTokens: number;
+      costUsd: number;
+    }) => {
+      if (!params.assistantMessageId) return;
+
+      const tokensIn = Math.max(0, Math.floor(params.promptTokens));
+      const tokensOut = Math.max(0, Math.floor(params.completionTokens));
+      const costUsd = Math.max(0, Number(params.costUsd.toFixed(4)));
+
+      if (tokensIn === 0 && tokensOut === 0 && costUsd === 0) {
+        return;
+      }
+
+      try {
+        const { data: founderMessage, error: founderMessageError } = await (admin as any)
+          .from("messages")
+          .select("id, created_at, tokens_in, tokens_out, cost_usd")
+          .eq("id", params.assistantMessageId)
+          .eq("business_id", businessId)
+          .maybeSingle();
+
+        if (founderMessageError || !founderMessage?.id) {
+          if (founderMessageError) {
+            log("warn", "Failed to load founder message for AI usage tracking", {
+              error: founderMessageError,
+              businessId,
+              messageId: params.assistantMessageId
+            });
+          }
+          return;
+        }
+
+        const previousTokensIn = Number(founderMessage.tokens_in ?? 0);
+        const previousTokensOut = Number(founderMessage.tokens_out ?? 0);
+        const previousCostUsd = Number(founderMessage.cost_usd ?? 0);
+        const deltaTokensIn = Math.max(0, tokensIn - previousTokensIn);
+        const deltaTokensOut = Math.max(0, tokensOut - previousTokensOut);
+        const deltaCostUsd = Math.max(0, Number((costUsd - previousCostUsd).toFixed(4)));
+
+        await (admin as any)
+          .from("messages")
+          .update({
+            tokens_in: tokensIn,
+            tokens_out: tokensOut,
+            cost_usd: costUsd
+          })
+          .eq("id", params.assistantMessageId)
+          .eq("business_id", businessId);
+
+        if (deltaTokensIn === 0 && deltaTokensOut === 0 && deltaCostUsd === 0) {
+          return;
+        }
+
+        const { error: metricsError } = await (admin as any).rpc("bump_daily_metrics", {
+          target_business_id: businessId,
+          target_day: new Date(founderMessage.created_at).toISOString().slice(0, 10),
+          conv_inc: 0,
+          msg_inc: 0,
+          ai_msg_inc: 0,
+          human_msg_inc: 0,
+          lead_inc: 0,
+          visitor_inc: 0,
+          tokens_in_inc: deltaTokensIn,
+          tokens_out_inc: deltaTokensOut,
+          cost_inc: deltaCostUsd
+        });
+
+        if (metricsError) {
+          log("warn", "Failed to bump daily AI usage metrics", {
+            error: metricsError,
+            businessId,
+            messageId: params.assistantMessageId
+          });
+        }
+      } catch (error) {
+        log("warn", "Failed to persist assistant AI usage", {
+          error,
+          businessId,
+          messageId: params.assistantMessageId
+        });
+      }
+    };
+
     // 2) Create conversation if needed
     let conversationId = body.conversationId ?? null;
     let isNewConversation = false;
@@ -1897,7 +1985,7 @@ export async function POST(req: Request) {
     const followupPromptedAt = takeoverRow?.followup_prompted_at
       ? new Date(takeoverRow.followup_prompted_at)
       : null;
-    if (takeoverEnabled) {
+    if (takeoverEnabled && isHumanTakeoverEnabled()) {
       return NextResponse.json({
         reply: getTakeoverReply(body.message),
         conversationId,
@@ -1952,7 +2040,7 @@ export async function POST(req: Request) {
           sender: "assistant",
           message_text: directDemoReply
         })
-        .select("id")
+        .select("id, created_at")
         .single();
 
       if (assistantErr) {
@@ -2953,6 +3041,7 @@ export async function POST(req: Request) {
     const languageSwitch = resolveLanguageSwitchReply(body.message);
     const smallTalkReply = languageSwitch?.reply ?? resolveSmallTalkReply(body.message);
     const directPriceIntent = !isSiroundChatDemo && isDirectPriceIntent(normalizedMessage, messageTokens);
+    let assistantUsage: { promptTokens: number; completionTokens: number; costUsd: number } | null = null;
     let reply = smallTalkReply ?? (isSiroundChatDemo ? "" : UNKNOWN_REPLY);
 
     if (!smallTalkReply && directPriceIntent) {
@@ -2974,6 +3063,15 @@ export async function POST(req: Request) {
         temperature: 0.2,
         messages
       });
+
+      assistantUsage = {
+        promptTokens: completion.usage?.prompt_tokens ?? 0,
+        completionTokens: completion.usage?.completion_tokens ?? 0,
+        costUsd: calculateAiTextCostUsd(
+          completion.usage?.prompt_tokens ?? 0,
+          completion.usage?.completion_tokens ?? 0
+        )
+      };
 
       reply = completion.choices?.[0]?.message?.content?.trim() || (isSiroundChatDemo ? getSiroundChatDemoFallbackReply(chatLocale) : UNKNOWN_REPLY);
     }
@@ -3039,7 +3137,7 @@ export async function POST(req: Request) {
         sender: "assistant",
         message_text: reply
       })
-      .select("id")
+      .select("id, created_at")
       .single();
 
     if (assistantErr) {
@@ -3047,6 +3145,15 @@ export async function POST(req: Request) {
     }
 
     const assistantMessageId = assistantMessage?.id ? String(assistantMessage.id) : null;
+
+    if (assistantUsage) {
+      await recordAssistantUsage({
+        assistantMessageId,
+        promptTokens: assistantUsage.promptTokens,
+        completionTokens: assistantUsage.completionTokens,
+        costUsd: assistantUsage.costUsd
+      });
+    }
 
     if (appendedFollowup) {
       await (admin as any)

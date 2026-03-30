@@ -1,11 +1,13 @@
-// Summary: Client-side demo sandbox showing chat and lead UI without auth; secondary page.
-"use client";
-
+import { notFound } from "next/navigation";
 import { ChatThread } from "@/components/dashboard/ChatThread";
 import { ChatList } from "@/components/dashboard/ChatList";
 import { LeadTable } from "@/components/dashboard/LeadTable";
 
 export default function DemoPage() {
+  if (process.env.NODE_ENV === "production") {
+    notFound();
+  }
+
   const mockLeads = [
     { id: "1", businessId: "demo", name: "Besa", email: "besa@example.com", phone: "+383 44 123 456", source: "chat", createdAt: new Date().toISOString() }
   ];

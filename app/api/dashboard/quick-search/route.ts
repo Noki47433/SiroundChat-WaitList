@@ -43,8 +43,7 @@ const NAV_ACTIONS: NavAction[] = [
   { id: "nav-analytics", label: "Analytics", href: "/dashboard/analytics", subtitle: "Performance insights", keywords: ["metrics", "reports"] },
   { id: "nav-documents", label: "Documents", href: "/dashboard/documents", subtitle: "Knowledge uploads", keywords: ["knowledge", "files"] },
   { id: "nav-settings", label: "Settings", href: "/dashboard/settings", subtitle: "Workspace controls", keywords: ["preferences"] },
-  { id: "nav-account", label: "Account", href: "/dashboard/account", subtitle: "User profile and session", keywords: ["profile"] },
-  { id: "nav-billing", label: "Billing", href: "/billing", subtitle: "Plans and payments", keywords: ["subscription", "invoice"] }
+  { id: "nav-account", label: "Account", href: "/dashboard/account", subtitle: "User profile and session", keywords: ["profile"] }
 ];
 
 const QUICK_ACTION_IDS = [
@@ -53,8 +52,7 @@ const QUICK_ACTION_IDS = [
   "nav-reservations",
   "nav-analytics",
   "nav-builder",
-  "nav-settings",
-  "nav-billing"
+  "nav-settings"
 ];
 
 const escapeForIlike = (value: string) =>

@@ -529,7 +529,7 @@ export async function POST(request: Request) {
       title: "Customers helped",
       value: helpedReady ? String(helpedCurrent) : "Not enough data yet",
       subtext: helpedReady
-        ? "Conversations resolved without human takeover"
+        ? "Conversations resolved without a manual handoff"
         : "We need resolved chat conversations to compute this.",
       tone: helpedReady ? "success" : "info"
     },

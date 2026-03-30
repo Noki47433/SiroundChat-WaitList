@@ -1,6 +1,5 @@
 import { redirect } from "next/navigation";
 import { NextResponse } from "next/server";
-import { isPrelaunchModeEnabled, isPrelaunchUserAllowed } from "@/lib/auth/prelaunch";
 import { isAuthDisabled } from "@/lib/config/auth";
 import { resolveRedirectPath } from "@/lib/utils/redirect";
 import { getSupabaseRouteClient, getSupabaseServerClient } from "@/lib/supabase/server";
@@ -52,10 +51,6 @@ export async function requireAdmin(redirectTo = "/admin") {
     redirect(`${LOGIN_PATH}?redirect=${encodeURIComponent(safeRedirect)}`);
   }
 
-  if (isPrelaunchModeEnabled() && !isPrelaunchUserAllowed(user)) {
-    redirect("/");
-  }
-
   const { data: profile } = await (supabase as any)
     .from("profiles")
     .select("id, full_name, role")
@@ -98,14 +93,6 @@ export async function guardAdminRoute(): Promise<AdminRouteGuardResult> {
       ok: false,
       status: 401,
       response: NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-    };
-  }
-
-  if (isPrelaunchModeEnabled() && !isPrelaunchUserAllowed(user)) {
-    return {
-      ok: false,
-      status: 403,
-      response: NextResponse.json({ error: "Forbidden" }, { status: 403 })
     };
   }
 

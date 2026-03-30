@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
-import { normalizeEmail } from "@/lib/auth/prelaunch";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import { LoginSchema } from "@/lib/validation/auth";
 import { isAuthDisabled } from "@/lib/config/auth";
 import { resolveRedirectPath } from "@/lib/utils/redirect";
+
+const normalizeEmail = (value: string) => value.trim().toLowerCase();
 
 export async function POST(request: Request) {
   try {
@@ -25,7 +26,7 @@ export async function POST(request: Request) {
       email
     });
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 401 });
+      return NextResponse.json({ error: "Invalid email or password." }, { status: 401 });
     }
     return NextResponse.json({ redirect });
   } catch (error) {

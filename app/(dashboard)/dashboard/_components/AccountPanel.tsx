@@ -9,7 +9,7 @@ import { Select } from "@/components/ui/select";
 import { Modal } from "@/components/ui/modal";
 import { useToast } from "@/components/ui/toast";
 import type { AccountProfile } from "@/lib/types";
-import { saveAccountProfile } from "@/lib/api";
+import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 
 const timezones = [
   "Europe/Skopje",
@@ -28,16 +28,38 @@ export function AccountPanel({ initial }: { initial: AccountProfile }) {
 
   const handleSave = async () => {
     setSaving(true);
-    const updated = await saveAccountProfile(profile);
-    setProfile(updated);
-    setSaving(false);
-    push({ title: "Profile updated", message: "Account details saved.", variant: "success" });
+    try {
+      const response = await fetch("/api/account/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: profile.name, timezone: profile.timezone })
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(payload?.error ?? "Failed to save profile");
+      }
+      setProfile(payload);
+      push({ title: "Profile updated", message: "Account details saved.", variant: "success" });
+    } catch (error) {
+      push({
+        title: "Update failed",
+        message: error instanceof Error ? error.message : "Could not save profile right now.",
+        variant: "error"
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     setLogoutOpen(false);
-    push({ title: "Signed out (mock)", message: "Redirecting to login.", variant: "info" });
-    router.push("/login");
+    const { error } = await getSupabaseBrowserClient().auth.signOut();
+    if (error) {
+      push({ title: "Logout failed", message: error.message, variant: "error" });
+      return;
+    }
+    push({ title: "Logged out", message: "Redirecting to sign in.", variant: "success" });
+    router.push("/auth");
   };
 
   return (
@@ -60,8 +82,10 @@ export function AccountPanel({ initial }: { initial: AccountProfile }) {
             <Input
               type="email"
               value={profile.email}
-              onChange={(event) => setProfile((prev) => ({ ...prev, email: event.target.value }))}
+              readOnly
+              disabled
             />
+            <span className="mt-1 block text-xs text-white/45">Email changes are managed through your auth provider.</span>
           </label>
           <label className="text-sm text-white/70">
             Timezone
@@ -101,7 +125,7 @@ export function AccountPanel({ initial }: { initial: AccountProfile }) {
             <Button variant="outline" onClick={() => setLogoutOpen(false)}>
               Cancel
             </Button>
-            <Button variant="primary" onClick={handleLogout}>
+            <Button variant="primary" onClick={() => void handleLogout()}>
               Sign out
             </Button>
           </>

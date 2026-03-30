@@ -1,16 +1,12 @@
 import { NextResponse } from "next/server";
-import { normalizeEmail } from "@/lib/auth/prelaunch";
-import {
-  findInviteCodeForRegistration,
-  mapInviteCodeErrorToMessage,
-  normalizeInviteCode
-} from "@/lib/server/invite-access";
 import { getSupabaseAdminClientIfAvailable } from "@/lib/supabase/admin";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import { RegisterSchema } from "@/lib/validation/auth";
 import type { Database } from "@/lib/db/schema";
 import { isAuthDisabled } from "@/lib/config/auth";
 import { resolveRedirectPath } from "@/lib/utils/redirect";
+
+const normalizeEmail = (value: string) => value.trim().toLowerCase();
 
 export async function POST(request: Request) {
   try {
@@ -26,13 +22,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Auth is disabled" }, { status: 503 });
     }
 
-    const { name, email, password, businessName, industry, inviteCode } = parsed.data;
+    const { name, email, password, businessName, industry } = parsed.data;
     const normalizedEmail = normalizeEmail(email);
-    const normalizedInviteCode = normalizeInviteCode(inviteCode);
-    if (!normalizedInviteCode) {
-      return NextResponse.json({ error: "Invite code is required." }, { status: 400 });
-    }
-
     const fallbackName = normalizedEmail.split("@")[0] || "SiroundChat User";
     const safeName = (name ?? "").trim() || fallbackName;
     const safeBusinessName = businessName.trim();
@@ -44,11 +35,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Registration is unavailable right now." }, { status: 500 });
     }
     const db = admin as any;
-
-    const inviteValidation = await findInviteCodeForRegistration(normalizedInviteCode, normalizedEmail);
-    if (!inviteValidation.ok) {
-      return NextResponse.json({ error: inviteValidation.error }, { status: 400 });
-    }
 
     const { data: userResult, error: userError } = await admin.auth.admin.createUser({
       email: normalizedEmail,
@@ -88,6 +74,9 @@ export async function POST(request: Request) {
           owner_user_id: userId,
           business_name: safeBusinessName,
           industry: safeIndustry,
+          access_approved: false,
+          onboarding_submitted: false,
+          onboarding_data: {},
           launch_access: false
         } as Database["public"]["Tables"]["businesses"]["Insert"])
         .select("id")
@@ -98,17 +87,6 @@ export async function POST(request: Request) {
       }
 
       businessId = business.id as string;
-
-      const { error: redeemError } = await db.rpc("redeem_invite_code_for_business", {
-        p_code: normalizedInviteCode,
-        p_user_id: userId,
-        p_business_id: businessId,
-        p_email: normalizedEmail
-      });
-
-      if (redeemError) {
-        throw redeemError;
-      }
     } catch (registrationError: any) {
       if (businessId) {
         await db.from("businesses").delete().eq("id", businessId);
@@ -117,14 +95,6 @@ export async function POST(request: Request) {
       const { error: deleteUserError } = await admin.auth.admin.deleteUser(userId);
       if (deleteUserError) {
         console.error("[AUTH_REGISTER_ROLLBACK_USER_DELETE_ERROR]", deleteUserError);
-      }
-
-      const rawMessage =
-        typeof registrationError?.message === "string" ? registrationError.message : null;
-      const inviteMessage = mapInviteCodeErrorToMessage(rawMessage);
-
-      if (rawMessage && inviteMessage !== "Registration is unavailable right now.") {
-        return NextResponse.json({ error: inviteMessage }, { status: 400 });
       }
 
       console.error("[AUTH_REGISTER_BUSINESS_SETUP_ERROR]", registrationError);

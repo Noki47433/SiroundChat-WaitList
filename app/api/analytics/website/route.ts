@@ -448,6 +448,11 @@ const distinctSessionCount = (events: WebsiteEventRow[], predicate: (event: Webs
   return sessions.size;
 };
 
+const shouldIgnorePagePath = (pagePath: string | null | undefined) => {
+  if (!pagePath) return false;
+  return pagePath.startsWith("/embed/");
+};
+
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const rangeParam = url.searchParams.get("range") ?? "7d";
@@ -585,6 +590,9 @@ export async function GET(request: Request) {
 
   events.forEach((event) => {
     const path = event.page_path ?? "/";
+    if (shouldIgnorePagePath(path)) {
+      return;
+    }
     if (!pagesMap.has(path)) {
       pagesMap.set(path, {
         pageTitle: event.page_title ?? null,

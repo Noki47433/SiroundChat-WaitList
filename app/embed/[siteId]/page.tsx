@@ -22,11 +22,16 @@ async function fetchConfig(siteId: string): Promise<WidgetConfig | null> {
   try {
     const headerList = headers();
     const host =
-      headerList.get("x-forwarded-host") ??
-      headerList.get("host") ??
-      "localhost:3000";
+      headerList.get("x-forwarded-host")?.split(",")[0]?.trim() ??
+      headerList.get("host")?.split(",")[0]?.trim() ??
+      null;
+    const protocol =
+      headerList.get("x-forwarded-proto")?.split(",")[0]?.trim() ??
+      (process.env.NODE_ENV === "production" ? "https" : "http");
 
-    const protocol = host.includes("localhost") ? "http" : "https";
+    if (!host) {
+      return null;
+    }
 
     const res = await fetch(`${protocol}://${host}/api/widget/config?key=${siteId}`, { cache: "no-store" });
 

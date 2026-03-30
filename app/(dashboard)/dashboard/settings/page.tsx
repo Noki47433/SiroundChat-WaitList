@@ -1,14 +1,13 @@
 import Link from "next/link";
-import { headers } from "next/headers";
 import { randomUUID } from "crypto";
 import { Card } from "@/components/ui/card";
 import { CopyButton } from "@/components/ui/copy-button";
 import { NotificationSettingsPanel } from "@/app/(dashboard)/dashboard/_components/NotificationSettingsPanel";
-import { WrappedLauncher } from "@/app/(dashboard)/dashboard/_components/WrappedLauncher";
 import { FeedbackCard } from "@/app/(dashboard)/dashboard/settings/_components/FeedbackCard";
 import { listMyFeedbackReports } from "@/lib/feedback/queries";
 import { getSupabaseAdminClientIfAvailable } from "@/lib/supabase/admin";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { getBaseUrl } from "@/lib/utils/base-url";
 import { PaywallGate } from "@/src/components/billing/PaywallGate";
 
 export const dynamic = "force-dynamic";
@@ -17,13 +16,6 @@ type BusinessRow = {
   id: string;
   business_name: string | null;
   widget_key: string | null;
-};
-
-const getOrigin = () => {
-  const headerList = headers();
-  const proto = headerList.get("x-forwarded-proto") ?? "http";
-  const host = headerList.get("x-forwarded-host") ?? headerList.get("host") ?? "localhost:3000";
-  return `${proto}://${host}`;
 };
 
 const generateFallbackUuid = () =>
@@ -99,9 +91,8 @@ export default async function DashboardSettingsPage() {
     }
   }
 
-  const origin = getOrigin();
+  const origin = getBaseUrl();
   const embedSnippet = widgetKey ? `<script src="${origin}/api/widget/loader?key=${widgetKey}" async></script>` : "";
-  const webhookEndpoint = `${origin}/api/webhooks/${business.id}`;
 
   const admin = getSupabaseAdminClientIfAvailable();
   const myFeedbackReports = await listMyFeedbackReports({ supabase, userId: user.id, limit: 10 });
@@ -182,23 +173,6 @@ export default async function DashboardSettingsPage() {
       </section>
 
       <section className="space-y-3">
-        <p className="text-xs uppercase tracking-[0.2em] text-white/45">Billing</p>
-        <Card className="space-y-3">
-          <p className="text-sm text-white/70">
-            Plan management, invoices, and upgrade controls live in Billing.
-          </p>
-          <div>
-            <Link
-              href="/billing"
-              className="inline-flex h-10 items-center justify-center rounded-xl border border-white/15 px-4 text-sm font-semibold text-white hover:bg-white/10"
-            >
-              Open Billing
-            </Link>
-          </div>
-        </Card>
-      </section>
-
-      <section className="space-y-3">
         <p className="text-xs uppercase tracking-[0.2em] text-white/45">Notifications</p>
         <NotificationSettingsPanel businessId={business.id} initial={notificationSettings} />
       </section>
@@ -220,24 +194,6 @@ export default async function DashboardSettingsPage() {
         </Card>
       </section>
 
-      <PaywallGate entitlementKey="webhooks">
-        <Card className="space-y-4">
-          <div>
-            <p className="text-xs uppercase tracking-[0.2em] text-white/50">Webhooks</p>
-            <h3 className="mt-2 text-lg font-semibold text-white">Automation endpoint</h3>
-            <p className="mt-1 text-sm text-white/60">
-              Connect external workflows with webhook events from your workspace.
-            </p>
-          </div>
-          <div className="rounded-xl border border-white/10 bg-neutral-950/70 p-3 text-xs font-mono text-white">
-            <pre className="whitespace-pre-wrap break-all">{webhookEndpoint}</pre>
-          </div>
-          <div className="flex justify-end">
-            <CopyButton value={webhookEndpoint} label="Copy endpoint" copiedLabel="Copied" size="sm" variant="secondary" />
-          </div>
-        </Card>
-      </PaywallGate>
-
       <FeedbackCard
         initialRows={myFeedbackReports.map((row) => ({
           id: row.id,
@@ -251,7 +207,6 @@ export default async function DashboardSettingsPage() {
         }))}
         initialContactEmail={user.email ?? null}
       />
-      <WrappedLauncher businessId={business.id} />
     </div>
   );
 }

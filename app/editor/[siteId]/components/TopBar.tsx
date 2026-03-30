@@ -51,14 +51,6 @@ export function TopBar({ siteId, businessName, slug, canPublish, publishedUrl, o
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [publishModalOpen, setPublishModalOpen] = useState(false);
   const [publishUrl, setPublishUrl] = useState<string | null>(publishedUrl);
-  const [domainValue, setDomainValue] = useState("");
-  const [domainStatus, setDomainStatus] = useState<"unregistered" | "pending" | "active" | null>(null);
-  const [domainRecords, setDomainRecords] = useState<
-    Array<{ type: string; name: string; value: string }>
-  >([]);
-  const [domainBusy, setDomainBusy] = useState(false);
-  const [domainError, setDomainError] = useState<string | null>(null);
-  const [domainSuccess, setDomainSuccess] = useState<string | null>(null);
   const [clientOrigin, setClientOrigin] = useState<string | null>(null);
 
   const isDirty = savedSignature !== documentSignature;
@@ -74,25 +66,6 @@ export function TopBar({ siteId, businessName, slug, canPublish, publishedUrl, o
   useEffect(() => {
     setClientOrigin(window.location.origin);
   }, []);
-
-  useEffect(() => {
-    if (!publishModalOpen) return;
-    setDomainError(null);
-    setDomainSuccess(null);
-    fetch(`/api/domain/status?siteId=${siteId}`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (data?.domain) {
-          setDomainValue(data.domain);
-          setDomainStatus(data.status ?? "pending");
-        } else {
-          setDomainStatus("unregistered");
-        }
-      })
-      .catch(() => {
-        setDomainStatus(null);
-      });
-  }, [publishModalOpen, siteId]);
 
   const saveDraft = async () => {
     if (!state.document || saveState === "saving") return false;
@@ -167,31 +140,6 @@ export function TopBar({ siteId, businessName, slug, canPublish, publishedUrl, o
       if (!saved) return;
     }
     window.open(previewUrl, "_blank", "noopener,noreferrer");
-  };
-
-  const connectDomain = async () => {
-    if (!domainValue.trim()) return;
-    setDomainBusy(true);
-    setDomainError(null);
-    setDomainSuccess(null);
-    try {
-      const response = await fetch("/api/domain/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ siteId, domain: domainValue })
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data?.error ?? "Unable to connect domain");
-      }
-      setDomainRecords(Array.isArray(data.instructions) ? data.instructions : []);
-      setDomainStatus(data.status ?? "pending");
-      setDomainSuccess("Domain saved. Add the DNS records below to go live.");
-    } catch (err: any) {
-      setDomainError(err?.message ?? "Unable to connect domain.");
-    } finally {
-      setDomainBusy(false);
-    }
   };
 
   const handleCopyUrl = async () => {
@@ -381,52 +329,15 @@ export function TopBar({ siteId, businessName, slug, canPublish, publishedUrl, o
           <div className="mt-6 grid gap-4 rounded-2xl border border-neutral-200 p-4">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.2em] text-neutral-400">
-                Connect your domain
+                Custom domains
               </p>
               <p className="mt-1 text-sm text-neutral-500">
-                Use your own domain for a professional look.
+                Custom domain connection is being finalized before public rollout. Launch with your SiroundChat URL for now.
               </p>
             </div>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-              <input
-                value={domainValue}
-                onChange={(event) => setDomainValue(event.target.value)}
-                placeholder="www.yourdomain.com"
-                className="h-11 flex-1 rounded-full border border-neutral-300 px-4 text-sm text-neutral-900"
-              />
-              <button
-                type="button"
-                onClick={connectDomain}
-                disabled={domainBusy}
-                className="h-11 rounded-full bg-sc-yellow px-5 text-sm font-semibold text-neutral-900 disabled:opacity-60"
-              >
-                {domainBusy ? "Saving..." : "Connect"}
-              </button>
+            <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-600">
+              We disabled the old placeholder connect flow so published sites don&apos;t imply domain support before DNS verification is real.
             </div>
-            {domainStatus ? (
-              <p className="text-xs text-neutral-500">
-                Status: <span className="font-semibold text-neutral-700">{domainStatus}</span>
-              </p>
-            ) : null}
-            {domainError ? <p className="text-xs text-red-500">{domainError}</p> : null}
-            {domainSuccess ? <p className="text-xs text-emerald-600">{domainSuccess}</p> : null}
-            {domainRecords.length ? (
-              <div className="rounded-2xl border border-neutral-200 bg-white p-3 text-xs text-neutral-600">
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-neutral-400">DNS records</p>
-                <div className="mt-2 space-y-2">
-                  {domainRecords.map((record, index) => (
-                    <div
-                      key={`${record.type}-${record.name}-${index}`}
-                      className="flex items-center justify-between gap-3 rounded-xl bg-neutral-50 px-3 py-2"
-                    >
-                      <span className="text-neutral-500">{record.type}</span>
-                      <span className="font-semibold text-neutral-700">{record.name}</span>
-                      <span className="text-neutral-500">{record.value}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : null}
           </div>
 
           <div className="mt-6 flex justify-end">

@@ -71,6 +71,25 @@ const formatNumber = (value: number) => new Intl.NumberFormat("en-US").format(va
 
 const formatHour = (value: number) => `${String(value).padStart(2, "0")}:00`;
 
+const formatPageLabel = (pagePath: string, pageTitle?: string | null) => {
+  const explicitTitle = pageTitle?.trim();
+  if (explicitTitle) return explicitTitle;
+  if (pagePath === "/") return "Home";
+
+  const cleanPath = pagePath
+    .split("?")[0]
+    .replace(/^\/+/, "")
+    .replace(/\/+$/, "");
+
+  if (!cleanPath) return "Home";
+
+  return cleanPath
+    .split("/")
+    .map((segment) => segment.replace(/[-_]+/g, " "))
+    .map((segment) => segment.replace(/\b\w/g, (char) => char.toUpperCase()))
+    .join(" / ");
+};
+
 export function WebsiteInsightsDashboard({
   initialRange = "7d",
   initialSiteId,
@@ -214,8 +233,8 @@ export function WebsiteInsightsDashboard({
       </div>
 
       {loading && !data ? (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, index) => (
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {Array.from({ length: 3 }).map((_, index) => (
             <Card key={`skeleton-${index}`} className="rounded-3xl border border-white/10 bg-white/5 p-5">
               <Skeleton className="h-4 w-24" />
               <Skeleton className="mt-4 h-8 w-32" />
@@ -226,7 +245,7 @@ export function WebsiteInsightsDashboard({
       ) : null}
 
       {data ? (
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <OverviewCard
             label="Visitors"
             value={data.overview.visitors.value}
@@ -245,12 +264,6 @@ export function WebsiteInsightsDashboard({
             deltaPct={data.overview.leads.deltaPct}
             series={data.overviewSeries?.leads}
             ringPercent={conversionPct}
-          />
-          <OverviewCard
-            label="Calls/WhatsApp Clicks"
-            value={data.overview.ctaClicks.value}
-            deltaPct={data.overview.ctaClicks.deltaPct}
-            series={data.overviewSeries?.ctaClicks}
           />
         </div>
       ) : null}
@@ -314,7 +327,7 @@ export function WebsiteInsightsDashboard({
                     )}
                   >
                     <div className="flex items-center gap-2">
-                      <span className="font-semibold text-white">{page.pageTitle || page.pagePath}</span>
+                      <span className="font-semibold text-white">{formatPageLabel(page.pagePath, page.pageTitle)}</span>
                       {index === 0 ? (
                         <Badge className="border-cyan-400/40 bg-cyan-500/20 text-cyan-100">Top performer</Badge>
                       ) : null}
@@ -336,7 +349,7 @@ export function WebsiteInsightsDashboard({
                     )}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <span className="font-semibold text-white">{page.pageTitle || page.pagePath}</span>
+                      <span className="font-semibold text-white">{formatPageLabel(page.pagePath, page.pageTitle)}</span>
                       {index === 0 ? (
                         <Badge className="border-cyan-400/40 bg-cyan-500/20 text-cyan-100">Top performer</Badge>
                       ) : null}

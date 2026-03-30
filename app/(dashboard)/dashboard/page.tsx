@@ -110,6 +110,33 @@ const activityTone = (type?: string): "success" | "danger" | "warning" | "info" 
   }
 };
 
+const fetchPagedRows = async <TRow,>(
+  queryFactory: (from: number, to: number) => Promise<{ data?: TRow[] | null; error?: unknown }>,
+  pageSize = 1000,
+  maxPages = 100
+) => {
+  const rows: TRow[] = [];
+
+  for (let page = 0; page < maxPages; page += 1) {
+    const from = page * pageSize;
+    const to = from + pageSize - 1;
+    const { data, error } = await queryFactory(from, to);
+
+    if (error) {
+      throw error;
+    }
+
+    const batch = data ?? [];
+    rows.push(...batch);
+
+    if (batch.length < pageSize) {
+      break;
+    }
+  }
+
+  return rows;
+};
+
 export default async function DashboardOverviewPage({
   searchParams
 }: {
@@ -159,54 +186,86 @@ export default async function DashboardOverviewPage({
   const prevStartIso = prevStart.toISOString();
 
   const [
-    conversationsResult,
-    leadsResult,
-    reservationsResult,
-    eventsResult,
+    conversations,
+    currentConversationCountResult,
+    previousConversationCountResult,
+    leads,
+    reservations,
+    events,
     recentEventsResult,
-    messagesResult,
+    messages,
     weeklyMetricsResult,
     impactSummariesResult
   ] =
     await Promise.all([
+      fetchPagedRows(async (from, to) =>
+        (supabase as any)
+          .from("chat_conversations")
+          .select("id, user_name, is_lead, created_at")
+          .eq("business_id", tenant.businessId)
+          .gte("created_at", prevStartIso)
+          .lt("created_at", rangeEndIso)
+          .order("created_at", { ascending: false })
+          .range(from, to)
+      ),
       (supabase as any)
         .from("chat_conversations")
-        .select("id, user_name, is_lead, created_at")
+        .select("id", { count: "exact", head: true })
         .eq("business_id", tenant.businessId)
-        .gte("created_at", prevStartIso)
+        .gte("created_at", rangeStartIso)
         .lt("created_at", rangeEndIso),
       (supabase as any)
-        .from("leads")
-        .select("id, conversation_id, name, email, created_at")
+        .from("chat_conversations")
+        .select("id", { count: "exact", head: true })
         .eq("business_id", tenant.businessId)
         .gte("created_at", prevStartIso)
-        .lt("created_at", rangeEndIso),
-      (supabase as any)
-        .from("reservations")
-        .select("id, conversation_id, customer_name, status, created_at")
-        .eq("business_id", tenant.businessId)
-        .gte("created_at", prevStartIso)
-        .lt("created_at", rangeEndIso),
-      (supabase as any)
-        .from("analytics_events")
-        .select("type, timestamp, metadata")
-        .eq("business_id", tenant.businessId)
-        .gte("timestamp", rangeStartIso)
-        .lt("timestamp", rangeEndIso),
+        .lt("created_at", rangeStartIso),
+      fetchPagedRows(async (from, to) =>
+        (supabase as any)
+          .from("leads")
+          .select("id, conversation_id, name, email, created_at")
+          .eq("business_id", tenant.businessId)
+          .gte("created_at", prevStartIso)
+          .lt("created_at", rangeEndIso)
+          .order("created_at", { ascending: false })
+          .range(from, to)
+      ),
+      fetchPagedRows(async (from, to) =>
+        (supabase as any)
+          .from("reservations")
+          .select("id, conversation_id, customer_name, status, created_at")
+          .eq("business_id", tenant.businessId)
+          .gte("created_at", prevStartIso)
+          .lt("created_at", rangeEndIso)
+          .order("created_at", { ascending: false })
+          .range(from, to)
+      ),
+      fetchPagedRows(async (from, to) =>
+        (supabase as any)
+          .from("analytics_events")
+          .select("type, timestamp, metadata")
+          .eq("business_id", tenant.businessId)
+          .gte("timestamp", rangeStartIso)
+          .lt("timestamp", rangeEndIso)
+          .order("timestamp", { ascending: false })
+          .range(from, to)
+      ),
       (supabase as any)
         .from("analytics_events")
         .select("type, timestamp, metadata")
         .eq("business_id", tenant.businessId)
         .order("timestamp", { ascending: false })
         .limit(20),
-      (supabase as any)
-        .from("chat_messages")
-        .select("conversation_id, sender, created_at, chat_conversations!inner(business_id)")
-        .eq("chat_conversations.business_id", tenant.businessId)
-        .gte("created_at", rangeStartIso)
-        .lt("created_at", rangeEndIso)
-        .order("created_at", { ascending: true })
-      ,
+      fetchPagedRows(async (from, to) =>
+        (supabase as any)
+          .from("chat_messages")
+          .select("conversation_id, sender, created_at, chat_conversations!inner(business_id)")
+          .eq("chat_conversations.business_id", tenant.businessId)
+          .gte("created_at", rangeStartIso)
+          .lt("created_at", rangeEndIso)
+          .order("created_at", { ascending: true })
+          .range(from, to)
+      ),
       (supabase as any)
         .from("business_weekly_metrics")
         .select("*")
@@ -222,33 +281,35 @@ export default async function DashboardOverviewPage({
         .limit(10)
     ]);
 
-  const conversations = (conversationsResult.data ?? []) as Array<{
+  const conversationRows = conversations as Array<{
     id: string;
     user_name?: string | null;
     is_lead?: boolean | null;
     created_at: string;
   }>;
-  const leads = (leadsResult.data ?? []) as Array<{
+  const leadRows = leads as Array<{
     id: string;
     conversation_id?: string | null;
     name?: string | null;
     email?: string | null;
     created_at: string;
   }>;
-  const reservations = (reservationsResult.data ?? []) as Array<{
+  const reservationRows = reservations as Array<{
     id: string;
     conversation_id?: string | null;
     customer_name?: string | null;
     status?: string | null;
     created_at: string;
   }>;
-  const events = (eventsResult.data ?? []) as Array<{ type?: string; timestamp?: string; metadata?: any }>;
+  const eventRows = events as Array<{ type?: string; timestamp?: string; metadata?: any }>;
   const recentEvents = (recentEventsResult.data ?? []) as Array<{
     type?: string;
     timestamp?: string;
     metadata?: any;
   }>;
-  const messages = (messagesResult.data ?? []) as Array<{
+  const currentConversationCount = currentConversationCountResult.count ?? 0;
+  const previousConversationCount = previousConversationCountResult.count ?? 0;
+  const messageRows = messages as Array<{
     conversation_id: string;
     sender: string;
     created_at: string;
@@ -313,14 +374,11 @@ export default async function DashboardOverviewPage({
     benchmarkByIndustry.get("general") ??
     null;
 
-  const currentConversations = conversations.filter((row) => row.created_at >= rangeStartIso);
-  const previousConversations = conversations.filter(
-    (row) => row.created_at >= prevStartIso && row.created_at < rangeStartIso
-  );
-  const currentLeads = leads.filter((row) => row.created_at >= rangeStartIso);
-  const previousLeads = leads.filter((row) => row.created_at >= prevStartIso && row.created_at < rangeStartIso);
-  const currentReservations = reservations.filter((row) => row.created_at >= rangeStartIso);
-  const previousReservations = reservations.filter(
+  const currentConversations = conversationRows.filter((row) => row.created_at >= rangeStartIso);
+  const currentLeads = leadRows.filter((row) => row.created_at >= rangeStartIso);
+  const previousLeads = leadRows.filter((row) => row.created_at >= prevStartIso && row.created_at < rangeStartIso);
+  const currentReservations = reservationRows.filter((row) => row.created_at >= rangeStartIso);
+  const previousReservations = reservationRows.filter(
     (row) => row.created_at >= prevStartIso && row.created_at < rangeStartIso
   );
 
@@ -335,7 +393,7 @@ export default async function DashboardOverviewPage({
   ]);
 
   const eventCounts: Record<string, number> = {};
-  events.forEach((row) => {
+  eventRows.forEach((row) => {
     const type = row?.type ?? "";
     if (!type) return;
     eventCounts[type] = (eventCounts[type] ?? 0) + 1;
@@ -344,14 +402,13 @@ export default async function DashboardOverviewPage({
   const rawChatOpened = eventCounts.chat_opened ?? 0;
   const rawWidgetOpened = eventCounts.widget_opened ?? 0;
   const chatOpenedCount = rawChatOpened > 0 ? rawChatOpened : rawWidgetOpened;
-  const firstMessageCount = eventCounts.first_message_sent ?? 0;
   const fallbackCount = eventCounts.fallback_triggered ?? eventCounts.fallback_occurred ?? 0;
 
   const userMessageCounts = new Map<string, number>();
   const responseTimes: number[] = [];
   const lastUserMessageAt = new Map<string, Date>();
 
-  for (const row of messages) {
+  for (const row of messageRows) {
     const date = new Date(row.created_at);
     if (row.sender === "user") {
       userMessageCounts.set(row.conversation_id, (userMessageCounts.get(row.conversation_id) ?? 0) + 1);
@@ -369,6 +426,9 @@ export default async function DashboardOverviewPage({
   const meaningfulConversations = Array.from(conversationIds).filter(
     (id) => (userMessageCounts.get(id) ?? 0) >= 3
   ).length;
+  const messagedConversationsCount = Array.from(conversationIds).filter(
+    (id) => (userMessageCounts.get(id) ?? 0) >= 1
+  ).length;
 
   const responseTimesSorted = responseTimes.slice().sort((a, b) => a - b);
   const avgResponseMs =
@@ -382,7 +442,7 @@ export default async function DashboardOverviewPage({
   const dailyLeads = buildDailySeries(currentLeads, rangeStart, rangeDays, timeZone, "created_at");
   const dailyReservations = buildDailySeries(currentReservations, rangeStart, rangeDays, timeZone, "created_at");
   const dailyFallbacks = buildDailySeries(
-    events.filter((row) => row?.type === "fallback_triggered" || row?.type === "fallback_occurred"),
+    eventRows.filter((row) => row?.type === "fallback_triggered" || row?.type === "fallback_occurred"),
     rangeStart,
     rangeDays,
     timeZone,
@@ -395,8 +455,8 @@ export default async function DashboardOverviewPage({
   const kpiCards = [
     {
       label: "Conversations",
-      value: currentConversations.length,
-      delta: computeDelta(currentConversations.length, previousConversations.length),
+      value: currentConversationCount,
+      delta: computeDelta(currentConversationCount, previousConversationCount),
       series: dailyConversations.map((point) => point.value),
       icon: "conversations" as const
     },
@@ -423,10 +483,10 @@ export default async function DashboardOverviewPage({
     }
   ];
 
-  const openedBase = chatOpenedCount || firstMessageCount || currentConversations.length;
+  const openedBase = Math.max(currentConversationCount, chatOpenedCount, messagedConversationsCount);
   const convertedCount = convertedConversationIds.size;
-  const openedNotMessaged = Math.max(openedBase - firstMessageCount, 0);
-  const messagedNotMeaningful = Math.max(firstMessageCount - meaningfulConversations, 0);
+  const openedNotMessaged = Math.max(openedBase - messagedConversationsCount, 0);
+  const messagedNotMeaningful = Math.max(messagedConversationsCount - meaningfulConversations, 0);
   const meaningfulNotConverted = Math.max(meaningfulConversations - convertedCount, 0);
 
   const conversionSegments = [
@@ -506,7 +566,9 @@ export default async function DashboardOverviewPage({
     };
   });
 
-  const fallbackRate = firstMessageCount ? Math.round((fallbackCount / firstMessageCount) * 100) : 0;
+  const fallbackRate = messagedConversationsCount
+    ? Math.round((fallbackCount / messagedConversationsCount) * 100)
+    : 0;
   const uptime = "99.9%";
 
   const healthDelta =
@@ -532,7 +594,7 @@ export default async function DashboardOverviewPage({
 
   const funnelSteps = [
     { label: "Opened", value: openedBase, helper: "chat_opened" },
-    { label: "Messaged", value: firstMessageCount, helper: "first_message_sent" },
+    { label: "Messaged", value: messagedConversationsCount, helper: "1+ user message" },
     { label: "Meaningful", value: meaningfulConversations, helper: "3+ messages" },
     { label: "Converted", value: convertedCount, helper: "lead/reservation" }
   ];
@@ -572,7 +634,7 @@ export default async function DashboardOverviewPage({
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="dashboard-heading text-sm font-semibold text-white">Conversations over time</p>
-                <p className="text-xs text-[#cbbd98]">{formatNumber(currentConversations.length)} total in range</p>
+                <p className="text-xs text-[#cbbd98]">{formatNumber(currentConversationCount)} total in range</p>
               </div>
               <div className="dashboard-pill flex items-center gap-1 rounded-full p-1 text-[11px]">
                 {(["7d", "30d", "90d"] as RangeKey[]).map((range) => (
@@ -781,6 +843,7 @@ export default async function DashboardOverviewPage({
                 { label: "Monthly", data: latestMonthlySummary }
               ] as const).map((item) => {
                 const highlight = item.data?.highlights?.[0];
+                const isEligible = item.label === "Weekly" ? weeklyEligible : monthlyEligible;
                 return (
                   <div key={item.label} className="dashboard-inset rounded-2xl p-3">
                     <p className="text-xs uppercase tracking-[0.2em] text-white/50">{item.label}</p>
@@ -794,6 +857,17 @@ export default async function DashboardOverviewPage({
                         </p>
                         <p className="mt-1 text-xs text-[#e7d6a8]">
                           {highlight?.value ?? "Open impact summary for details."}
+                        </p>
+                      </>
+                    ) : !isEligible ? (
+                      <>
+                        <p className="mt-1 text-xs text-[#cbbd98]">
+                          {item.label === "Weekly"
+                            ? "Available after 7 days of activity."
+                            : "Available after 30 days of activity."}
+                        </p>
+                        <p className="mt-1 text-[11px] text-[#8ba6c1]">
+                          We&apos;ll unlock this automatically once enough data is available.
                         </p>
                       </>
                     ) : (

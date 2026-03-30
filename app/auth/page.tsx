@@ -38,7 +38,7 @@ export default function AuthPage({ searchParams }: AuthPageProps) {
             </h1>
             <p className="text-white/70">
               {mode === "signup"
-                ? "Use your invite code to create an approved business account."
+                ? "Create your business account and start onboarding immediately."
                 : "Sign in to continue where you left off."}
             </p>
             <div className="flex items-center gap-4 text-sm">
@@ -51,8 +51,8 @@ export default function AuthPage({ searchParams }: AuthPageProps) {
               <Link href={signupHref} className={mode === "signup" ? "font-semibold text-white" : "text-white/60 hover:text-white"}>
                 Sign up
               </Link>
-              <Link href="/request-access" className="text-white/60 hover:text-white">
-                Request access
+              <Link href="/" className="text-white/60 hover:text-white">
+                Home
               </Link>
             </div>
           </div>

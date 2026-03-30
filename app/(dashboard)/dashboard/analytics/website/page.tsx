@@ -39,7 +39,7 @@ export default async function WebsiteAnalyticsPage({ searchParams }: PageProps) 
 
   const rangeParam = typeof searchParams?.range === "string" ? searchParams?.range : "7d";
   const siteIdParam = typeof searchParams?.siteId === "string" ? searchParams?.siteId : null;
-  const demo = searchParams?.demo === "1";
+  const demo = process.env.NODE_ENV !== "production" && searchParams?.demo === "1";
   const initialRange = rangeParam === "7d" || rangeParam === "30d" || rangeParam === "90d" ? rangeParam : "7d";
 
   return <WebsiteInsightsDashboard initialRange={initialRange} initialSiteId={siteIdParam} demo={demo} />;

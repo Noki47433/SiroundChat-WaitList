@@ -21,18 +21,26 @@ export const ensureSupabaseEnv = (): SupabaseConfig => {
   return { supabaseUrl, supabaseAnonKey };
 };
 
+const isTruthyFlag = (value?: string | null) => value === "true" || value === "1";
+
+export const isProductionEnvironment = () => process.env.NODE_ENV === "production";
+
 export const isAuthDisabled = () => {
+  const publicFlag = process.env.NEXT_PUBLIC_DISABLE_AUTH ?? null;
+  const serverFlag = process.env.DISABLE_AUTH ?? null;
+  const requestedBypass = isTruthyFlag(publicFlag) || isTruthyFlag(serverFlag);
+  const authDisabled = !isProductionEnvironment() && requestedBypass;
+
   if (!loggedAuthStatus) {
     loggedAuthStatus = true;
-    const publicFlag = process.env.NEXT_PUBLIC_DISABLE_AUTH ?? null;
-    const serverFlag = process.env.DISABLE_AUTH ?? null;
-    const authDisabled = publicFlag === "true" || serverFlag === "true";
     console.info("[AUTH_FLAGS]", {
+      production: isProductionEnvironment(),
+      requestedBypass,
       authDisabled,
       NEXT_PUBLIC_DISABLE_AUTH: publicFlag,
       DISABLE_AUTH: serverFlag
     });
   }
 
-  return process.env.NEXT_PUBLIC_DISABLE_AUTH === "true" || process.env.DISABLE_AUTH === "true";
+  return authDisabled;
 };

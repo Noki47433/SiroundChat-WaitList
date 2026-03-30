@@ -54,7 +54,7 @@ export default function LoginPage({ searchParams }: { searchParams?: { redirect?
                   <div className="mt-8 rounded-2xl border border-white/80 bg-white/70 p-4 shadow-[0_14px_28px_rgba(15,23,42,0.08)]">
                     <div className="flex items-center gap-3 text-sm text-slate-600">
                       <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
-                      Secure login - Demo-friendly
+                      Secure login
                     </div>
                   </div>
                 </div>
@@ -70,14 +70,14 @@ export default function LoginPage({ searchParams }: { searchParams?: { redirect?
                 </div>
 
                 <div className="mt-6 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-500">
-                  <Link href="/request-access" className="font-medium text-slate-600 hover:text-slate-900">
-                    Need an invite? Request access
+                  <Link href={`/signup${redirectParam}`} className="font-medium text-slate-600 hover:text-slate-900">
+                    New here? Create account
                   </Link>
                   <Link href="/forgot-password" className="font-medium text-slate-600 hover:text-slate-900">
                     Forgot password?
                   </Link>
-                  <Link href={`/signup${redirectParam}`} className="font-semibold text-amber-600 hover:text-amber-700">
-                    Create an account
+                  <Link href="/" className="font-semibold text-amber-600 hover:text-amber-700">
+                    Back to home
                   </Link>
                 </div>
               </section>

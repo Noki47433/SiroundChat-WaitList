@@ -5,12 +5,6 @@ import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Menu, X } from "lucide-react";
 import { createPortal } from "react-dom";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Modal } from "@/components/ui/modal";
-import { useToast } from "@/components/ui/toast";
-import { NotificationBell } from "@/components/notifications/NotificationBell";
-import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { cn } from "@/lib/utils/cn";
 import { DASHBOARD_NAV } from "./Sidebar";
 
@@ -53,10 +47,7 @@ export function Topbar({
 }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { push } = useToast();
-  const [menuOpen, setMenuOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -70,17 +61,6 @@ export function Topbar({
       router.prefetch(item.href);
     });
   }, [router]);
-
-  const handleLogout = async () => {
-    setShowLogoutConfirm(false);
-    const { error } = await getSupabaseBrowserClient().auth.signOut();
-    if (error) {
-      push({ title: "Logout failed", message: error.message, variant: "error" });
-      return;
-    }
-    push({ title: "Logged out", message: "Redirecting to login.", variant: "success" });
-    router.push("/login");
-  };
 
   return (
     <header
@@ -103,43 +83,6 @@ export function Topbar({
           <div>
             <p className="text-xs uppercase tracking-[0.2em] text-white/45">Current section</p>
             <h1 className="dashboard-heading text-2xl font-semibold text-white">{resolveRouteTitle(pathname)}</h1>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3">
-          <Badge variant="info" className="dashboard-pill border border-[#ffd87266] bg-[#ffd34a1f] text-[#ffe9ad]">
-            Org: {orgName}
-          </Badge>
-          <NotificationBell businessId={businessId} />
-          <div className="relative">
-            <Button
-              variant="secondary"
-              onClick={() => setMenuOpen((value) => !value)}
-              className="dashboard-pill border border-white/20 bg-white/[0.03] text-white/85 hover:bg-white/[0.08]"
-            >
-              {userName}
-            </Button>
-            {menuOpen ? (
-              <div className="dashboard-surface absolute right-0 mt-2 w-48 rounded-2xl p-2 shadow-2xl">
-                <Link
-                  href="/dashboard/account"
-                  className="block rounded-xl px-3 py-2 text-sm text-white/75 hover:bg-white/10 hover:text-white"
-                  onClick={() => setMenuOpen(false)}
-                >
-                  Account
-                </Link>
-                <button
-                  type="button"
-                  className="w-full rounded-xl px-3 py-2 text-left text-sm text-white/75 hover:bg-white/10 hover:text-white"
-                  onClick={() => {
-                    setMenuOpen(false);
-                    setShowLogoutConfirm(true);
-                  }}
-                >
-                  Logout
-                </button>
-              </div>
-            ) : null}
           </div>
         </div>
       </div>
@@ -210,24 +153,6 @@ export function Topbar({
             document.body
           )
         : null}
-
-      <Modal
-        open={showLogoutConfirm}
-        onClose={() => setShowLogoutConfirm(false)}
-        title="Log out of SiroundChat?"
-        footer={
-          <>
-            <Button variant="outline" onClick={() => setShowLogoutConfirm(false)}>
-              Cancel
-            </Button>
-            <Button variant="primary" onClick={handleLogout}>
-              Log out
-            </Button>
-          </>
-        }
-      >
-        Your session will end for this device. You can log back in anytime.
-      </Modal>
     </header>
   );
 }

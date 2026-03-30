@@ -14,6 +14,9 @@ type BusinessRow = {
   owner_user_id?: string | null;
   business_name?: string | null;
   industry?: string | null;
+  access_approved?: boolean | null;
+  onboarding_submitted?: boolean | null;
+  onboarding_data?: Record<string, unknown> | null;
   widget_key?: string | null;
   timezone?: string | null;
   launch_access?: boolean | null;
@@ -168,6 +171,10 @@ export async function ensureBusinessRow(args: {
     owner_user_id: args.userId,
     business_name: (args.businessName ?? "Your business").trim() || "Your business",
     industry: (args.industry ?? "other").trim() || "other",
+    access_approved: false,
+    onboarding_submitted: false,
+    launch_access: false,
+    onboarding_data: {},
     widget_key: generateWidgetKey()
   };
 

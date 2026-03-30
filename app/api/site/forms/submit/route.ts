@@ -177,13 +177,21 @@ export async function POST(request: Request) {
 
     if (form_type === "contact") {
       const contactPayload = payloadResult.data as z.infer<typeof ContactPayloadSchema>;
+      const leadPayload = {
+        source: "website_form",
+        form_type: "contact",
+        site_id: site.id,
+        message: contactPayload.message
+      };
       const leadInsert = {
         business_id: site.business_id,
         conversation_id: null,
         name: contactPayload.name,
         email: contactPayload.email ?? null,
         phone: contactPayload.phone ?? null,
-        source: "website_form"
+        source: "website_form",
+        lead_type: "contact_form",
+        payload: leadPayload
       };
       const { data: leadRow, error: leadError } = await admin.from("leads").insert(leadInsert).select("id").maybeSingle();
       if (!leadError && leadRow?.id) {
@@ -275,6 +283,23 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Failed to save submission" }, { status: 500 });
     }
 
+    if (form_type === "contact" && leadId) {
+      const contactPayload = payloadResult.data as z.infer<typeof ContactPayloadSchema>;
+      await admin
+        .from("leads")
+        .update({
+          payload: {
+            source: "website_form",
+            form_type: "contact",
+            site_id: site.id,
+            submission_id: submission.id,
+            message: contactPayload.message
+          }
+        })
+        .eq("id", leadId)
+        .eq("business_id", site.business_id);
+    }
+
     if (analytics?.sessionId && analytics.pagePath) {
       const baseAnalyticsPayload = {
         businessId: site.business_id,
@@ -321,8 +346,8 @@ export async function POST(request: Request) {
         body,
         severity: form_type === "reservation" ? "critical" : "success",
         category: "ops",
-        cta_label: form_type === "reservation" ? "View reservations" : "View messages",
-        cta_url: form_type === "reservation" ? "/dashboard/reservations" : "/dashboard/conversations",
+        cta_label: form_type === "reservation" ? "View reservations" : leadId ? "View lead" : "Open leads",
+        cta_url: form_type === "reservation" ? "/dashboard/reservations" : leadId ? `/dashboard/leads/${leadId}` : "/dashboard/leads",
         data: {
           site_id: site.id,
           form_type,

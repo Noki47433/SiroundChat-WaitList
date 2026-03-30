@@ -5,6 +5,7 @@ import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getTenantFromSession } from "@/lib/utils/tenant";
 import { insertAnalyticsEvent } from "@/lib/analytics/events";
+import { isHumanTakeoverEnabled } from "@/lib/chat/takeover";
 
 const BodySchema = z.object({
   conversationId: z.string().uuid(),
@@ -12,6 +13,10 @@ const BodySchema = z.object({
 });
 
 export async function POST(request: Request) {
+  if (!isHumanTakeoverEnabled()) {
+    return NextResponse.json({ error: "Human takeover is disabled in V1" }, { status: 410 });
+  }
+
   const payload = await request.json().catch(() => null);
   const parsed = BodySchema.safeParse(payload);
   if (!parsed.success) {

@@ -61,7 +61,7 @@ type StoredTheme = {
 /* ================== DEFAULTS ================== */
 
 const DEFAULT_BUSINESS_NAME = "SiroundChat";
-const DEFAULT_GREETING = "Hi! I can help with demos, pricing, and support questions.";
+const DEFAULT_GREETING = "Hi! How can I help today?";
 const DEFAULT_TONE: TonePreset = "friendly";
 
 /**

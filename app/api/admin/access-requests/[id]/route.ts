@@ -1,9 +1,6 @@
 import { NextResponse } from "next/server";
 import { guardAdminRoute } from "@/lib/admin/guards";
-import {
-  approveAccessRequest,
-  rejectAccessRequest
-} from "@/lib/server/invite-access";
+import { approveBusinessAccess } from "@/lib/server/business-approvals";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,35 +17,18 @@ export async function POST(
   if (!guard.ok) return guard.response;
 
   const payload = (await request.json().catch(() => null)) as
-    | { action?: "approve" | "reject" }
+    | { action?: "approve" }
     | null;
 
-  if (!payload?.action) {
-    return NextResponse.json({ error: "Action is required." }, { status: 400 });
+  if (payload?.action !== "approve") {
+    return NextResponse.json({ error: "Approve action is required." }, { status: 400 });
   }
 
   try {
-    if (payload.action === "approve") {
-      const result = await approveAccessRequest(params.id, guard.userId);
-      return NextResponse.json(
-        {
-          ok: true,
-          invite: {
-            id: result.invite.id,
-            code: result.invite.code,
-            expires_at: result.invite.expires_at,
-            assigned_email: result.invite.assigned_email,
-            assigned_business_name: result.invite.assigned_business_name
-          }
-        },
-        { status: 200 }
-      );
-    }
-
-    await rejectAccessRequest(params.id, guard.userId);
+    await approveBusinessAccess(params.id);
     return NextResponse.json({ ok: true }, { status: 200 });
   } catch (error) {
-    console.error("[ADMIN_ACCESS_REQUEST_ACTION_ERROR]", { requestId: params.id, error });
-    return NextResponse.json({ error: "Unable to update access request." }, { status: 500 });
+    console.error("[ADMIN_BUSINESS_APPROVAL_ERROR]", { businessId: params.id, error });
+    return NextResponse.json({ error: "Unable to approve business." }, { status: 500 });
   }
 }

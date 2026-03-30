@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isPrelaunchModeEnabled } from "@/lib/auth/prelaunch";
+import { isAuthDisabled } from "@/lib/config/auth";
 
 const hasAuthCookie = (request: NextRequest) =>
   request.cookies
@@ -10,7 +10,7 @@ const hasAuthCookie = (request: NextRequest) =>
         (cookie.name.startsWith("sb-") && cookie.name.includes("auth-token"))
     );
 
-const PRIVATE_PAGE_PREFIXES = ["/dashboard", "/billing", "/admin", "/editor"];
+const PRIVATE_PAGE_PREFIXES = ["/dashboard", "/billing", "/admin", "/editor", "/onboarding"];
 
 const PRIVATE_API_EXACT_PATHS = new Set([
   "/api/automations",
@@ -30,12 +30,14 @@ const PRIVATE_API_EXACT_PATHS = new Set([
   "/api/knowledge/ingest",
   "/api/logos/upload",
   "/api/onboarding/restaurant",
+  "/api/onboarding/submit",
   "/api/reservations/list",
   "/api/reservations/settings",
   "/api/reservations/update-status"
 ]);
 
 const PRIVATE_API_PREFIXES = [
+  "/api/account/",
   "/api/admin/",
   "/api/announcements/",
   "/api/analytics/matter",
@@ -66,7 +68,7 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  if (process.env.NEXT_PUBLIC_DISABLE_AUTH === "true" || process.env.DISABLE_AUTH === "true") {
+  if (isAuthDisabled()) {
     return NextResponse.next();
   }
 
@@ -76,10 +78,6 @@ export function middleware(request: NextRequest) {
 
   if (isPrivateApi) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  if (isPrelaunchModeEnabled()) {
-    return NextResponse.redirect(new URL("/", request.url));
   }
 
   const next = `${pathname}${search}`;

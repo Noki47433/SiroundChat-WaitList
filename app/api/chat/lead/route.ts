@@ -29,13 +29,18 @@ export async function POST(request: Request) {
   const { data: lead, error } = await admin
     .from("leads")
     .insert({
-    business_id: conversation.business_id,
-    conversation_id: conversation.id,
-    name,
-    email: email ?? null,
-    phone: phone ?? null,
-    source: "widget"
-  })
+      business_id: conversation.business_id,
+      conversation_id: conversation.id,
+      name,
+      email: email ?? null,
+      phone: phone ?? null,
+      source: "widget",
+      lead_type: "chat",
+      payload: {
+        source: "chatbot",
+        conversation_id: conversation.id
+      }
+    })
     .select("id")
     .single();
 

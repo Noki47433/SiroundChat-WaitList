@@ -10,8 +10,8 @@ type EventType = (typeof EVENT_TYPES)[number];
 const pickRandom = <T,>(items: readonly T[]) => items[Math.floor(Math.random() * items.length)];
 
 export async function POST(request: Request) {
-  if (process.env.NODE_ENV === "production" && process.env.ALLOW_SIMULATE_EVENT !== "true") {
-    return NextResponse.json({ error: "Simulation endpoint disabled in production." }, { status: 403 });
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
   const guard = await guardAdminRoute();

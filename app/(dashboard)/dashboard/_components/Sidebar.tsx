@@ -7,7 +7,6 @@ import {
   BadgeCheck,
   Bot,
   CalendarCheck2,
-  CreditCard,
   FileText,
   Globe,
   LayoutDashboard,
@@ -59,7 +58,6 @@ const TEAM_MEMBER_NAV: NavItem[] = [{ href: "/dashboard/account", label: "Accoun
 
 const ORG_NAV: NavItem[] = [
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
-  { href: "/billing", label: "Billing", icon: CreditCard },
   { href: "/dashboard/badges", label: "Badges", icon: BadgeCheck }
 ];
 

@@ -48,6 +48,8 @@ export interface Database {
           greeting: string | null;
           tone: string | null;
           timezone: string | null;
+          access_approved: boolean;
+          onboarding_submitted: boolean;
           onboarding_data: Json;
           generated_starter_knowledge: string | null;
           onboarding_completed_at: string | null;
@@ -73,6 +75,8 @@ export interface Database {
           greeting?: string | null;
           tone?: string | null;
           timezone?: string | null;
+          access_approved?: boolean;
+          onboarding_submitted?: boolean;
           onboarding_data?: Json;
           generated_starter_knowledge?: string | null;
           onboarding_completed_at?: string | null;
@@ -276,6 +280,8 @@ export interface Database {
           name: string;
           phone: string | null;
           email: string | null;
+          lead_type: string | null;
+          payload: Json;
           source: string;
           created_at: string;
         };
@@ -286,6 +292,8 @@ export interface Database {
           name: string;
           phone?: string | null;
           email?: string | null;
+          lead_type?: string | null;
+          payload?: Json;
           source: string;
           created_at?: string;
         };

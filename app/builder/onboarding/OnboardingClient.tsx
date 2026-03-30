@@ -12,19 +12,21 @@ export default function OnboardingClient() {
   const [loading, setLoading] = useState(false);
 
   const next = searchParams?.get("next") ?? "/builder/onboarding";
-
-  const origin =
-    typeof window !== "undefined"
-      ? window.location.origin
-      : process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-
-  const redirectTo = `${origin}/auth/callback?next=${encodeURIComponent(next)}`;
+  const resolveRedirectTo = () => {
+    const origin =
+      typeof window !== "undefined" && window.location.origin
+        ? window.location.origin
+        : process.env.NEXT_PUBLIC_APP_URL ?? "";
+    return origin
+      ? `${origin}/auth/callback?next=${encodeURIComponent(next)}`
+      : `/auth/callback?next=${encodeURIComponent(next)}`;
+  };
 
   async function signInWithGoogle() {
     setLoading(true);
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo }
+      options: { redirectTo: resolveRedirectTo() }
     });
     setLoading(false);
     if (error) alert(error.message);
@@ -35,7 +37,7 @@ export default function OnboardingClient() {
     setLoading(true);
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: redirectTo }
+      options: { emailRedirectTo: resolveRedirectTo() }
     });
     setLoading(false);
 

@@ -34,8 +34,8 @@ const faqs = [
     answer: "English is supported first, with multilingual support rolling out in early-access phases."
   },
   {
-    question: "When can I try it?",
-    answer: "Join the waitlist now and early-access invites will go out in batches."
+    question: "How fast can I launch?",
+    answer: "You can create an account, connect your business details, and start onboarding right away."
   }
 ];
 

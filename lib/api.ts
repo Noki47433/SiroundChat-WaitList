@@ -48,7 +48,7 @@ const toneExamples: ToneExamples = {
 
 const botDefaults: BotSettings = {
   businessName: "SiroundChat",
-  greeting: "Hi! I can help with demos, pricing, and support questions.",
+  greeting: "Hi! How can I help today?",
   tone: "friendly",
   logoUrl: null
 };

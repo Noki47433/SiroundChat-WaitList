@@ -3,6 +3,10 @@ import { NextResponse } from "next/server";
 import { AnalyticsAggregateQuerySchema } from "@/lib/validation/analytics";
 
 export async function GET(request: Request) {
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   const url = new URL(request.url);
   const parsed = AnalyticsAggregateQuerySchema.safeParse({
     siteId: url.searchParams.get("siteId"),

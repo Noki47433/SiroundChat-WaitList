@@ -32,7 +32,7 @@ export function Slide05_CustomersHelped({ model, isShareMode, isActive, isDemo, 
 
       {hasHelped ? (
         <div className="space-y-1 text-base text-white/70">
-          <p>Your AI handled this without a human takeover.</p>
+          <p>Your AI handled this without a manual handoff.</p>
           <p>That’s a staff member you didn’t have to hire.</p>
         </div>
       ) : (

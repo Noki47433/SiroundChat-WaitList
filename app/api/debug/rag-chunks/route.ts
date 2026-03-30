@@ -7,6 +7,10 @@ export const dynamic = "force-dynamic";
 const normalizeUuid = (value: string | null) => (value ?? "").trim().replace(/[<>]/g, "");
 
 export async function GET(request: Request) {
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   const supabase = getSupabaseRouteClient();
   const {
     data: { user }

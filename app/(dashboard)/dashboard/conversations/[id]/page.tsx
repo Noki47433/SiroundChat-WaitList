@@ -20,7 +20,7 @@ export default async function ConversationDetailPage({ params }: { params: { id:
 
   const { data: conversation, error: convoError } = await (supabase as any)
     .from("chat_conversations")
-    .select("id, user_name, user_email, created_at, takeover_enabled")
+    .select("id, user_name, user_email, created_at")
     .eq("id", params.id)
     .eq("business_id", tenant.businessId)
     .single();
