@@ -12,6 +12,7 @@ import { isAuthDisabled } from "@/lib/config/auth";
 import { FAQ_PRESETS } from "@/app/components/chatbot/chatbotFaqPresets";
 import {
   isSiroundChatDemoBot,
+  SIROUNDCHAT_DEMO_WIDGET_KEY,
   SIROUNDCHAT_DEMO_BUSINESS_NAME,
   SIROUNDCHAT_DEMO_FAQS,
   SIROUNDCHAT_DEMO_GREETING
@@ -93,6 +94,8 @@ const hasWidgetAccess = async (businessId: string) => {
   return access.allowed;
 };
 
+const isFirstPartyHomepageWidget = (widgetKey: string) => widgetKey === SIROUNDCHAT_DEMO_WIDGET_KEY;
+
 const ensureWidgetKeyForBusiness = async (businessId: string) => {
   const admin = getSupabaseAdminClient();
   const { data, error } = await (admin as any)
@@ -140,7 +143,7 @@ export async function GET(request: Request) {
         return NextResponse.json({ error: "Widget not found" }, { status: 404, headers: NO_STORE_HEADERS });
       }
       const allowed = await hasWidgetAccess(business.id);
-      if (!allowed) {
+      if (!allowed && !isFirstPartyHomepageWidget(configKey)) {
         return NextResponse.json(
           { error: "Chatbot embed is not available on the current plan" },
           { status: 403, headers: NO_STORE_HEADERS }

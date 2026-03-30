@@ -1,6 +1,7 @@
 import Script from "next/script";
 import HeroShaderGradient from "@/app/_components/HeroShaderGradient";
 import { HomeContent } from "@/components/HomeContent";
+import { SIROUNDCHAT_DEMO_WIDGET_KEY } from "@/lib/chatbot/siroundchat-demo";
 
 export default function Page() {
   return (
@@ -10,7 +11,7 @@ export default function Page() {
         <HomeContent />
       </div>
       <Script
-        src="https://siroundchat.com/api/widget/loader?key=7ab3238d-0f3d-432a-bf25-543e96247f33"
+        src={`https://siroundchat.com/api/widget/loader?key=${SIROUNDCHAT_DEMO_WIDGET_KEY}`}
         strategy="afterInteractive"
       />
     </>
