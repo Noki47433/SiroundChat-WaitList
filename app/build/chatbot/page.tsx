@@ -35,7 +35,7 @@ export default async function BuildChatbotPage() {
 
   const ctaHref = user
     ? CHATBOT_DESTINATION
-    : `/auth?next=${encodeURIComponent(CHATBOT_DESTINATION)}`;
+    : `/signup?redirect=${encodeURIComponent(CHATBOT_DESTINATION)}`;
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-[#F7D507] px-4 py-10 text-slate-900 sm:px-6 lg:px-8">

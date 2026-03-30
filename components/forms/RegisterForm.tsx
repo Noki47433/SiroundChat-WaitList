@@ -14,6 +14,8 @@ type RegisterFormProps = {
 export default function RegisterForm({ redirect, variant = "dark", compact = false }: RegisterFormProps) {
   const router = useRouter();
   const redirectPath = resolveRedirectPath(redirect, "/dashboard");
+  const loginHref =
+    redirectPath !== "/dashboard" ? `/login?redirect=${encodeURIComponent(redirectPath)}` : "/login";
   const isLight = variant === "light";
 
   const [businessName, setBusinessName] = useState("");
@@ -145,7 +147,10 @@ export default function RegisterForm({ redirect, variant = "dark", compact = fal
 
         <p className={`text-sm ${isLight ? "text-slate-500" : "text-white/60"}`}>
           Already have an account?{" "}
-          <Link href="/login" className={`font-semibold ${isLight ? "text-amber-600 hover:text-amber-700" : "text-white hover:text-white/80"}`}>
+          <Link
+            href={loginHref}
+            className={`font-semibold ${isLight ? "text-amber-600 hover:text-amber-700" : "text-white hover:text-white/80"}`}
+          >
             Login
           </Link>
         </p>

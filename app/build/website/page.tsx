@@ -41,7 +41,7 @@ export default async function BuildWebsitePage() {
 
   const ctaHref = user
     ? WEBSITE_DESTINATION
-    : `/auth?next=${encodeURIComponent(WEBSITE_DESTINATION)}`;
+    : `/signup?redirect=${encodeURIComponent(WEBSITE_DESTINATION)}`;
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-[#F7D507] px-4 py-10 text-slate-900 sm:px-6 lg:px-8">
