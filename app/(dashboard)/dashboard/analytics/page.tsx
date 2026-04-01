@@ -119,6 +119,33 @@ const buildSparklinePoints = (values: number[], width: number, height: number) =
     .join(" ");
 };
 
+const fetchPagedRows = async <TRow,>(
+  queryFactory: (from: number, to: number) => Promise<{ data?: TRow[] | null; error?: unknown }>,
+  pageSize = 1000,
+  maxPages = 100
+) => {
+  const rows: TRow[] = [];
+
+  for (let page = 0; page < maxPages; page += 1) {
+    const from = page * pageSize;
+    const to = from + pageSize - 1;
+    const { data, error } = await queryFactory(from, to);
+
+    if (error) {
+      throw error;
+    }
+
+    const batch = data ?? [];
+    rows.push(...batch);
+
+    if (batch.length < pageSize) {
+      break;
+    }
+  }
+
+  return rows;
+};
+
 export default async function AnalyticsPage({
   searchParams
 }: {
@@ -188,36 +215,48 @@ export default async function AnalyticsPage({
   const prevEndIso = rangeStartIso;
 
   const [
-    conversationsResult,
-    leadsResult,
-    reservationsResult,
+    conversations,
+    leads,
+    reservations,
     prevConversationsResult,
     prevLeadsResult,
     prevReservationsResult,
-    eventsResult,
+    events,
     recentEventsResult,
-    messagesResult
+    messages
   ] = await Promise.all([
+    fetchPagedRows(async (from, to) =>
+      (supabase as any)
+        .from("chat_conversations")
+        .select("id, created_at")
+        .eq("business_id", tenant.businessId)
+        .gte("created_at", rangeStartIso)
+        .lt("created_at", rangeEndIso)
+        .order("created_at", { ascending: false })
+        .range(from, to)
+    ),
+    fetchPagedRows(async (from, to) =>
+      (supabase as any)
+        .from("leads")
+        .select("id, conversation_id, created_at")
+        .eq("business_id", tenant.businessId)
+        .gte("created_at", rangeStartIso)
+        .lt("created_at", rangeEndIso)
+        .order("created_at", { ascending: false })
+        .range(from, to)
+    ),
+    fetchPagedRows(async (from, to) =>
+      (supabase as any)
+        .from("reservations")
+        .select("id, conversation_id, created_at")
+        .eq("business_id", tenant.businessId)
+        .gte("created_at", rangeStartIso)
+        .lt("created_at", rangeEndIso)
+        .order("created_at", { ascending: false })
+        .range(from, to)
+    ),
     (supabase as any)
       .from("chat_conversations")
-      .select("id, created_at")
-      .eq("business_id", tenant.businessId)
-      .gte("created_at", rangeStartIso)
-      .lt("created_at", rangeEndIso),
-    (supabase as any)
-      .from("leads")
-      .select("id, conversation_id, created_at")
-      .eq("business_id", tenant.businessId)
-      .gte("created_at", rangeStartIso)
-      .lt("created_at", rangeEndIso),
-    (supabase as any)
-      .from("reservations")
-      .select("id, conversation_id, created_at")
-      .eq("business_id", tenant.businessId)
-      .gte("created_at", rangeStartIso)
-      .lt("created_at", rangeEndIso),
-    (supabase as any)
-      .from("chat_conversations")
       .select("id", { count: "exact", head: true })
       .eq("business_id", tenant.businessId)
       .gte("created_at", prevStartIso)
@@ -234,41 +273,48 @@ export default async function AnalyticsPage({
       .eq("business_id", tenant.businessId)
       .gte("created_at", prevStartIso)
       .lt("created_at", prevEndIso),
-    (supabase as any)
-      .from("analytics_events")
-      .select("type, timestamp, metadata")
-      .eq("business_id", tenant.businessId)
-      .gte("timestamp", rangeStartIso)
-      .lt("timestamp", rangeEndIso),
+    fetchPagedRows(async (from, to) =>
+      (supabase as any)
+        .from("analytics_events")
+        .select("type, timestamp, metadata")
+        .eq("business_id", tenant.businessId)
+        .gte("timestamp", rangeStartIso)
+        .lt("timestamp", rangeEndIso)
+        .order("timestamp", { ascending: false })
+        .range(from, to)
+    ),
     (supabase as any)
       .from("analytics_events")
       .select("type, timestamp, metadata")
       .eq("business_id", tenant.businessId)
       .order("timestamp", { ascending: false })
       .limit(20),
-    (supabase as any)
-      .from("chat_messages")
-      .select("conversation_id, sender, message_text, created_at, chat_conversations!inner(business_id)")
-      .eq("chat_conversations.business_id", tenant.businessId)
-      .gte("created_at", rangeStartIso)
-      .lt("created_at", rangeEndIso)
-      .order("created_at", { ascending: true })
+    fetchPagedRows(async (from, to) =>
+      (supabase as any)
+        .from("chat_messages")
+        .select("conversation_id, sender, message_text, created_at, chat_conversations!inner(business_id)")
+        .eq("chat_conversations.business_id", tenant.businessId)
+        .gte("created_at", rangeStartIso)
+        .lt("created_at", rangeEndIso)
+        .order("created_at", { ascending: true })
+        .range(from, to)
+    )
   ]);
 
-  const conversations = (conversationsResult.data ?? []) as Array<{ id: string; created_at: string }>;
-  const leads = (leadsResult.data ?? []) as Array<{ id: string; conversation_id?: string | null; created_at: string }>;
-  const reservations = (reservationsResult.data ?? []) as Array<{
+  const conversationRows = conversations as Array<{ id: string; created_at: string }>;
+  const leadRows = leads as Array<{ id: string; conversation_id?: string | null; created_at: string }>;
+  const reservationRows = reservations as Array<{
     id: string;
     conversation_id?: string | null;
     created_at: string;
   }>;
-  const events = (eventsResult.data ?? []) as Array<{ type?: string; timestamp?: string; metadata?: any }>;
+  const eventRows = events as Array<{ type?: string; timestamp?: string; metadata?: any }>;
   const recentEvents = (recentEventsResult.data ?? []) as Array<{
     type?: string;
     timestamp?: string;
     metadata?: any;
   }>;
-  const messages = (messagesResult.data ?? []) as Array<{
+  const messageRows = messages as Array<{
     conversation_id: string;
     sender: string;
     message_text: string | null;
@@ -279,10 +325,10 @@ export default async function AnalyticsPage({
   const prevLeads = prevLeadsResult.count ?? 0;
   const prevReservations = prevReservationsResult.count ?? 0;
 
-  const conversationIds = new Set(conversations.map((row) => row.id));
-  const leadConversationIds = new Set(leads.map((row) => row.conversation_id).filter(Boolean) as string[]);
+  const conversationIds = new Set(conversationRows.map((row) => row.id));
+  const leadConversationIds = new Set(leadRows.map((row) => row.conversation_id).filter(Boolean) as string[]);
   const reservationConversationIds = new Set(
-    reservations.map((row) => row.conversation_id).filter(Boolean) as string[]
+    reservationRows.map((row) => row.conversation_id).filter(Boolean) as string[]
   );
   const convertedConversationIds = new Set<string>([
     ...Array.from(leadConversationIds),
@@ -290,7 +336,7 @@ export default async function AnalyticsPage({
   ]);
 
   const eventCounts: Record<string, number> = {};
-  events.forEach((row) => {
+  eventRows.forEach((row) => {
     const type = row?.type ?? "";
     if (!type) return;
     eventCounts[type] = (eventCounts[type] ?? 0) + 1;
@@ -299,7 +345,7 @@ export default async function AnalyticsPage({
   const rawChatOpened = eventCounts.chat_opened ?? 0;
   const rawWidgetOpened = eventCounts.widget_opened ?? 0;
   const chatOpenedCount = rawChatOpened > 0 ? rawChatOpened : rawWidgetOpened;
-  const firstMessageCount = eventCounts.first_message_sent ?? 0;
+  const rawFirstMessageCount = eventCounts.first_message_sent ?? 0;
   const fallbackCount = eventCounts.fallback_triggered ?? eventCounts.fallback_occurred ?? 0;
 
   const userMessageCounts = new Map<string, number>();
@@ -314,7 +360,7 @@ export default async function AnalyticsPage({
     hour12: false
   });
 
-  for (const row of messages) {
+  for (const row of messageRows) {
     const timestamp = row.created_at;
     const date = new Date(timestamp);
     const parts = heatmapFormatter.formatToParts(date);
@@ -344,6 +390,11 @@ export default async function AnalyticsPage({
   const meaningfulConversations = Array.from(conversationIds).filter(
     (id) => (userMessageCounts.get(id) ?? 0) >= 3
   ).length;
+  const messagedConversationCount = Array.from(conversationIds).filter(
+    (id) => (userMessageCounts.get(id) ?? 0) >= 1
+  ).length;
+  const firstMessageCount = Math.max(rawFirstMessageCount, messagedConversationCount);
+  const effectiveChatOpenedCount = Math.max(chatOpenedCount, firstMessageCount);
 
   const droppedConversationIds = new Set<string>();
   Array.from(conversationIds).forEach((id) => {
@@ -355,7 +406,7 @@ export default async function AnalyticsPage({
   const convertedQuestions: Record<string, number> = {};
   const droppedQuestions: Record<string, number> = {};
 
-  messages.forEach((row) => {
+  messageRows.forEach((row) => {
     if (row.sender !== "user") return;
     const normalized = normalizeQuestion(row.message_text);
     if (!normalized || normalized.length < 4) return;
@@ -376,7 +427,7 @@ export default async function AnalyticsPage({
   const topDroppedQuestions = sortByCount(droppedQuestions);
 
   const intentStats = new Map<string, { total: number; converted: number }>();
-  events
+  eventRows
     .filter((row) => row?.type === "intent_detected")
     .forEach((row) => {
       const meta = row?.metadata as any;
@@ -423,7 +474,7 @@ export default async function AnalyticsPage({
 
   const responseBucketMax = Math.max(...Object.values(responseBuckets), 0);
 
-  const totalConversations = conversations.length;
+  const totalConversations = conversationRows.length;
   const totalUserMessages = Array.from(conversationIds).reduce(
     (sum, id) => sum + (userMessageCounts.get(id) ?? 0),
     0
@@ -440,11 +491,11 @@ export default async function AnalyticsPage({
       ? Math.round((meaningfulRate * 0.4 + avgMessagesScore * 0.3 + conversionRate * 0.3) * 100)
       : null;
 
-  const conversationDaily = buildDailySeries(conversations, rangeStart, rangeDays, timeZone, "created_at");
-  const leadDaily = buildDailySeries(leads, rangeStart, rangeDays, timeZone, "created_at");
-  const reservationDaily = buildDailySeries(reservations, rangeStart, rangeDays, timeZone, "created_at");
+  const conversationDaily = buildDailySeries(conversationRows, rangeStart, rangeDays, timeZone, "created_at");
+  const leadDaily = buildDailySeries(leadRows, rangeStart, rangeDays, timeZone, "created_at");
+  const reservationDaily = buildDailySeries(reservationRows, rangeStart, rangeDays, timeZone, "created_at");
   const fallbackDaily = buildDailySeries(
-    events.filter((row) => row?.type === "fallback_triggered" || row?.type === "fallback_occurred"),
+    eventRows.filter((row) => row?.type === "fallback_triggered" || row?.type === "fallback_occurred"),
     rangeStart,
     rangeDays,
     timeZone,
@@ -462,14 +513,14 @@ export default async function AnalyticsPage({
     },
     {
       label: "Leads",
-      value: leads.length,
-      change: prevLeads ? ((leads.length - prevLeads) / prevLeads) * 100 : null,
+      value: leadRows.length,
+      change: prevLeads ? ((leadRows.length - prevLeads) / prevLeads) * 100 : null,
       series: leadDaily.map((point) => point.value)
     },
     {
       label: "Reservations",
-      value: reservations.length,
-      change: prevReservations ? ((reservations.length - prevReservations) / prevReservations) * 100 : null,
+      value: reservationRows.length,
+      change: prevReservations ? ((reservationRows.length - prevReservations) / prevReservations) * 100 : null,
       series: reservationDaily.map((point) => point.value)
     },
     {
@@ -481,11 +532,11 @@ export default async function AnalyticsPage({
   ];
 
   const funnelSteps: FunnelStep[] = [
-    { label: "Chat opened", value: chatOpenedCount, helper: "chat_opened" },
+    { label: "Chat opened", value: effectiveChatOpenedCount, helper: "chat_opened" },
     { label: "First message", value: firstMessageCount, helper: "first_message_sent" },
     { label: "Meaningful", value: meaningfulConversations, helper: "3+ user" },
-    { label: "Lead", value: leads.length, helper: "lead_created" },
-    { label: "Reservation", value: reservations.length, helper: "reservation_created" }
+    { label: "Lead", value: leadRows.length, helper: "lead_created" },
+    { label: "Reservation", value: reservationRows.length, helper: "reservation_created" }
   ];
 
   const heatmapMax = Math.max(...heatmap.flat(), 0);
@@ -591,7 +642,7 @@ export default async function AnalyticsPage({
   const lastUpdatedLabel = now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 select-none">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs uppercase tracking-[0.2em] text-white/40">Analytics</p>
@@ -623,7 +674,7 @@ export default async function AnalyticsPage({
 
       <MatterMetrics initialRange={rangeKey} />
 
-      <div className="grid gap-4 lg:grid-cols-[3fr,1fr] lg:items-start">
+      <div className="grid select-none gap-4 lg:grid-cols-[3fr,1fr] lg:items-start">
         <div className="space-y-4">
           <div className="grid gap-4 lg:grid-cols-[2fr,1fr]">
             <Card className="rounded-3xl border border-white/10 bg-white/5 p-5 backdrop-blur">
@@ -638,7 +689,7 @@ export default async function AnalyticsPage({
                 <HeroAreaChart series={dailyCounts} />
               </div>
               <div className="mt-4 grid grid-cols-3 gap-3">
-                <StatPill label="Opens" value={formatNumber(chatOpenedCount)} />
+                <StatPill label="Opens" value={formatNumber(effectiveChatOpenedCount)} />
                 <StatPill label="Avg response" value={formatDuration(avgResponseMs)} />
                 <StatPill label="Conversion" value={`${conversionPercent}%`} />
               </div>

@@ -16,6 +16,7 @@ import {
 import { useToast } from "@/components/ui/toast";
 import { useEditorActions, useEditorState } from "@/lib/website-builder/editor/EditorProvider";
 import { selectActivePage } from "@/lib/website-builder/editor/selectors";
+import { buildPublishedSiteUrl } from "@/lib/utils/published-site-url";
 
 type TopBarProps = {
   siteId: string;
@@ -51,21 +52,13 @@ export function TopBar({ siteId, businessName, slug, canPublish, publishedUrl, o
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [publishModalOpen, setPublishModalOpen] = useState(false);
   const [publishUrl, setPublishUrl] = useState<string | null>(publishedUrl);
-  const [clientOrigin, setClientOrigin] = useState<string | null>(null);
 
   const isDirty = savedSignature !== documentSignature;
-  const defaultLiveUrl = useMemo(
-    () => (clientOrigin ? `${clientOrigin}/s/${slug}` : `/s/${slug}`),
-    [clientOrigin, slug]
-  );
+  const defaultLiveUrl = useMemo(() => buildPublishedSiteUrl(slug), [slug]);
 
   useEffect(() => {
     setPublishUrl(publishedUrl);
   }, [publishedUrl]);
-
-  useEffect(() => {
-    setClientOrigin(window.location.origin);
-  }, []);
 
   const saveDraft = async () => {
     if (!state.document || saveState === "saving") return false;
@@ -112,14 +105,6 @@ export function TopBar({ siteId, businessName, slug, canPublish, publishedUrl, o
       });
       if (!response.ok) {
         const payload = await response.json().catch(() => null);
-        if (response.status === 403 && payload?.code === "PLAN_UPGRADE_REQUIRED") {
-          pushToast({
-            title: "Upgrade required",
-            message: "Your current plan does not include website publishing. Open Billing to upgrade.",
-            variant: "info"
-          });
-          return;
-        }
         throw new Error(payload?.error ?? "Publish failed");
       }
       const data = await response.json();
@@ -290,7 +275,7 @@ export function TopBar({ siteId, businessName, slug, canPublish, publishedUrl, o
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.3em] text-neutral-400">Published</p>
               <h2 className="mt-2 text-2xl font-semibold text-neutral-900">Your site is live</h2>
-              <p className="mt-1 text-sm text-neutral-500">Share your URL or connect a custom domain.</p>
+              <p className="mt-1 text-sm text-neutral-500">Share your live SiroundChat subdomain with customers.</p>
             </div>
             <button
               type="button"
@@ -328,11 +313,9 @@ export function TopBar({ siteId, businessName, slug, canPublish, publishedUrl, o
 
           <div className="mt-6 grid gap-4 rounded-2xl border border-neutral-200 p-4">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-neutral-400">
-                Custom domains
-              </p>
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-neutral-400">V1 domain setup</p>
               <p className="mt-1 text-sm text-neutral-500">
-                Custom domain connection is being finalized before public rollout. Launch with your SiroundChat URL for now.
+                Published sites go live on your SiroundChat subdomain in v1. Custom domains stay disabled until DNS verification is fully built.
               </p>
             </div>
             <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-600">

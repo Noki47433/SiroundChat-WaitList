@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import {
-  hasEffectiveBillingAccess,
-  resolveBillingEntitlements
+  getFullEntitlements
 } from "@/lib/billing/entitlements";
 import { userHasLaunchAccess } from "@/lib/server/launch-access";
 import {
@@ -52,11 +51,8 @@ export async function GET(request: Request) {
 
   try {
     const subscription = await getWorkspaceSubscription(selection.businessId);
-    const accessActive = hasEffectiveBillingAccess(subscription);
-    const entitlements = resolveBillingEntitlements(
-      subscription.billing_plan_id,
-      subscription.is_access_active
-    );
+    const accessActive = true;
+    const entitlements = getFullEntitlements();
 
     return NextResponse.json(
       {

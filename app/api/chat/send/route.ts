@@ -257,6 +257,77 @@ const DEFAULT_RESERVATION_STATE: ReservationState = {
   reservation_id: null
 };
 
+const FEEDBACK_CLOSING_PHRASES = [
+  "got it",
+  "makes sense",
+  "that helps",
+  "that helped",
+  "sounds good",
+  "looks good",
+  "all good",
+  "thats all",
+  "thats it",
+  "solved",
+  "understood",
+  "perfect",
+  "awesome",
+  "great",
+  "faleminderit",
+  "perfekt",
+  "super",
+  "kuptova",
+  "shum mir",
+  "n rregull"
+];
+
+const FEEDBACK_REPLY_BLOCKERS = [
+  "how can i help",
+  "si mund te te ndihmoj",
+  "do you want",
+  "would you like",
+  "can you",
+  "could you",
+  "should i confirm",
+  "just reply with",
+  "reply with yes or no",
+  "share another",
+  "share your",
+  "tell me",
+  "give me",
+  "pick another",
+  "choose",
+  "which one",
+  "how many",
+  "please try once more",
+  "please try again",
+  "i didn t catch",
+  "i dont have the exact",
+  "ta konfirmoj tani",
+  "me jep",
+  "ma jep",
+  "cilin te ta rezervoj",
+  "nuk e kapa daten",
+  "per sa persona"
+];
+
+const isLikelyConversationClosingMessage = (message: string) => {
+  const normalized = normalizeText(message);
+  if (!normalized) return false;
+  if (message.includes("?")) return false;
+  if (normalized.split(" ").length > 10) return false;
+  if (isGratitudeMessage(message)) return true;
+  return FEEDBACK_CLOSING_PHRASES.some((phrase) => normalized.includes(phrase));
+};
+
+const isFeedbackPromptableReply = (reply: string) => {
+  const normalized = normalizeText(reply);
+  if (!normalized) return false;
+  if (normalized.includes(normalizeText(UNKNOWN_REPLY))) return false;
+  if (reply.includes("?")) return false;
+  if (FEEDBACK_REPLY_BLOCKERS.some((phrase) => normalized.includes(phrase))) return false;
+  return normalized.split(" ").length >= 5;
+};
+
 const RESERVATION_TRIGGER_PHRASES = [
   "book a table",
   "make a reservation",
@@ -1619,6 +1690,12 @@ export async function POST(req: Request) {
       .eq("conversation_id", conversationId)
       .eq("sender", "user");
 
+    const { count: assistantMessageCount, error: assistantMessageCountError } = await (admin as any)
+      .from("chat_messages")
+      .select("id", { count: "exact", head: true })
+      .eq("conversation_id", conversationId)
+      .eq("sender", "assistant");
+
     if (userMessageCountError) {
       log("error", "Failed to count user messages", { error: userMessageCountError });
     } else if (userMessageCount === 1) {
@@ -1644,14 +1721,11 @@ export async function POST(req: Request) {
       });
     }
 
-    const feedbackAlreadySubmitted = await hasConversationFeedback(conversationId);
-    const gratitudeMatched = isGratitudeMessage(body.message);
-    if (gratitudeMatched && !feedbackAlreadySubmitted) {
-      await (admin as any)
-        .from("chat_conversations")
-        .update({ should_prompt_feedback: true })
-        .eq("id", conversationId);
+    if (assistantMessageCountError) {
+      log("error", "Failed to count assistant messages", { error: assistantMessageCountError });
     }
+
+    const feedbackAlreadySubmitted = await hasConversationFeedback(conversationId);
 
     const extractedLead = extractLeadInfo(body.message);
     const leadName = pickFirstNonEmpty(body.name, extractedLead.name);
@@ -1972,7 +2046,7 @@ export async function POST(req: Request) {
 
     const { data: takeoverRow, error: takeoverError } = await (admin as any)
       .from("chat_conversations")
-      .select("takeover_enabled, should_prompt_feedback, followup_prompted_at")
+      .select("takeover_enabled, should_prompt_feedback, followup_prompted_at, feedback_prompted_at")
       .eq("id", conversationId)
       .maybeSingle();
 
@@ -1982,6 +2056,7 @@ export async function POST(req: Request) {
 
     const takeoverEnabled = Boolean(takeoverRow?.takeover_enabled);
     const shouldPromptFeedback = Boolean(takeoverRow?.should_prompt_feedback);
+    const feedbackPromptedAt = takeoverRow?.feedback_prompted_at ? new Date(takeoverRow.feedback_prompted_at) : null;
     const followupPromptedAt = takeoverRow?.followup_prompted_at
       ? new Date(takeoverRow.followup_prompted_at)
       : null;
@@ -1994,9 +2069,40 @@ export async function POST(req: Request) {
       });
     }
 
-    const consumeFeedbackPrompt = async (assistantMessageIdValue: string | null) => {
+    const totalUserMessages = Number(userMessageCount ?? 0);
+    const totalAssistantMessages = Number(assistantMessageCount ?? 0);
+
+    const shouldPromptFeedbackForTurn = (params: {
+      reply: string;
+      hasActions?: boolean;
+      appendedFollowup?: boolean;
+      reservationState?: ReservationState;
+    }) => {
+      if (feedbackAlreadySubmitted || feedbackPromptedAt) return false;
+      if (shouldPromptFeedback) return true;
+      if (params.appendedFollowup || params.hasActions) return false;
+
+      if (params.reservationState?.mode === "submitted" && params.reservationState.confirmed) {
+        return true;
+      }
+
+      if (!isFeedbackPromptableReply(params.reply)) return false;
+
+      if ((hasContactDetails || providedContactInfo || askedForBusinessContact) && totalAssistantMessages >= 1) {
+        return true;
+      }
+
+      if (isLikelyConversationClosingMessage(body.message) && totalAssistantMessages >= 1) {
+        return true;
+      }
+
+      return totalUserMessages >= 3 && totalAssistantMessages >= 2;
+    };
+
+    const consumeFeedbackPrompt = async (assistantMessageIdValue: string | null, promptNow = false) => {
       if (!assistantMessageIdValue) return false;
-      if (!shouldPromptFeedback || feedbackAlreadySubmitted) return false;
+      if (feedbackAlreadySubmitted || feedbackPromptedAt) return false;
+      if (!promptNow && !shouldPromptFeedback) return false;
       await (admin as any)
         .from("chat_conversations")
         .update({ should_prompt_feedback: false, feedback_prompted_at: new Date().toISOString() })
@@ -2049,7 +2155,10 @@ export async function POST(req: Request) {
 
       const assistantMessageId = assistantMessage?.id ? String(assistantMessage.id) : null;
       await maybeTrackResponseDelay(Date.now() - requestStartMs, conversationId);
-      const promptFeedback = await consumeFeedbackPrompt(assistantMessageId);
+      const promptFeedback = await consumeFeedbackPrompt(
+        assistantMessageId,
+        shouldPromptFeedbackForTurn({ reply: directDemoReply })
+      );
 
       return NextResponse.json({
         reply: directDemoReply,
@@ -2787,7 +2896,14 @@ export async function POST(req: Request) {
 
       await maybeTrackResponseDelay(Date.now() - requestStartMs, conversationId);
 
-      const promptFeedback = await consumeFeedbackPrompt(assistantMessageId);
+      const promptFeedback = await consumeFeedbackPrompt(
+        assistantMessageId,
+        shouldPromptFeedbackForTurn({
+          reply,
+          hasActions: orchestratorActions.length > 0,
+          reservationState
+        })
+      );
 
       return NextResponse.json({
         reply,
@@ -2881,7 +2997,13 @@ export async function POST(req: Request) {
       }
 
       const assistantMessageId = assistantMessage?.id ? String(assistantMessage.id) : null;
-      const promptFeedback = await consumeFeedbackPrompt(assistantMessageId);
+      const promptFeedback = await consumeFeedbackPrompt(
+        assistantMessageId,
+        shouldPromptFeedbackForTurn({
+          reply: replyFromOrchestrator,
+          hasActions: orchestratorActions.length > 0
+        })
+      );
       await maybeTrackResponseDelay(Date.now() - requestStartMs, conversationId);
 
       return NextResponse.json({
@@ -3210,7 +3332,15 @@ export async function POST(req: Request) {
       }
     }
 
-    const promptFeedback = await consumeFeedbackPrompt(assistantMessageId);
+    const promptFeedback = await consumeFeedbackPrompt(
+      assistantMessageId,
+      shouldPromptFeedbackForTurn({
+        reply,
+        hasActions: orchestratorActions.length > 0,
+        appendedFollowup,
+        reservationState
+      })
+    );
 
     // 8) Response (debug sources only for authed dashboard)
     const response: {

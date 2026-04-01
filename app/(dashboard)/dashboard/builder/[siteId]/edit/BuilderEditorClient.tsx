@@ -661,7 +661,6 @@ export function BuilderEditorClient({ initialSite, canPublish }: BuilderEditorCl
   const [publishedUrl, setPublishedUrl] = useState(initialSite.publishedUrl);
   const [isPublishing, setIsPublishing] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
-  const [publishNeedsUpgrade, setPublishNeedsUpgrade] = useState(false);
   const [publishConfirmOpen, setPublishConfirmOpen] = useState(false);
   const [publishSuccessOpen, setPublishSuccessOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<SiteSection | null>(null);
@@ -1882,7 +1881,6 @@ export function BuilderEditorClient({ initialSite, canPublish }: BuilderEditorCl
     if (!canPublish) return;
     setIsPublishing(true);
     setPublishError(null);
-    setPublishNeedsUpgrade(false);
     setPublishConfirmOpen(false);
 
     try {
@@ -1894,11 +1892,6 @@ export function BuilderEditorClient({ initialSite, canPublish }: BuilderEditorCl
 
       if (!response.ok) {
         const payload = await response.json().catch(() => null);
-        if (response.status === 403 && payload?.code === "PLAN_UPGRADE_REQUIRED") {
-          setPublishError(payload?.error ?? "Your current plan does not include website publishing.");
-          setPublishNeedsUpgrade(true);
-          return;
-        }
         throw new Error(payload?.error ?? "Publish failed");
       }
 
@@ -2259,7 +2252,6 @@ export function BuilderEditorClient({ initialSite, canPublish }: BuilderEditorCl
               type="button"
               onClick={() => {
                 setPublishError(null);
-                setPublishNeedsUpgrade(false);
                 setPublishConfirmOpen(true);
               }}
               disabled={!canPublish || isPublishing}
@@ -2277,14 +2269,6 @@ export function BuilderEditorClient({ initialSite, canPublish }: BuilderEditorCl
                 View live
               </a>
             ) : null}
-            {!canPublish || publishNeedsUpgrade ? (
-              <Link
-                href="/billing?blocked=publish_website"
-                className="rounded-xl border border-amber-200 bg-amber-100 px-3 py-2 text-xs font-semibold text-amber-900"
-              >
-                Upgrade
-              </Link>
-            ) : null}
             <Link
               href="/dashboard/hire-pro"
               className="rounded-xl border border-border-subtle px-3 py-2 text-xs font-semibold"
@@ -2301,16 +2285,10 @@ export function BuilderEditorClient({ initialSite, canPublish }: BuilderEditorCl
           </div>
         </div>
       </div>
-      {!canPublish || publishNeedsUpgrade ? (
+      {!canPublish ? (
         <div className="border-b border-amber-200 bg-amber-50">
           <div className="mx-auto flex max-w-[1400px] flex-wrap items-center justify-between gap-3 px-4 py-2 text-xs text-amber-900">
-            <span>Your current plan does not include website publishing. Upgrade to unlock it.</span>
-            <Link
-              href="/billing?blocked=publish_website"
-              className="rounded-full border border-amber-300 bg-amber-100 px-3 py-1 font-semibold"
-            >
-              Upgrade now
-            </Link>
+            <span>Publishing is unavailable right now.</span>
           </div>
         </div>
       ) : null}
@@ -4959,7 +4937,7 @@ export function BuilderEditorClient({ initialSite, canPublish }: BuilderEditorCl
         <div className="space-y-2 text-xs text-white/70">
           <p className="font-semibold text-white">What&apos;s next</p>
           <ul className="list-disc space-y-1 pl-5">
-            <li>Finish setting up your site in the dashboard (domain, SEO, and business info).</li>
+            <li>Finish setting up your site in the dashboard (SEO and business info).</li>
             <li>Share your link with customers and update any profiles.</li>
           </ul>
           <p>You are responsible for verifying the accuracy and legality of published content.</p>

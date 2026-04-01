@@ -1,12 +1,17 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import Script from "next/script";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { getOwnedBuilderSite } from "@/lib/builder/site-access";
 import { SiteDocumentSchema } from "@/lib/website-builder/schema";
 import { TemplateRenderer } from "@/components/website-builder/templates/TemplateRenderer";
-import { getBaseUrl } from "@/lib/utils/base-url";
+import {
+  buildPublishedSiteUrl,
+  extractPublishedSiteSlugFromHost,
+  getRequestHost
+} from "@/lib/utils/published-site-url";
 import { resolveLiveChat } from "@/lib/website-builder/live-chat";
 
 export const revalidate = 300;
@@ -16,16 +21,34 @@ type PageProps = {
   searchParams?: { preview?: string; siteId?: string; page?: string };
 };
 
-const getSeoFields = (document: unknown) => {
+const buildCanonicalUrl = (slug: string, searchParams?: PageProps["searchParams"]) => {
+  const url = new URL(buildPublishedSiteUrl(slug));
+  if (searchParams?.page) {
+    url.searchParams.set("page", searchParams.page);
+  }
+  return url.toString();
+};
+
+const resolveAbsoluteUrl = (value: string | null | undefined, canonicalUrl: string) => {
+  if (!value) return undefined;
+  try {
+    return new URL(value, canonicalUrl).toString();
+  } catch {
+    return undefined;
+  }
+};
+
+const getSeoFields = (document: unknown, fallbackBusinessName?: string | null) => {
   const parsed = SiteDocumentSchema.safeParse(document);
   if (!parsed.success) return null;
   const sections = parsed.data.pages?.[0]?.sections ?? [];
   const hero = sections.find((section) => section.type === "hero");
   const headline = (hero?.content as { headline?: string; subheadline?: string } | undefined)?.headline;
   const subheadline = (hero?.content as { headline?: string; subheadline?: string } | undefined)?.subheadline;
+  const businessName = parsed.data.siteBrief?.businessName ?? fallbackBusinessName ?? "Business";
   return {
-    title: parsed.data.seo?.title ?? headline ?? "SiroundChat Site",
-    description: parsed.data.seo?.description ?? subheadline ?? "Learn more about this business.",
+    title: parsed.data.seo?.title ?? headline ?? businessName,
+    description: parsed.data.seo?.description ?? subheadline ?? `Learn more about ${businessName}.`,
     ogImage: parsed.data.seo?.ogImage ?? null,
     pageTitle: headline ?? null
   };
@@ -134,18 +157,31 @@ export async function generateMetadata({ params, searchParams }: PageProps): Pro
     return { title: "Site not found" };
   }
 
-  const seo = getSeoFields(data.document);
-  const canonicalUrl = `${getBaseUrl()}/s/${data.site.slug ?? params.slug}`;
+  const siteSlug = data.site.slug ?? params.slug;
+  const businessName = data.document.siteBrief?.businessName ?? data.site.business_name ?? "Business";
+  const seo = getSeoFields(data.document, businessName);
+  const canonicalUrl = buildCanonicalUrl(siteSlug, searchParams);
+  const ogImage = resolveAbsoluteUrl(seo?.ogImage ?? null, canonicalUrl);
   return {
-    title: seo?.title ?? "SiroundChat Site",
-    description: seo?.description ?? "Learn more about this business.",
+    title: {
+      absolute: seo?.title ?? businessName
+    },
+    description: seo?.description ?? `Learn more about ${businessName}.`,
     alternates: preview ? undefined : { canonical: canonicalUrl },
     robots: preview ? { index: false, follow: false } : { index: true, follow: true },
     openGraph: {
-      title: seo?.title ?? "SiroundChat Site",
-      description: seo?.description ?? "Learn more about this business.",
+      title: seo?.title ?? businessName,
+      description: seo?.description ?? `Learn more about ${businessName}.`,
       url: preview ? undefined : canonicalUrl,
-      images: seo?.ogImage ? [seo.ogImage] : undefined
+      siteName: businessName,
+      type: "website",
+      images: ogImage ? [ogImage] : undefined
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: seo?.title ?? businessName,
+      description: seo?.description ?? `Learn more about ${businessName}.`,
+      images: ogImage ? [ogImage] : undefined
     }
   };
 }
@@ -159,14 +195,24 @@ export default async function PublicSitePage({ params, searchParams }: PageProps
     notFound();
   }
 
+  const siteSlug = data.site.slug ?? params.slug;
+  const requestHeaders = await headers();
+  const requestHost = getRequestHost(requestHeaders);
+  const requestHostSlug = extractPublishedSiteSlugFromHost(requestHost);
+  const canonicalUrl = buildCanonicalUrl(siteSlug, searchParams);
+
+  if (!data.preview && requestHostSlug !== siteSlug) {
+    redirect(canonicalUrl);
+  }
+
   const widgetKey = data.widgetKey ?? data.site.id;
-  const seo = getSeoFields(data.document);
-  const canonicalUrl = `${getBaseUrl()}/s/${data.site.slug ?? params.slug}`;
+  const businessName = data.document.siteBrief?.businessName ?? data.site.business_name ?? "Business";
+  const seo = getSeoFields(data.document, businessName);
   const structuredData = {
     "@context": "https://schema.org",
     "@type": buildStructuredDataType(data.document.siteBrief?.industry),
-    name: data.document.siteBrief?.businessName ?? "Business",
-    image: data.document.siteBrief?.logoUrl ?? seo?.ogImage ?? undefined,
+    name: businessName,
+    image: data.document.siteBrief?.logoUrl ?? resolveAbsoluteUrl(seo?.ogImage ?? null, canonicalUrl) ?? undefined,
     description: seo?.description ?? undefined,
     url: data.preview ? undefined : canonicalUrl
   };

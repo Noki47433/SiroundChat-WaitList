@@ -9,6 +9,7 @@ import {
   CHECKLIST_TASKS,
   DASHBOARD_ONBOARDING_EVENT,
   checklistCompletedCount,
+  hydrateDashboardOnboardingState,
   isChecklistDone,
   markChecklistTaskComplete,
   markTutorialSectionSeen,
@@ -65,9 +66,25 @@ export function DashboardOnboardingCoach({ userId, businessId }: DashboardOnboar
   const activeGuide = shouldShowGuide ? guide : null;
 
   useEffect(() => {
+    let active = true;
     setDashboardOnboardingScope({ userId, businessId });
     setState(readDashboardOnboardingState());
-    setReady(true);
+
+    hydrateDashboardOnboardingState()
+      .then((next) => {
+        if (!active) return;
+        setState(next);
+        setReady(true);
+      })
+      .catch(() => {
+        if (!active) return;
+        setState(readDashboardOnboardingState());
+        setReady(true);
+      });
+
+    return () => {
+      active = false;
+    };
   }, [businessId, userId]);
 
   useEffect(() => {
@@ -150,6 +167,7 @@ export function DashboardOnboardingCoach({ userId, businessId }: DashboardOnboar
 
   const closeChecklist = () => {
     setChecklistOpen(false);
+    markTutorialSectionSeen("/dashboard");
     const next = setDashboardOnboardingHidden(true);
     setState(next);
   };

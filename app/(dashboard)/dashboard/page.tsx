@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Card } from "@/components/ui/card";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { getSupabaseAdminClientIfAvailable } from "@/lib/supabase/admin";
 import { getTenantFromSession } from "@/lib/utils/tenant";
 import dynamicImport from "next/dynamic";
 import { OverviewHeader } from "@/components/dashboard/OverviewHeader";
@@ -8,7 +9,7 @@ import { RecentTable } from "@/components/dashboard/RecentTable";
 import { ActivityFeed } from "@/components/dashboard/ActivityFeed";
 import { ImpactSummaryGate } from "@/app/(dashboard)/dashboard/_components/ImpactSummaryGate";
 import { SummaryBootstrapTrigger } from "@/app/(dashboard)/dashboard/_components/SummaryBootstrapTrigger";
-import { buildHealthSuggestions } from "@/lib/health/weekly";
+import { buildHealthSuggestions, computeHealthScore, percentile50 } from "@/lib/health/weekly";
 import { logActivity } from "@/lib/activity/log";
 
 const KpiCard = dynamicImport(() => import("@/components/dashboard/KpiCard").then((mod) => mod.KpiCard), { ssr: false });
@@ -37,6 +38,7 @@ type DailyPoint = {
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const BOOKING_INTENT_TYPES = ["booking_intent_detected", "booking_intent", "intent_booking"] as const;
 
 const formatNumber = (value: number) => new Intl.NumberFormat("en-US").format(value);
 
@@ -94,6 +96,90 @@ const formatSummaryRange = (start: string, end: string, timeZone: string) => {
     return "";
   }
 };
+
+const isMeaningfulSummaryValue = (value?: string | null) => {
+  const normalized = (value ?? "").trim().toLowerCase();
+  return Boolean(normalized) && normalized !== "not enough data yet";
+};
+
+const pickMeaningfulSummaryHighlight = (
+  summary:
+    | {
+        highlights?: Array<{ title?: string; value?: string; subtext?: string }> | null;
+      }
+    | null
+) => summary?.highlights?.find((highlight) => isMeaningfulSummaryValue(highlight?.value)) ?? summary?.highlights?.[0] ?? null;
+
+const hasMeaningfulSummary = (
+  summary:
+    | {
+        highlights?: Array<{ title?: string; value?: string; subtext?: string }> | null;
+      }
+    | null
+) => Boolean(pickMeaningfulSummaryHighlight(summary) && isMeaningfulSummaryValue(pickMeaningfulSummaryHighlight(summary)?.value));
+
+const computeAverageResponseSecondsByBusiness = (
+  rows: Array<{ business_id: string; conversation_id: string; sender: string; created_at: string }>
+) => {
+  const lastUserMessageByConversation = new Map<string, number>();
+  const samplesByBusiness = new Map<string, number[]>();
+
+  for (const row of rows) {
+    const stamp = new Date(row.created_at).getTime();
+    if (!Number.isFinite(stamp)) continue;
+
+    const key = `${row.business_id}:${row.conversation_id}`;
+    if (row.sender === "user") {
+      lastUserMessageByConversation.set(key, stamp);
+      continue;
+    }
+
+    if (row.sender !== "assistant" && row.sender !== "ai") {
+      continue;
+    }
+
+    const lastUserMessage = lastUserMessageByConversation.get(key);
+    if (!lastUserMessage || stamp < lastUserMessage) continue;
+
+    const samples = samplesByBusiness.get(row.business_id) ?? [];
+    samples.push((stamp - lastUserMessage) / 1000);
+    samplesByBusiness.set(row.business_id, samples);
+    lastUserMessageByConversation.delete(key);
+  }
+
+  const averages = new Map<string, number>();
+  for (const [businessId, samples] of samplesByBusiness.entries()) {
+    if (!samples.length) {
+      averages.set(businessId, 0);
+      continue;
+    }
+
+    const average = samples.reduce((sum, value) => sum + value, 0) / samples.length;
+    averages.set(businessId, Math.round(average));
+  }
+
+  return averages;
+};
+
+const normalizeIndustry = (value?: string | null) => {
+  const normalized = (value ?? "").trim().toLowerCase();
+  return normalized || "general";
+};
+
+const hasMeaningfulPeerActivity = (metric: {
+  conversationsCount: number;
+  leadsCount: number;
+  bookingsCount: number;
+  missedIntentsCount: number;
+  avgResponseTimeSec: number;
+  errorEventsCount: number;
+}) =>
+  metric.conversationsCount > 0 ||
+  metric.leadsCount > 0 ||
+  metric.bookingsCount > 0 ||
+  metric.missedIntentsCount > 0 ||
+  metric.avgResponseTimeSec > 0 ||
+  metric.errorEventsCount > 0;
 
 const activityTone = (type?: string): "success" | "danger" | "warning" | "info" => {
   switch (type) {
@@ -195,6 +281,7 @@ export default async function DashboardOverviewPage({
     recentEventsResult,
     messages,
     weeklyMetricsResult,
+    currentErrorEventsCountResult,
     impactSummariesResult
   ] =
     await Promise.all([
@@ -273,6 +360,12 @@ export default async function DashboardOverviewPage({
         .order("week_start", { ascending: false })
         .limit(2),
       (supabase as any)
+        .from("error_events")
+        .select("id", { count: "exact", head: true })
+        .eq("business_id", tenant.businessId)
+        .gte("created_at", rangeStartIso)
+        .lt("created_at", rangeEndIso),
+      (supabase as any)
         .from("business_impact_summaries")
         .select("id,period,period_start,period_end,highlights,created_at")
         .eq("business_id", tenant.businessId)
@@ -314,6 +407,7 @@ export default async function DashboardOverviewPage({
     sender: string;
     created_at: string;
   }>;
+  const currentErrorEventsCount = currentErrorEventsCountResult.count ?? 0;
   const weeklyMetrics = (weeklyMetricsResult.data ?? []) as Array<{
     week_start: string;
     conversations_count: number;
@@ -335,6 +429,8 @@ export default async function DashboardOverviewPage({
 
   const latestWeeklySummary = impactSummaries.find((summary) => summary.period === "weekly") ?? null;
   const latestMonthlySummary = impactSummaries.find((summary) => summary.period === "monthly") ?? null;
+  const meaningfulWeeklySummary = hasMeaningfulSummary(latestWeeklySummary) ? latestWeeklySummary : null;
+  const meaningfulMonthlySummary = hasMeaningfulSummary(latestMonthlySummary) ? latestMonthlySummary : null;
   const businessCreatedAt =
     business?.created_at && !Number.isNaN(new Date(business.created_at).getTime())
       ? new Date(business.created_at)
@@ -347,8 +443,8 @@ export default async function DashboardOverviewPage({
     ...(weeklyEligible ? (["weekly"] as const) : [])
   ];
   const missingImpactPeriods: Array<"weekly" | "monthly"> = [];
-  if (weeklyEligible && !latestWeeklySummary) missingImpactPeriods.push("weekly");
-  if (monthlyEligible && !latestMonthlySummary) missingImpactPeriods.push("monthly");
+  if (weeklyEligible && !meaningfulWeeklySummary) missingImpactPeriods.push("weekly");
+  if (monthlyEligible && !meaningfulMonthlySummary) missingImpactPeriods.push("monthly");
 
   const currentWeeklyMetric = weeklyMetrics[0] ?? null;
   const previousWeeklyMetric = weeklyMetrics[1] ?? null;
@@ -369,10 +465,8 @@ export default async function DashboardOverviewPage({
   const benchmarkByIndustry = new Map<string, (typeof benchmarkRows)[number]>(
     benchmarkRows.map((row) => [row.industry, row])
   );
-  const selectedBenchmark =
-    benchmarkByIndustry.get((business?.industry ?? "general").trim() || "general") ??
-    benchmarkByIndustry.get("general") ??
-    null;
+  const storedBenchmark =
+    benchmarkByIndustry.get(normalizeIndustry(business?.industry)) ?? benchmarkByIndustry.get("general") ?? null;
 
   const currentConversations = conversationRows.filter((row) => row.created_at >= rangeStartIso);
   const currentLeads = leadRows.filter((row) => row.created_at >= rangeStartIso);
@@ -570,27 +664,240 @@ export default async function DashboardOverviewPage({
     ? Math.round((fallbackCount / messagedConversationsCount) * 100)
     : 0;
   const uptime = "99.9%";
+  const currentIntentCount = eventRows.reduce(
+    (count, row) => count + (row?.type && BOOKING_INTENT_TYPES.includes(row.type as (typeof BOOKING_INTENT_TYPES)[number]) ? 1 : 0),
+    0
+  );
+  const currentMissedIntentsCount = Math.max(
+    0,
+    currentIntentCount - Math.max(currentLeads.length, currentReservations.length)
+  );
+  const liveHealthInput = {
+    conversationsCount: currentConversationCount,
+    bookingsCount: currentReservations.length,
+    missedIntentsCount: currentMissedIntentsCount,
+    avgResponseTimeSec: avgResponseSeconds,
+    errorEventsCount: currentErrorEventsCount
+  };
+  const liveHealthScore = computeHealthScore(liveHealthInput);
+  const hasMeaningfulHealthActivity =
+    currentConversationCount > 0 ||
+    currentLeads.length > 0 ||
+    currentReservations.length > 0 ||
+    currentIntentCount > 0 ||
+    currentErrorEventsCount > 0 ||
+    messageRows.length > 0;
+  const healthDelta = previousWeeklyMetric ? liveHealthScore - previousWeeklyMetric.health_score : null;
+  const healthSuggestions = hasMeaningfulHealthActivity ? buildHealthSuggestions(liveHealthInput) : [];
 
-  const healthDelta =
-    currentWeeklyMetric && previousWeeklyMetric
-      ? currentWeeklyMetric.health_score - previousWeeklyMetric.health_score
-      : null;
-  const healthSuggestions = currentWeeklyMetric
-    ? buildHealthSuggestions({
-        conversationsCount: currentWeeklyMetric.conversations_count,
-        bookingsCount: currentWeeklyMetric.bookings_count,
-        missedIntentsCount: currentWeeklyMetric.missed_intents_count,
-        avgResponseTimeSec: currentWeeklyMetric.avg_response_time_sec,
-        errorEventsCount: currentWeeklyMetric.error_events_count
-      })
-    : [];
+  const currentConversion = currentConversationCount > 0 ? currentReservations.length / currentConversationCount : 0;
 
-  const currentConversion =
-    currentWeeklyMetric && currentWeeklyMetric.conversations_count > 0
-      ? currentWeeklyMetric.bookings_count / currentWeeklyMetric.conversations_count
-      : 0;
+  const admin = getSupabaseAdminClientIfAvailable() as any;
+  let liveBenchmark: {
+    source: "live";
+    industry: string;
+    peerCount: number;
+    conversion_p50: number;
+    bookings_p50: number;
+    health_p50: number;
+  } | null = null;
+
+  if (admin) {
+    const { data: launchedBusinessesRaw, error: launchedBusinessesError } = await admin
+      .from("businesses")
+      .select("id, industry, access_approved, launch_access")
+      .or("access_approved.eq.true,launch_access.eq.true")
+      .neq("id", tenant.businessId);
+
+    if (launchedBusinessesError) {
+      console.error("[DASHBOARD_LIVE_BENCHMARK_BUSINESSES_ERROR]", launchedBusinessesError);
+    } else {
+      const launchedBusinesses = (launchedBusinessesRaw ?? []) as Array<{
+        id: string;
+        industry?: string | null;
+        access_approved?: boolean | null;
+        launch_access?: boolean | null;
+      }>;
+      const launchedBusinessIds = launchedBusinesses.map((row) => row.id).filter(Boolean);
+
+      if (launchedBusinessIds.length) {
+        const [
+          peerConversationRowsRaw,
+          peerLeadRowsRaw,
+          peerReservationRowsRaw,
+          peerIntentRowsRaw,
+          peerErrorRowsRaw,
+          peerMessageRowsRaw
+        ] = await Promise.all([
+          fetchPagedRows(async (from, to) =>
+            admin
+              .from("chat_conversations")
+              .select("business_id")
+              .in("business_id", launchedBusinessIds)
+              .gte("created_at", rangeStartIso)
+              .lt("created_at", rangeEndIso)
+              .range(from, to)
+          ),
+          fetchPagedRows(async (from, to) =>
+            admin
+              .from("leads")
+              .select("business_id")
+              .in("business_id", launchedBusinessIds)
+              .gte("created_at", rangeStartIso)
+              .lt("created_at", rangeEndIso)
+              .range(from, to)
+          ),
+          fetchPagedRows(async (from, to) =>
+            admin
+              .from("reservations")
+              .select("business_id, status")
+              .in("business_id", launchedBusinessIds)
+              .gte("created_at", rangeStartIso)
+              .lt("created_at", rangeEndIso)
+              .range(from, to)
+          ),
+          fetchPagedRows(async (from, to) =>
+            admin
+              .from("analytics_events")
+              .select("business_id, type")
+              .in("business_id", launchedBusinessIds)
+              .gte("timestamp", rangeStartIso)
+              .lt("timestamp", rangeEndIso)
+              .in("type", [...BOOKING_INTENT_TYPES])
+              .range(from, to)
+          ),
+          fetchPagedRows(async (from, to) =>
+            admin
+              .from("error_events")
+              .select("business_id")
+              .in("business_id", launchedBusinessIds)
+              .gte("created_at", rangeStartIso)
+              .lt("created_at", rangeEndIso)
+              .range(from, to)
+          ),
+          fetchPagedRows(async (from, to) =>
+            admin
+              .from("chat_messages")
+              .select("conversation_id, sender, created_at, chat_conversations!inner(business_id)")
+              .in("chat_conversations.business_id", launchedBusinessIds)
+              .gte("created_at", rangeStartIso)
+              .lt("created_at", rangeEndIso)
+              .order("created_at", { ascending: true })
+              .range(from, to)
+          )
+        ]);
+
+        const incrementMetric = (map: Map<string, number>, businessId?: string | null, value = 1) => {
+          if (!businessId) return;
+          map.set(businessId, (map.get(businessId) ?? 0) + value);
+        };
+
+        const peerConversationCounts = new Map<string, number>();
+        const peerLeadCounts = new Map<string, number>();
+        const peerBookingCounts = new Map<string, number>();
+        const peerIntentCounts = new Map<string, number>();
+        const peerErrorCounts = new Map<string, number>();
+
+        (peerConversationRowsRaw as Array<{ business_id?: string | null }>).forEach((row) =>
+          incrementMetric(peerConversationCounts, row.business_id)
+        );
+        (peerLeadRowsRaw as Array<{ business_id?: string | null }>).forEach((row) =>
+          incrementMetric(peerLeadCounts, row.business_id)
+        );
+        (peerReservationRowsRaw as Array<{ business_id?: string | null; status?: string | null }>).forEach((row) => {
+          if (row.status === "cancelled" || row.status === "canceled" || row.status === "no_show") {
+            return;
+          }
+          incrementMetric(peerBookingCounts, row.business_id);
+        });
+        (peerIntentRowsRaw as Array<{ business_id?: string | null }>).forEach((row) =>
+          incrementMetric(peerIntentCounts, row.business_id)
+        );
+        (peerErrorRowsRaw as Array<{ business_id?: string | null }>).forEach((row) =>
+          incrementMetric(peerErrorCounts, row.business_id)
+        );
+
+        const peerAvgResponseByBusiness = computeAverageResponseSecondsByBusiness(
+          (peerMessageRowsRaw as any[]).map((row) => ({
+            business_id: row.chat_conversations?.business_id as string,
+            conversation_id: row.conversation_id as string,
+            sender: row.sender as string,
+            created_at: row.created_at as string
+          }))
+        );
+
+        const livePeerMetrics = launchedBusinesses.map((row) => {
+          const conversationsCount = peerConversationCounts.get(row.id) ?? 0;
+          const leadsCount = peerLeadCounts.get(row.id) ?? 0;
+          const bookingsCount = peerBookingCounts.get(row.id) ?? 0;
+          const intentsCount = peerIntentCounts.get(row.id) ?? 0;
+          const missedIntentsCount = Math.max(0, intentsCount - Math.max(leadsCount, bookingsCount));
+          const avgResponseTimeSec = peerAvgResponseByBusiness.get(row.id) ?? 0;
+          const errorEventsCount = peerErrorCounts.get(row.id) ?? 0;
+          return {
+            businessId: row.id,
+            industry: normalizeIndustry(row.industry),
+            conversationsCount,
+            leadsCount,
+            bookingsCount,
+            missedIntentsCount,
+            avgResponseTimeSec,
+            errorEventsCount,
+            conversion: conversationsCount > 0 ? bookingsCount / conversationsCount : 0,
+            healthScore: computeHealthScore({
+              conversationsCount,
+              bookingsCount,
+              missedIntentsCount,
+              avgResponseTimeSec,
+              errorEventsCount
+            })
+          };
+        });
+
+        const usablePeerMetrics = livePeerMetrics.filter((row) => hasMeaningfulPeerActivity(row));
+        const businessIndustry = normalizeIndustry(business?.industry);
+        const sameIndustryPeerMetrics = usablePeerMetrics.filter((row) => row.industry === businessIndustry);
+        const benchmarkPeerMetrics = sameIndustryPeerMetrics.length ? sameIndustryPeerMetrics : usablePeerMetrics;
+
+        if (benchmarkPeerMetrics.length) {
+          liveBenchmark = {
+            source: "live",
+            industry: sameIndustryPeerMetrics.length ? businessIndustry : "general",
+            peerCount: benchmarkPeerMetrics.length,
+            conversion_p50: Number(percentile50(benchmarkPeerMetrics.map((row) => row.conversion)).toFixed(4)),
+            bookings_p50: Math.round(percentile50(benchmarkPeerMetrics.map((row) => row.bookingsCount))),
+            health_p50: Math.round(percentile50(benchmarkPeerMetrics.map((row) => row.healthScore)))
+          };
+        }
+      }
+    }
+  }
+
+  const selectedBenchmark =
+    rangeDays === 7 && storedBenchmark
+      ? {
+          source: "stored" as const,
+          industry: normalizeIndustry(business?.industry),
+          peerCount: null,
+          conversion_p50: storedBenchmark.conversion_p50,
+          bookings_p50: storedBenchmark.bookings_p50,
+          health_p50: storedBenchmark.health_p50
+        }
+      : liveBenchmark ??
+        (storedBenchmark
+          ? {
+              source: "stored" as const,
+              industry: normalizeIndustry(business?.industry),
+              peerCount: null,
+              conversion_p50: storedBenchmark.conversion_p50,
+              bookings_p50: storedBenchmark.bookings_p50,
+              health_p50: storedBenchmark.health_p50
+            }
+          : null);
+
   const benchmarkConversion = selectedBenchmark?.conversion_p50 ?? 0;
-  const conversionDeltaPercent = benchmarkConversion > 0 ? ((currentConversion - benchmarkConversion) / benchmarkConversion) * 100 : null;
+  const conversionDeltaPercent =
+    benchmarkConversion > 0 ? ((currentConversion - benchmarkConversion) / benchmarkConversion) * 100 : null;
 
   const funnelSteps = [
     { label: "Opened", value: openedBase, helper: "chat_opened" },
@@ -598,6 +905,19 @@ export default async function DashboardOverviewPage({
     { label: "Meaningful", value: meaningfulConversations, helper: "3+ messages" },
     { label: "Converted", value: convertedCount, helper: "lead/reservation" }
   ];
+  const showHealthScoreCard = hasMeaningfulHealthActivity;
+  const showPeerBenchmarkCard = hasMeaningfulHealthActivity && Boolean(selectedBenchmark);
+  const summaryCards: Array<{
+    label: "Weekly" | "Monthly";
+    data: NonNullable<typeof meaningfulWeeklySummary>;
+  }> = [];
+  if (meaningfulWeeklySummary) {
+    summaryCards.push({ label: "Weekly", data: meaningfulWeeklySummary });
+  }
+  if (meaningfulMonthlySummary) {
+    summaryCards.push({ label: "Monthly", data: meaningfulMonthlySummary });
+  }
+  const showImpactSummaryCard = summaryCards.length > 0;
 
   return (
     <div className="space-y-6">
@@ -710,179 +1030,161 @@ export default async function DashboardOverviewPage({
 
         <div className="lg:sticky lg:top-4">
           <ActivityFeed items={activityItems} />
-          <Card className="mt-4 rounded-3xl p-5">
-            <p className="dashboard-heading text-sm font-semibold text-white">Health Score</p>
-            <p className="text-xs text-[#cbbd98]">Weekly performance snapshot</p>
-            {currentWeeklyMetric ? (
-              <>
-                <div className="mt-3 flex items-end justify-between gap-3">
-                  <p className="dashboard-heading text-3xl font-semibold text-white">{currentWeeklyMetric.health_score}</p>
-                  <p className="text-xs text-[#cbbd98]">
-                    {healthDelta === null ? "No prior week" : `${healthDelta >= 0 ? "+" : ""}${healthDelta} vs last week`}
-                  </p>
-                </div>
-                <div className="mt-3 space-y-2 text-xs text-[#b7cee5]">
-                  <div className="dashboard-inset flex items-center justify-between rounded-xl px-2 py-1.5">
-                    <span>Errors</span>
-                    <span>{currentWeeklyMetric.error_events_count}</span>
-                  </div>
-                  <div className="dashboard-inset flex items-center justify-between rounded-xl px-2 py-1.5">
-                    <span>Missed intents</span>
-                    <span>{currentWeeklyMetric.missed_intents_count}</span>
-                  </div>
-                  <div className="dashboard-inset flex items-center justify-between rounded-xl px-2 py-1.5">
-                    <span>Avg response</span>
-                    <span>{currentWeeklyMetric.avg_response_time_sec}s</span>
-                  </div>
-                  <div className="dashboard-inset flex items-center justify-between rounded-xl px-2 py-1.5">
-                    <span>Bookings</span>
-                    <span>{currentWeeklyMetric.bookings_count}</span>
-                  </div>
-                </div>
-                <div className="mt-3 space-y-1 text-[11px] text-[#dbc995]">
-                  {healthSuggestions.map((item) => (
-                    <p key={item}>• {item}</p>
-                  ))}
-                </div>
-              </>
-            ) : (
-              <p className="mt-3 text-xs text-[#cbbd98]">Generating your first summary...</p>
-            )}
-          </Card>
-
-          <Card className="mt-4 rounded-3xl p-5">
-            <p className="dashboard-heading text-sm font-semibold text-white">Compared to similar businesses</p>
-            <p className="text-xs text-[#cbbd98]">Platform median for your industry this week</p>
-            {currentWeeklyMetric && selectedBenchmark ? (
-              <>
-                <p className="mt-3 text-xs text-[#b5cae0]">
-                  {conversionDeltaPercent === null
-                    ? "Benchmark conversion unavailable."
-                    : `You're ${conversionDeltaPercent >= 0 ? "+" : ""}${conversionDeltaPercent.toFixed(0)}% ${
-                        conversionDeltaPercent >= 0 ? "above" : "below"
-                      } typical businesses in ${(business?.industry ?? "general").trim() || "general"} this week.`}
+          {showHealthScoreCard ? (
+            <Card className="mt-4 rounded-3xl p-5">
+              <p className="dashboard-heading text-sm font-semibold text-white">Health Score</p>
+              <p className="text-xs text-[#cbbd98]">{rangeDays}-day performance snapshot</p>
+              <div className="mt-3 flex items-end justify-between gap-3">
+                <p className="dashboard-heading text-3xl font-semibold text-white">{liveHealthScore}</p>
+                <p className="text-xs text-[#cbbd98]">
+                  {healthDelta === null ? "No prior week" : `${healthDelta >= 0 ? "+" : ""}${healthDelta} vs last week`}
                 </p>
-                <div className="mt-3 space-y-2">
-                  <div>
-                    <div className="flex items-center justify-between text-xs text-[#cbbd98]">
-                      <span>Conversion</span>
-                      <span>
-                        {(currentConversion * 100).toFixed(1)}% vs {(selectedBenchmark.conversion_p50 * 100).toFixed(1)}%
-                      </span>
-                    </div>
-                    <div className="mt-1 h-2 w-full rounded-full bg-[#1a2a3d]">
-                      <div
-                        className="h-2 rounded-full bg-amber-300"
-                        style={{
-                          width: `${Math.min(100, Math.max(2, selectedBenchmark.conversion_p50 > 0 ? (currentConversion / selectedBenchmark.conversion_p50) * 50 : 0))}%`
-                        }}
-                      />
-                    </div>
+              </div>
+              <div className="mt-3 space-y-2 text-xs text-[#b7cee5]">
+                <div className="dashboard-inset flex items-center justify-between rounded-xl px-2 py-1.5">
+                  <span>Errors</span>
+                  <span>{currentErrorEventsCount}</span>
+                </div>
+                <div className="dashboard-inset flex items-center justify-between rounded-xl px-2 py-1.5">
+                  <span>Missed intents</span>
+                  <span>{currentMissedIntentsCount}</span>
+                </div>
+                <div className="dashboard-inset flex items-center justify-between rounded-xl px-2 py-1.5">
+                  <span>Avg response</span>
+                  <span>{avgResponseMs ? `${avgResponseSeconds}s` : "-"}</span>
+                </div>
+                <div className="dashboard-inset flex items-center justify-between rounded-xl px-2 py-1.5">
+                  <span>Bookings</span>
+                  <span>{currentReservations.length}</span>
+                </div>
+              </div>
+              <div className="mt-3 space-y-1 text-[11px] text-[#dbc995]">
+                {healthSuggestions.map((item) => (
+                  <p key={item}>• {item}</p>
+                ))}
+              </div>
+            </Card>
+          ) : null}
+
+          {showPeerBenchmarkCard ? (
+            <Card className="mt-4 rounded-3xl p-5">
+              <p className="dashboard-heading text-sm font-semibold text-white">Compared to similar businesses</p>
+              <p className="text-xs text-[#cbbd98]">
+                {selectedBenchmark?.source === "live"
+                  ? `Median for launched ${selectedBenchmark.industry} businesses over the last ${rangeDays} days`
+                  : "Platform median for your industry this week"}
+              </p>
+              <p className="mt-3 text-xs text-[#b5cae0]">
+                {conversionDeltaPercent === null
+                  ? "Benchmark conversion unavailable."
+                  : `You're ${conversionDeltaPercent >= 0 ? "+" : ""}${conversionDeltaPercent.toFixed(0)}% ${
+                      conversionDeltaPercent >= 0 ? "above" : "below"
+                    } the median for ${selectedBenchmark?.industry ?? "general"} businesses${
+                      selectedBenchmark?.peerCount ? ` (${selectedBenchmark.peerCount} peers)` : ""
+                    }.`}
+              </p>
+              <div className="mt-3 space-y-2">
+                <div>
+                  <div className="flex items-center justify-between text-xs text-[#cbbd98]">
+                    <span>Conversion</span>
+                    <span>
+                      {(currentConversion * 100).toFixed(1)}% vs {((selectedBenchmark?.conversion_p50 ?? 0) * 100).toFixed(1)}%
+                    </span>
                   </div>
-                  <div>
-                    <div className="flex items-center justify-between text-xs text-[#cbbd98]">
-                      <span>Bookings</span>
-                      <span>
-                        {currentWeeklyMetric.bookings_count} vs {selectedBenchmark.bookings_p50}
-                      </span>
-                    </div>
-                    <div className="mt-1 h-2 w-full rounded-full bg-[#1a2a3d]">
-                      <div
-                        className="h-2 rounded-full bg-emerald-400"
-                        style={{
-                          width: `${Math.min(
-                            100,
-                            Math.max(
-                              2,
-                              selectedBenchmark.bookings_p50 > 0
-                                ? (currentWeeklyMetric.bookings_count / selectedBenchmark.bookings_p50) * 50
-                                : 0
-                            )
-                          )}%`
-                        }}
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <div className="flex items-center justify-between text-xs text-[#cbbd98]">
-                      <span>Health score</span>
-                      <span>
-                        {currentWeeklyMetric.health_score} vs {selectedBenchmark.health_p50}
-                      </span>
-                    </div>
-                    <div className="mt-1 h-2 w-full rounded-full bg-[#1a2a3d]">
-                      <div
-                        className="h-2 rounded-full bg-indigo-400"
-                        style={{
-                          width: `${Math.min(
-                            100,
-                            Math.max(
-                              2,
-                              selectedBenchmark.health_p50 > 0
-                                ? (currentWeeklyMetric.health_score / selectedBenchmark.health_p50) * 50
-                                : 0
-                            )
-                          )}%`
-                        }}
-                      />
-                    </div>
+                  <div className="mt-1 h-2 w-full rounded-full bg-[#1a2a3d]">
+                    <div
+                      className="h-2 rounded-full bg-amber-300"
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          Math.max(
+                            2,
+                            (selectedBenchmark?.conversion_p50 ?? 0) > 0
+                              ? (currentConversion / (selectedBenchmark?.conversion_p50 ?? 1)) * 50
+                              : 0
+                          )
+                        )}%`
+                      }}
+                    />
                   </div>
                 </div>
-              </>
-            ) : (
-              <p className="mt-3 text-xs text-[#cbbd98]">Not enough data yet - check back soon.</p>
-            )}
-          </Card>
-
-          <Card className="mt-4 rounded-3xl p-5">
-            <p className="dashboard-heading text-sm font-semibold text-white">Weekly & Monthly summaries</p>
-            <p className="text-xs text-[#cbbd98]">Latest generated highlights for your business</p>
-            <div className="mt-3 space-y-3">
-              {([
-                { label: "Weekly", data: latestWeeklySummary },
-                { label: "Monthly", data: latestMonthlySummary }
-              ] as const).map((item) => {
-                const highlight = item.data?.highlights?.[0];
-                const isEligible = item.label === "Weekly" ? weeklyEligible : monthlyEligible;
-                return (
-                  <div key={item.label} className="dashboard-inset rounded-2xl p-3">
-                    <p className="text-xs uppercase tracking-[0.2em] text-white/50">{item.label}</p>
-                    {item.data ? (
-                      <>
-                        <p className="mt-1 text-xs text-[#cbbd98]">
-                          {formatSummaryRange(item.data.period_start, item.data.period_end, timeZone)}
-                        </p>
-                        <p className="mt-2 text-sm font-medium text-white">
-                          {highlight?.title ?? "Summary generated"}
-                        </p>
-                        <p className="mt-1 text-xs text-[#e7d6a8]">
-                          {highlight?.value ?? "Open impact summary for details."}
-                        </p>
-                      </>
-                    ) : !isEligible ? (
-                      <>
-                        <p className="mt-1 text-xs text-[#cbbd98]">
-                          {item.label === "Weekly"
-                            ? "Available after 7 days of activity."
-                            : "Available after 30 days of activity."}
-                        </p>
-                        <p className="mt-1 text-[11px] text-[#8ba6c1]">
-                          We&apos;ll unlock this automatically once enough data is available.
-                        </p>
-                      </>
-                    ) : (
-                      <>
-                        <p className="mt-1 text-xs text-[#cbbd98]">Generating your first summary...</p>
-                        <p className="mt-1 text-[11px] text-[#8ba6c1]">
-                          We trigger this once automatically and refresh when ready.
-                        </p>
-                      </>
-                    )}
+                <div>
+                  <div className="flex items-center justify-between text-xs text-[#cbbd98]">
+                    <span>Bookings</span>
+                    <span>
+                      {currentReservations.length} vs {selectedBenchmark?.bookings_p50 ?? 0}
+                    </span>
                   </div>
-                );
-              })}
-            </div>
-          </Card>
+                  <div className="mt-1 h-2 w-full rounded-full bg-[#1a2a3d]">
+                    <div
+                      className="h-2 rounded-full bg-emerald-400"
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          Math.max(
+                            2,
+                            (selectedBenchmark?.bookings_p50 ?? 0) > 0
+                              ? (currentReservations.length / (selectedBenchmark?.bookings_p50 ?? 1)) * 50
+                              : 0
+                          )
+                        )}%`
+                      }}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <div className="flex items-center justify-between text-xs text-[#cbbd98]">
+                    <span>Health score</span>
+                    <span>
+                      {liveHealthScore} vs {selectedBenchmark?.health_p50 ?? 0}
+                    </span>
+                  </div>
+                  <div className="mt-1 h-2 w-full rounded-full bg-[#1a2a3d]">
+                    <div
+                      className="h-2 rounded-full bg-indigo-400"
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          Math.max(
+                            2,
+                            (selectedBenchmark?.health_p50 ?? 0) > 0
+                              ? (liveHealthScore / (selectedBenchmark?.health_p50 ?? 1)) * 50
+                              : 0
+                          )
+                        )}%`
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+            </Card>
+          ) : null}
+
+          {showImpactSummaryCard ? (
+            <Card className="mt-4 rounded-3xl p-5">
+              <p className="dashboard-heading text-sm font-semibold text-white">Weekly & Monthly summaries</p>
+              <p className="text-xs text-[#cbbd98]">Latest generated highlights for your business</p>
+              <div className="mt-3 space-y-3">
+                {summaryCards.map((item) => {
+                  const highlight = pickMeaningfulSummaryHighlight(item.data);
+                  return (
+                    <div key={item.label} className="dashboard-inset rounded-2xl p-3">
+                      <p className="text-xs uppercase tracking-[0.2em] text-white/50">{item.label}</p>
+                      <p className="mt-1 text-xs text-[#cbbd98]">
+                        {formatSummaryRange(item.data.period_start, item.data.period_end, timeZone)}
+                      </p>
+                      <p className="mt-2 text-sm font-medium text-white">
+                        {highlight?.title ?? "Summary generated"}
+                      </p>
+                      <p className="mt-1 text-xs text-[#e7d6a8]">
+                        {highlight?.value ?? "Open impact summary for details."}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            </Card>
+          ) : null}
 
           <Card className="mt-4 rounded-3xl p-5">
             <p className="dashboard-heading text-sm font-semibold text-white">Funnel snapshot</p>

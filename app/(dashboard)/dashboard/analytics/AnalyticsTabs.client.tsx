@@ -70,7 +70,7 @@ export default function AnalyticsTabs({
 }: AnalyticsTabsProps) {
   const [activeTab, setActiveTab] = useState<TabKey>("Overview");
 
-  const funnelMax = funnelSteps[0]?.value ?? 0;
+  const funnelMax = Math.max(...funnelSteps.map((step) => step.value), 0);
   const totalResponses = responseBuckets.reduce((sum, bucket) => sum + bucket.value, 0);
   const dropTotal = droppedConversationCount + fallbackCount;
 
@@ -122,9 +122,9 @@ export default function AnalyticsTabs({
               {hasFunnelData ? (
                 <div className="mt-4 grid grid-cols-5 items-end gap-2">
                   {funnelSteps.map((step, index) => {
-                    const height = funnelMax ? Math.max((step.value / funnelMax) * 100, 8) : 0;
+                    const height = funnelMax ? Math.min(100, Math.max((step.value / funnelMax) * 100, 8)) : 0;
                     const dropoff =
-                      index === 0 || !funnelSteps[index - 1].value
+                      index === 0 || !funnelSteps[index - 1].value || step.value > funnelSteps[index - 1].value
                         ? null
                         : Math.round(((funnelSteps[index - 1].value - step.value) / funnelSteps[index - 1].value) * 100);
                     return (

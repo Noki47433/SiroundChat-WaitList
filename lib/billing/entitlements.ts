@@ -70,7 +70,7 @@ export const hasEffectiveBillingAccess = (
   return hasActiveBillingAccess(subscription, now);
 };
 
-export const getFreeModeEntitlements = (): Entitlements => {
+const buildUnlockedEntitlements = (): Entitlements => {
   const entitlementKeys = Object.keys(PLANS[0]?.entitlements ?? {}) as EntitlementKey[];
   const allEntitlements = {} as Entitlements;
 
@@ -91,6 +91,10 @@ export const getFreeModeEntitlements = (): Entitlements => {
 
   return allEntitlements;
 };
+
+export const getFullEntitlements = (): Entitlements => buildUnlockedEntitlements();
+
+export const getFreeModeEntitlements = (): Entitlements => getFullEntitlements();
 
 const lockEntitlements = (entitlements: Entitlements): Entitlements => {
   const locked = {} as Entitlements;

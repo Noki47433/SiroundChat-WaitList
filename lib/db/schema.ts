@@ -51,6 +51,7 @@ export interface Database {
           access_approved: boolean;
           onboarding_submitted: boolean;
           onboarding_data: Json;
+          dashboard_onboarding_state: Json;
           generated_starter_knowledge: string | null;
           onboarding_completed_at: string | null;
           invite_code_id?: string | null;
@@ -78,6 +79,7 @@ export interface Database {
           access_approved?: boolean;
           onboarding_submitted?: boolean;
           onboarding_data?: Json;
+          dashboard_onboarding_state?: Json;
           generated_starter_knowledge?: string | null;
           onboarding_completed_at?: string | null;
           invite_code_id?: string | null;

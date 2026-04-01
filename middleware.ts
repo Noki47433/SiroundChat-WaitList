@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAuthDisabled } from "@/lib/config/auth";
+import { extractPublishedSiteSlugFromHost, getRequestHost } from "@/lib/utils/published-site-url";
 
 const hasAuthCookie = (request: NextRequest) =>
   request.cookies
@@ -61,6 +62,14 @@ const isPrivateApiPath = (pathname: string) =>
 
 export function middleware(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
+  const publishedSiteSlug = extractPublishedSiteSlugFromHost(getRequestHost(request.headers));
+
+  if (publishedSiteSlug && pathname === "/") {
+    const rewriteUrl = request.nextUrl.clone();
+    rewriteUrl.pathname = `/s/${publishedSiteSlug}`;
+    return NextResponse.rewrite(rewriteUrl);
+  }
+
   const isPrivatePage = isPrivatePagePath(pathname);
   const isPrivateApi = isPrivateApiPath(pathname);
 
@@ -87,14 +96,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: [
-    "/dashboard",
-    "/dashboard/:path*",
-    "/billing",
-    "/billing/:path*",
-    "/admin",
-    "/admin/:path*",
-    "/editor/:path*",
-    "/api/:path*"
-  ]
+  matcher: ["/((?!_next/static|_next/image).*)"]
 };

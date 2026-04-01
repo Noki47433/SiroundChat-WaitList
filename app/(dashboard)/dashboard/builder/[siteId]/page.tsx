@@ -4,7 +4,6 @@ import { requireUser } from "@/lib/auth/require-user";
 import { Card } from "@/components/ui/card";
 import { BuilderOverviewActions } from "@/app/(dashboard)/dashboard/builder/[siteId]/BuilderOverviewActions";
 import { getBuilderPlanForBusiness } from "@/lib/builder/plan";
-import { UpgradeOverlay } from "@/src/components/billing/UpgradeOverlay";
 import { getOwnedBuilderSite } from "@/lib/builder/site-access";
 
 export const dynamic = "force-dynamic";
@@ -101,17 +100,7 @@ export default async function BuilderOverviewPage({ params }: PageProps) {
         <p className="mt-2 text-sm text-white/60">Manage publishing and edits.</p>
       </div>
 
-      {flags.canPublish ? (
-        detailsCard
-      ) : (
-        <UpgradeOverlay
-          entitlementKey="publish_website"
-          title="Upgrade plan to publish websites"
-          description="This workspace is on a chatbot-focused plan. Switch to Website or Bundle to publish sites."
-        >
-          {detailsCard}
-        </UpgradeOverlay>
-      )}
+      {detailsCard}
     </div>
   );
 }

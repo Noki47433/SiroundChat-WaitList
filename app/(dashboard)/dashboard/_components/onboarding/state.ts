@@ -1,129 +1,138 @@
 "use client";
 
-export const DASHBOARD_ONBOARDING_STORAGE_KEY = "siround_dashboard_onboarding_v2";
+import {
+  CHECKLIST_TASKS,
+  checklistCompletedCount,
+  defaultDashboardOnboardingState,
+  isChecklistDone,
+  normalizeDashboardOnboardingState,
+  type ChecklistTask,
+  type ChecklistTaskId,
+  type DashboardOnboardingScope,
+  type DashboardOnboardingState
+} from "@/lib/dashboard/onboarding";
+
+export { CHECKLIST_TASKS, checklistCompletedCount, isChecklistDone };
+export type { ChecklistTask, ChecklistTaskId, DashboardOnboardingScope, DashboardOnboardingState };
+
 export const DASHBOARD_ONBOARDING_EVENT = "siround-dashboard-onboarding-updated";
-const DASHBOARD_ONBOARDING_SCOPE_STORAGE_KEY = "siround_dashboard_onboarding_scope_v1";
-
-export type ChecklistTaskId = "create_chatbot" | "create_website" | "train_documents";
-
-export type ChecklistTask = {
-  id: ChecklistTaskId;
-  label: string;
-  description: string;
-  href: string;
-};
-
-export const CHECKLIST_TASKS: ChecklistTask[] = [
-  {
-    id: "create_chatbot",
-    label: "Create chatbot",
-    description: "Set your greeting, tone, and brand style.",
-    href: "/dashboard/bot-settings"
-  },
-  {
-    id: "create_website",
-    label: "Create website",
-    description: "Generate your first website from the builder.",
-    href: "/dashboard/builder/new"
-  },
-  {
-    id: "train_documents",
-    label: "Upload and re-train",
-    description: "Add your first document, then re-train it.",
-    href: "/dashboard/documents"
-  },
-];
-
-export type DashboardOnboardingState = {
-  version: 4;
-  hidden: boolean;
-  completed: Record<ChecklistTaskId, boolean>;
-  sectionSeen: Record<string, boolean>;
-};
-
-export type DashboardOnboardingScope = {
-  userId?: string | null;
-  businessId?: string | null;
-};
 
 const canUseBrowser = () => typeof window !== "undefined";
+const defaultState = () => defaultDashboardOnboardingState();
+const currentScopeKey = (scope: DashboardOnboardingScope) =>
+  `${scope.userId?.trim() || "anonymous"}:${scope.businessId?.trim() || "no-business"}`;
 
-const defaultCompleted = (): Record<ChecklistTaskId, boolean> => ({
-  create_chatbot: false,
-  create_website: false,
-  train_documents: false
-});
+let currentScope: DashboardOnboardingScope = {};
+let cachedState: DashboardOnboardingState = defaultState();
+let hydratedScopeKey: string | null = null;
+let hydratePromise: Promise<DashboardOnboardingState> | null = null;
+let persistQueue: Promise<void> = Promise.resolve();
 
-const defaultState = (): DashboardOnboardingState => ({
-  version: 4,
-  hidden: false,
-  completed: defaultCompleted(),
-  sectionSeen: {}
-});
+const dispatchState = (next: DashboardOnboardingState) => {
+  cachedState = next;
+  if (!canUseBrowser()) return;
+  window.dispatchEvent(new CustomEvent(DASHBOARD_ONBOARDING_EVENT, { detail: next }));
+};
 
-const resolveScopeKey = () => {
-  if (!canUseBrowser()) return `${DASHBOARD_ONBOARDING_STORAGE_KEY}:server`;
-  const raw = window.localStorage.getItem(DASHBOARD_ONBOARDING_SCOPE_STORAGE_KEY);
-  if (!raw) return `${DASHBOARD_ONBOARDING_STORAGE_KEY}:anonymous`;
+const patchDashboardOnboardingState = async (next: DashboardOnboardingState) => {
+  const businessId = currentScope.businessId?.trim();
+  if (!businessId || !canUseBrowser()) return;
 
-  try {
-    const scope = JSON.parse(raw) as DashboardOnboardingScope;
-    const userPart = scope.userId?.trim() || "anonymous";
-    const businessPart = scope.businessId?.trim() || "no-business";
-    return `${DASHBOARD_ONBOARDING_STORAGE_KEY}:${userPart}:${businessPart}`;
-  } catch {
-    return `${DASHBOARD_ONBOARDING_STORAGE_KEY}:anonymous`;
+  const response = await fetch("/api/dashboard/onboarding", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ state: next })
+  });
+
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    throw new Error((payload as { error?: string } | null)?.error ?? "Failed to save onboarding state");
+  }
+
+  const payload = (await response.json().catch(() => null)) as { state?: unknown } | null;
+  if (payload?.state) {
+    dispatchState(normalizeDashboardOnboardingState(payload.state));
   }
 };
 
-const normalizeState = (raw: unknown): DashboardOnboardingState => {
-  const fallback = defaultState();
-  if (!raw || typeof raw !== "object") return fallback;
-  const input = raw as Partial<DashboardOnboardingState>;
-  return {
-    version: 4,
-    hidden: Boolean(input.hidden),
-    completed: {
-      ...fallback.completed,
-      ...(input.completed ?? {})
-    },
-    sectionSeen: {
-      ...(input.sectionSeen ?? {})
-    }
-  };
-};
-
-const saveState = (next: DashboardOnboardingState) => {
-  if (!canUseBrowser()) return;
-  window.localStorage.setItem(resolveScopeKey(), JSON.stringify(next));
-  window.dispatchEvent(new CustomEvent(DASHBOARD_ONBOARDING_EVENT, { detail: next }));
+const enqueuePersist = (next: DashboardOnboardingState) => {
+  persistQueue = persistQueue
+    .catch(() => undefined)
+    .then(async () => {
+      try {
+        await patchDashboardOnboardingState(next);
+      } catch (error) {
+        console.error("[DASHBOARD_ONBOARDING_PERSIST_ERROR]", error);
+      }
+    });
 };
 
 export const setDashboardOnboardingScope = (scope: DashboardOnboardingScope) => {
-  if (!canUseBrowser()) return defaultState();
-  window.localStorage.setItem(DASHBOARD_ONBOARDING_SCOPE_STORAGE_KEY, JSON.stringify(scope));
-  const next = readDashboardOnboardingState();
-  window.dispatchEvent(new CustomEvent(DASHBOARD_ONBOARDING_EVENT, { detail: next }));
-  return next;
+  currentScope = scope;
+  const nextScopeKey = currentScopeKey(scope);
+
+  if (hydratedScopeKey !== nextScopeKey) {
+    hydratedScopeKey = null;
+    hydratePromise = null;
+    dispatchState(defaultState());
+  }
+
+  void hydrateDashboardOnboardingState();
+  return cachedState;
 };
 
-export const readDashboardOnboardingState = (): DashboardOnboardingState => {
-  if (!canUseBrowser()) return defaultState();
-  const raw = window.localStorage.getItem(resolveScopeKey());
-  if (!raw) return defaultState();
-  try {
-    return normalizeState(JSON.parse(raw));
-  } catch {
-    return defaultState();
+export const hydrateDashboardOnboardingState = async (force = false) => {
+  const businessId = currentScope.businessId?.trim();
+  const scopeKey = currentScopeKey(currentScope);
+
+  if (!businessId) {
+    dispatchState(defaultState());
+    hydratedScopeKey = scopeKey;
+    return cachedState;
   }
+
+  if (!force && hydratedScopeKey === scopeKey) {
+    return cachedState;
+  }
+
+  if (!force && hydratePromise) {
+    return hydratePromise;
+  }
+
+  hydratePromise = fetch("/api/dashboard/onboarding", { cache: "no-store" })
+    .then(async (response) => {
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error((payload as { error?: string } | null)?.error ?? "Failed to load onboarding state");
+      }
+
+      const payload = (await response.json().catch(() => null)) as { state?: unknown } | null;
+      const next = normalizeDashboardOnboardingState(payload?.state);
+      hydratedScopeKey = scopeKey;
+      dispatchState(next);
+      return next;
+    })
+    .catch((error) => {
+      console.error("[DASHBOARD_ONBOARDING_LOAD_ERROR]", error);
+      const fallback = defaultState();
+      dispatchState(fallback);
+      return fallback;
+    })
+    .finally(() => {
+      hydratePromise = null;
+    });
+
+  return hydratePromise;
 };
+
+export const readDashboardOnboardingState = (): DashboardOnboardingState => cachedState;
 
 export const updateDashboardOnboardingState = (
   updater: (prev: DashboardOnboardingState) => DashboardOnboardingState
 ) => {
-  const current = readDashboardOnboardingState();
-  const next = normalizeState(updater(current));
-  saveState(next);
+  const next = normalizeDashboardOnboardingState(updater(cachedState));
+  dispatchState(next);
+  enqueuePersist(next);
   return next;
 };
 
@@ -143,8 +152,8 @@ export const markChecklistTaskComplete = (taskId: ChecklistTaskId, value = true)
   }));
 
 export const markTutorialSectionSeen = (pathname: string) => {
-  if (!pathname) return;
-  updateDashboardOnboardingState((prev) => ({
+  if (!pathname) return cachedState;
+  return updateDashboardOnboardingState((prev) => ({
     ...prev,
     sectionSeen: {
       ...prev.sectionSeen,
@@ -152,9 +161,3 @@ export const markTutorialSectionSeen = (pathname: string) => {
     }
   }));
 };
-
-export const checklistCompletedCount = (state: DashboardOnboardingState) =>
-  CHECKLIST_TASKS.reduce((count, task) => count + (state.completed[task.id] ? 1 : 0), 0);
-
-export const isChecklistDone = (state: DashboardOnboardingState) =>
-  CHECKLIST_TASKS.every((task) => state.completed[task.id]);

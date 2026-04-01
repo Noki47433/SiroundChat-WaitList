@@ -7,7 +7,7 @@ import { SiteDocumentSchema } from "@/lib/website-builder/schema";
 import type { SiteDocument, SiteSection } from "@/lib/website-builder/types";
 import { buildSitePath, slugify } from "@/lib/builder/utils";
 import { BUILDER_SITES_BUCKET } from "@/lib/builder/storage";
-import { getBaseUrl } from "@/lib/utils/base-url";
+import { buildPublishedSiteUrl } from "@/lib/utils/published-site-url";
 import { getBuilderPlanForRoute } from "@/lib/builder/plan";
 import { themeToCssVars } from "@/lib/website-builder/theme/vars";
 import { logActivity } from "@/lib/activity/log";
@@ -857,8 +857,7 @@ export async function POST(request: Request) {
   }
 
   const cssContent = buildCss(liveChat.document);
-  const baseUrl = getBaseUrl(request);
-  const publishedUrl = `${baseUrl}${resolvedPath}`;
+  const publishedUrl = buildPublishedSiteUrl(slug);
   const htmlContent = buildHtml(
     liveChat.document,
     slug,

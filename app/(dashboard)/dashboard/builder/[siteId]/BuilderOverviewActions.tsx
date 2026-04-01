@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useState } from "react";
 import { Modal } from "@/components/ui/modal";
 
@@ -14,7 +13,6 @@ export function BuilderOverviewActions({ siteId, publishedUrl, canPublish }: Bui
   const [isPublishing, setIsPublishing] = useState(false);
   const [currentUrl, setCurrentUrl] = useState(publishedUrl);
   const [error, setError] = useState<string | null>(null);
-  const [publishNeedsUpgrade, setPublishNeedsUpgrade] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [successOpen, setSuccessOpen] = useState(false);
 
@@ -22,7 +20,6 @@ export function BuilderOverviewActions({ siteId, publishedUrl, canPublish }: Bui
     if (!canPublish) return;
     setIsPublishing(true);
     setError(null);
-    setPublishNeedsUpgrade(false);
 
     try {
       const response = await fetch("/api/builder/publish", {
@@ -33,11 +30,6 @@ export function BuilderOverviewActions({ siteId, publishedUrl, canPublish }: Bui
 
       if (!response.ok) {
         const payload = await response.json().catch(() => null);
-        if (response.status === 403 && payload?.code === "PLAN_UPGRADE_REQUIRED") {
-          setError(payload?.error ?? "Your current plan does not include website publishing.");
-          setPublishNeedsUpgrade(true);
-          return;
-        }
         throw new Error(payload?.error ?? "Publish failed");
       }
 
@@ -59,7 +51,6 @@ export function BuilderOverviewActions({ siteId, publishedUrl, canPublish }: Bui
         onClick={() => {
           if (!canPublish) return;
           setError(null);
-          setPublishNeedsUpgrade(false);
           setConfirmOpen(true);
         }}
         disabled={isPublishing || !canPublish}
@@ -78,17 +69,9 @@ export function BuilderOverviewActions({ siteId, publishedUrl, canPublish }: Bui
         </a>
       ) : null}
       {!canPublish ? (
-        <span className="text-xs text-white/50">Upgrade plan to publish</span>
+        <span className="text-xs text-white/50">Publishing is unavailable right now.</span>
       ) : null}
       {error ? <span className="text-xs text-red-300">{error}</span> : null}
-      {publishNeedsUpgrade ? (
-        <Link
-          href="/billing?blocked=publish_website"
-          className="inline-flex h-9 items-center justify-center rounded-xl border border-[#ffd87266] bg-[#ffd34a1f] px-3 text-xs font-semibold text-[#ffe9ad]"
-        >
-          Upgrade to publish
-        </Link>
-      ) : null}
 
       <Modal
         open={confirmOpen}
@@ -159,7 +142,7 @@ export function BuilderOverviewActions({ siteId, publishedUrl, canPublish }: Bui
         <div className="space-y-2 text-xs text-white/70">
           <p className="font-semibold text-white">What&apos;s next</p>
           <ul className="list-disc space-y-1 pl-5">
-            <li>Finish setting up your site details and domain.</li>
+            <li>Finish your site details, SEO, and business info.</li>
             <li>Share your link with customers.</li>
           </ul>
           <p>You are responsible for verifying the accuracy and legality of published content.</p>

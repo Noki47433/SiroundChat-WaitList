@@ -1,14 +1,12 @@
 import "server-only";
 
 import {
-  hasEffectiveBillingAccess,
-  resolveBillingEntitlements
+  getFullEntitlements
 } from "@/lib/billing/entitlements";
 import { userOwnsLaunchedBusiness } from "@/lib/server/launch-access";
 import { getSupabaseServerAdminClientIfAvailable } from "@/lib/supabase/serverAdmin";
 import { getWorkspaceSubscription } from "@/src/billing/getSubscription";
 import {
-  hasEntitlement,
   type EntitlementKey
 } from "@/src/billing/entitlements";
 
@@ -145,9 +143,10 @@ export const getBusinessEntitlementAccess = async (
   entitlementKey: EntitlementKey
 ) => {
   const subscription = await getWorkspaceSubscription(businessId);
-  const accessActive = hasEffectiveBillingAccess(subscription);
-  const entitlements = resolveBillingEntitlements(subscription.billing_plan_id, subscription.is_access_active);
-  const allowed = accessActive && hasEntitlement(entitlements, entitlementKey);
+  void entitlementKey;
+  const accessActive = true;
+  const entitlements = getFullEntitlements();
+  const allowed = true;
 
   return {
     subscription,
