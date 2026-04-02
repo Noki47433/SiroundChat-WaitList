@@ -1,4 +1,9 @@
 const DEFAULT_PUBLISHED_SITE_ROOT_DOMAIN = "siroundchat.com";
+const DEFAULT_PUBLISHED_SITE_URL_MODE = "path";
+
+type PublishedSiteUrlMode = "path" | "subdomain";
+
+const normalizeSlug = (value: string) => value.trim().toLowerCase();
 
 const trimTrailingSlash = (value: string) => value.replace(/\/+$/, "");
 
@@ -19,6 +24,18 @@ export const getPublishedSiteRootDomain = () =>
       DEFAULT_PUBLISHED_SITE_ROOT_DOMAIN
   );
 
+export const getPublishedSiteUrlMode = (): PublishedSiteUrlMode => {
+  const configuredMode = (
+    process.env.NEXT_PUBLIC_PUBLISHED_SITE_URL_MODE ??
+    process.env.PUBLISHED_SITE_URL_MODE ??
+    DEFAULT_PUBLISHED_SITE_URL_MODE
+  )
+    .trim()
+    .toLowerCase();
+
+  return configuredMode === "subdomain" ? "subdomain" : "path";
+};
+
 export const isLocalHost = (value?: string | null) => {
   const host = normalizeHost(value);
   return (
@@ -31,11 +48,19 @@ export const isLocalHost = (value?: string | null) => {
 };
 
 export const buildPublishedSiteOrigin = (slug: string) =>
-  `https://${slug.trim().toLowerCase()}.${getPublishedSiteRootDomain()}`;
+  getPublishedSiteUrlMode() === "subdomain"
+    ? `https://${normalizeSlug(slug)}.${getPublishedSiteRootDomain()}`
+    : `https://${getPublishedSiteRootDomain()}`;
 
 export const buildPublishedSiteUrl = (slug: string, path = "/") => {
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-  return `${buildPublishedSiteOrigin(slug)}${normalizedPath}`;
+  if (getPublishedSiteUrlMode() === "subdomain") {
+    return `${buildPublishedSiteOrigin(slug)}${normalizedPath}`;
+  }
+
+  const normalizedSlug = normalizeSlug(slug);
+  const routePath = normalizedPath === "/" ? `/s/${normalizedSlug}` : `/s/${normalizedSlug}${normalizedPath}`;
+  return `${buildPublishedSiteOrigin(slug)}${routePath}`;
 };
 
 export const extractPublishedSiteSlugFromHost = (value?: string | null) => {
