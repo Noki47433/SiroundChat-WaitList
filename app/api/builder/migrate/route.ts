@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { userHasLaunchAccess } from "@/lib/server/launch-access";
+import { setWidgetConfigInOnboardingData } from "@/lib/server/widget-config-store";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import { ensureBusinessRow } from "@/lib/tenant";
 import { saveWidgetConfig } from "@/lib/utils/local-store";
@@ -70,6 +71,7 @@ export async function POST(request: Request) {
 
   let businessId = "";
   let widgetKey = "";
+  let onboardingData: Record<string, unknown> | null = null;
 
   if (user) {
     const tenant = await ensureBusinessRow({ userId: user.id, businessName, industry: businessType ?? undefined });
@@ -78,7 +80,7 @@ export async function POST(request: Request) {
     if (businessId) {
       const { data: business, error: businessError } = await (supabase as any)
         .from("businesses")
-        .select("widget_key")
+        .select("widget_key, onboarding_data")
         .eq("id", businessId)
         .maybeSingle();
 
@@ -87,24 +89,46 @@ export async function POST(request: Request) {
       }
 
       widgetKey = business?.widget_key ?? "";
-      if (!widgetKey) {
-        const generatedKey = generateWidgetKey();
-        const { error: updateError } = await (supabase as any)
-          .from("businesses")
-          .update({ widget_key: generatedKey })
-          .eq("id", businessId);
-        if (updateError) {
-          console.error("[BUILDER_MIGRATE_WIDGET_KEY_ERROR]", updateError);
-        } else {
-          widgetKey = generatedKey;
-        }
-      }
+      onboardingData =
+        business?.onboarding_data && typeof business.onboarding_data === "object" && !Array.isArray(business.onboarding_data)
+          ? (business.onboarding_data as Record<string, unknown>)
+          : null;
+      if (!widgetKey) widgetKey = generateWidgetKey();
+
+      const theme = builderConfig.theme ?? {};
+      const shape: "rounded" | "pill" | "square" =
+        builderConfig.launcherShape === "pill"
+          ? "pill"
+          : builderConfig.launcherShape === "square"
+            ? "square"
+            : "rounded";
+
+      const widgetConfigToSave = {
+        siteId: widgetKey,
+        businessName,
+        greeting,
+        theme: {
+          primary: typeof theme.primaryColor === "string" ? theme.primaryColor : DEFAULT_THEME.primary,
+          accent: typeof theme.accentColor === "string" ? theme.accentColor : DEFAULT_THEME.accent,
+          secondary: typeof theme.accentColor === "string" ? theme.accentColor : DEFAULT_THEME.secondary,
+          background: typeof theme.backgroundColor === "string" ? theme.backgroundColor : DEFAULT_THEME.background,
+          text: typeof theme.textColor === "string" ? theme.textColor : DEFAULT_THEME.text,
+          shape
+        },
+        businessType: businessType ?? undefined,
+        faqs: Array.isArray(builderConfig.faqs) ? builderConfig.faqs : undefined,
+        launcherVariant: builderConfig.launcherVariant,
+        logoUrl,
+        iconId: builderConfig.iconId ?? null
+      };
 
       const updatePayload: Record<string, unknown> = {
+        widget_key: widgetKey,
         business_name: businessName,
         greeting,
         logo_url: logoUrl,
-        industry: businessType ?? null
+        industry: businessType ?? null,
+        onboarding_data: setWidgetConfigInOnboardingData(onboardingData, widgetConfigToSave)
       };
       if (tone) updatePayload.tone = tone;
 
@@ -123,32 +147,34 @@ export async function POST(request: Request) {
     widgetKey = generateWidgetKey();
   }
 
-  const theme = builderConfig.theme ?? {};
-  const shape =
-    builderConfig.launcherShape === "pill"
-      ? "pill"
-      : builderConfig.launcherShape === "square"
-        ? "square"
-        : "rounded";
+  if (!businessId) {
+    const theme = builderConfig.theme ?? {};
+    const shape: "rounded" | "pill" | "square" =
+      builderConfig.launcherShape === "pill"
+        ? "pill"
+        : builderConfig.launcherShape === "square"
+          ? "square"
+          : "rounded";
 
-  await saveWidgetConfig({
-    siteId: widgetKey,
-    businessName,
-    greeting,
-    theme: {
-      primary: typeof theme.primaryColor === "string" ? theme.primaryColor : DEFAULT_THEME.primary,
-      accent: typeof theme.accentColor === "string" ? theme.accentColor : DEFAULT_THEME.accent,
-      secondary: typeof theme.accentColor === "string" ? theme.accentColor : DEFAULT_THEME.secondary,
-      background: typeof theme.backgroundColor === "string" ? theme.backgroundColor : DEFAULT_THEME.background,
-      text: typeof theme.textColor === "string" ? theme.textColor : DEFAULT_THEME.text,
-      shape
-    },
-    businessType: businessType ?? undefined,
-    faqs: Array.isArray(builderConfig.faqs) ? builderConfig.faqs : undefined,
-    launcherVariant: builderConfig.launcherVariant,
-    logoUrl,
-    iconId: builderConfig.iconId ?? null
-  });
+    await saveWidgetConfig({
+      siteId: widgetKey,
+      businessName,
+      greeting,
+      theme: {
+        primary: typeof theme.primaryColor === "string" ? theme.primaryColor : DEFAULT_THEME.primary,
+        accent: typeof theme.accentColor === "string" ? theme.accentColor : DEFAULT_THEME.accent,
+        secondary: typeof theme.accentColor === "string" ? theme.accentColor : DEFAULT_THEME.secondary,
+        background: typeof theme.backgroundColor === "string" ? theme.backgroundColor : DEFAULT_THEME.background,
+        text: typeof theme.textColor === "string" ? theme.textColor : DEFAULT_THEME.text,
+        shape
+      },
+      businessType: businessType ?? undefined,
+      faqs: Array.isArray(builderConfig.faqs) ? builderConfig.faqs : undefined,
+      launcherVariant: builderConfig.launcherVariant,
+      logoUrl,
+      iconId: builderConfig.iconId ?? null
+    });
+  }
 
   return NextResponse.json({ ok: true, businessId, widgetKey });
 }

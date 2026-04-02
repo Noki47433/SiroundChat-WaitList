@@ -2,11 +2,11 @@ import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { userHasLaunchAccess } from "@/lib/server/launch-access";
+import { getWidgetConfigFromOnboardingData, setWidgetConfigInOnboardingData } from "@/lib/server/widget-config-store";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import { getSupabaseAdminClientIfAvailable } from "@/lib/supabase/admin";
 import { ensureBusinessRow } from "@/lib/utils/tenant";
 import { isAuthDisabled } from "@/lib/config/auth";
-import { getWidgetConfig, saveWidgetConfig } from "@/lib/utils/local-store";
 import type { WidgetTheme } from "@/lib/types/core";
 import { logActivity } from "@/lib/activity/log";
 import { getBusinessEntitlementAccess } from "@/lib/server/billing-access";
@@ -42,6 +42,7 @@ type BusinessRow = {
   tone: string | null;
   logo_url: string | null;
   widget_key: string | null;
+  onboarding_data: Record<string, unknown> | null;
 };
 
 /**
@@ -173,7 +174,7 @@ const toStoredThemeFromConfig = (cfg: ThemeConfig, base?: Partial<WidgetTheme> |
 const fetchBusinessRow = async (admin: any, businessId: string) => {
   const { data, error } = await (admin as any)
     .from("businesses")
-    .select("id, business_name, greeting, tone, logo_url, widget_key")
+    .select("id, business_name, greeting, tone, logo_url, widget_key, onboarding_data")
     .eq("id", businessId)
     .single();
 
@@ -233,7 +234,7 @@ export async function GET() {
     }
 
     const widgetKey = await ensureWidgetKey(admin, row);
-    const stored = await getWidgetConfig(widgetKey);
+    const stored = getWidgetConfigFromOnboardingData(row.onboarding_data, widgetKey);
 
     const safeTheme = normalizeStoredTheme(stored?.theme ?? DEFAULT_STORED_THEME);
 
@@ -307,23 +308,36 @@ export async function PATCH(req: Request) {
     }
 
     const widgetKey = await ensureWidgetKey(admin, row);
-    const stored = await getWidgetConfig(widgetKey);
+    const stored = getWidgetConfigFromOnboardingData(row.onboarding_data, widgetKey);
 
     let safeTheme = normalizeStoredTheme(stored?.theme ?? DEFAULT_STORED_THEME);
 
     if (parsed.theme) {
       safeTheme = toStoredThemeFromConfig(parsed.theme, stored?.theme);
 
-      // LocalWidgetConfig usually requires greeting/businessName to be string (NOT undefined)
-      await saveWidgetConfig({
+      const nextOnboardingData = setWidgetConfigInOnboardingData(row.onboarding_data, {
         ...(stored ?? {}),
         siteId: widgetKey,
         greeting: normalizeGreeting(row.greeting),
         businessName: normalizeBusinessName(row.business_name),
-        theme: safeTheme as unknown as WidgetTheme, // safeTheme satisfies WidgetTheme requirements in your repo
-        logoUrl: row.logo_url ?? null,
+        tonePreset: resolveTonePreset(row.tone),
+        theme: safeTheme as WidgetTheme,
+        logoUrl: row.logo_url ?? stored?.logoUrl ?? null,
         iconId: stored?.iconId ?? null
       });
+
+      const { error: widgetConfigError } = await (admin as any)
+        .from("businesses")
+        .update({
+          onboarding_data: nextOnboardingData,
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", tenant.businessId);
+
+      if (widgetConfigError) {
+        console.error("[BOT_SETTINGS_WIDGET_CONFIG_SAVE_ERROR]", widgetConfigError);
+        return jsonNoStore({ error: "Failed to save bot settings" }, { status: 500 });
+      }
     }
 
     await logActivity({
