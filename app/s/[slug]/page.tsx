@@ -10,6 +10,7 @@ import { TemplateRenderer } from "@/components/website-builder/templates/Templat
 import {
   buildPublishedSiteUrl,
   extractPublishedSiteSlugFromHost,
+  getPublishedSiteUrlMode,
   getRequestHost
 } from "@/lib/utils/published-site-url";
 import { resolveLiveChat } from "@/lib/website-builder/live-chat";
@@ -201,7 +202,7 @@ export default async function PublicSitePage({ params, searchParams }: PageProps
   const requestHostSlug = extractPublishedSiteSlugFromHost(requestHost);
   const canonicalUrl = buildCanonicalUrl(siteSlug, searchParams);
 
-  if (!data.preview && requestHostSlug !== siteSlug) {
+  if (!data.preview && getPublishedSiteUrlMode() === "subdomain" && requestHostSlug !== siteSlug) {
     redirect(canonicalUrl);
   }
 
