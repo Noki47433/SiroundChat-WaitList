@@ -5,6 +5,7 @@ import { WidgetConfigSchema } from "@/lib/validation/widget";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getBusinessEntitlementAccess } from "@/lib/server/billing-access";
 import { userHasLaunchAccess } from "@/lib/server/launch-access";
+import { getWidgetConfigFromOnboardingData, setWidgetConfigInOnboardingData } from "@/lib/server/widget-config-store";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import { ensureBusinessRow, getTenantFromSession } from "@/lib/utils/tenant";
 import { getWidgetConfig, saveWidgetConfig } from "@/lib/utils/local-store";
@@ -78,15 +79,23 @@ const resolveBusinessByWidgetKey = async (widgetKey: string) => {
   const admin = getSupabaseAdminClient();
   const { data, error } = await (admin as any)
     .from("businesses")
-    .select("id, business_name, greeting, tone, logo_url")
+    .select("id, business_name, greeting, tone, logo_url, onboarding_data")
     .eq("widget_key", widgetKey)
     .maybeSingle();
 
   if (error) {
     console.error("[WIDGET_KEY_LOOKUP_ERROR]", error);
   }
-
-  return (data as { id?: string; business_name?: string | null; greeting?: string | null; tone?: string | null; logo_url?: string | null } | null) ?? null;
+  return (
+    data as {
+      id?: string;
+      business_name?: string | null;
+      greeting?: string | null;
+      tone?: string | null;
+      logo_url?: string | null;
+      onboarding_data?: Record<string, unknown> | null;
+    } | null
+  ) ?? null;
 };
 
 const hasWidgetAccess = async (businessId: string) => {
@@ -136,7 +145,14 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Missing key" }, { status: 400, headers: NO_STORE_HEADERS });
     }
 
-    let business: { id?: string; business_name?: string | null; greeting?: string | null; tone?: string | null; logo_url?: string | null } | null = null;
+    let business: {
+      id?: string;
+      business_name?: string | null;
+      greeting?: string | null;
+      tone?: string | null;
+      logo_url?: string | null;
+      onboarding_data?: Record<string, unknown> | null;
+    } | null = null;
     if (!authDisabled) {
       business = await resolveBusinessByWidgetKey(configKey);
       if (!business?.id) {
@@ -151,7 +167,9 @@ export async function GET(request: Request) {
       }
     }
 
-    const stored = await getWidgetConfig(configKey);
+    const stored = authDisabled
+      ? await getWidgetConfig(configKey)
+      : getWidgetConfigFromOnboardingData(business?.onboarding_data ?? null, configKey);
     const config: z.infer<typeof WidgetConfigSchema> =
       stored ?? {
         siteId: configKey,
@@ -294,7 +312,33 @@ export async function PUT(request: Request) {
       greeting: parsed.data.greeting ?? "Hi there! How can I help?"
     };
 
-    await saveWidgetConfig(toSave);
+    const admin = getSupabaseAdminClient();
+    const { data: business, error: businessError } = await (admin as any)
+      .from("businesses")
+      .select("onboarding_data")
+      .eq("id", businessId)
+      .maybeSingle();
+
+    if (businessError) {
+      console.error("[WIDGET_CONFIG_BUSINESS_LOOKUP_ERROR]", businessError);
+      return NextResponse.json({ error: "Failed to save widget config" }, { status: 500 });
+    }
+
+    const nextOnboardingData = setWidgetConfigInOnboardingData(business?.onboarding_data ?? null, toSave);
+
+    const { error: updateError } = await (admin as any)
+      .from("businesses")
+      .update({
+        onboarding_data: nextOnboardingData,
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", businessId);
+
+    if (updateError) {
+      console.error("[WIDGET_CONFIG_SAVE_ERROR]", updateError);
+      return NextResponse.json({ error: "Failed to save widget config" }, { status: 500 });
+    }
+
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("[WIDGET_CONFIG_PUT_ERROR]", error);
