@@ -24,6 +24,35 @@ const normalizeSrc = (value: unknown) => {
   return null;
 };
 
+const isWidgetLoaderUrl = (value: string) => {
+  if (value.startsWith(WIDGET_LOADER_PREFIX)) return true;
+  try {
+    const parsed = new URL(value);
+    return parsed.pathname === "/api/widget/loader";
+  } catch {
+    return false;
+  }
+};
+
+const replaceWidgetLoaderKey = (value: string, widgetKey?: string | null) => {
+  const trimmedKey = widgetKey?.trim();
+  if (!trimmedKey) return value;
+
+  if (value.startsWith(WIDGET_LOADER_PREFIX)) {
+    return `${WIDGET_LOADER_PREFIX}${encodeURIComponent(trimmedKey)}`;
+  }
+
+  try {
+    const parsed = new URL(value);
+    if (parsed.pathname !== "/api/widget/loader") return value;
+    parsed.searchParams.set("key", trimmedKey);
+    parsed.searchParams.delete("siteId");
+    return parsed.toString();
+  } catch {
+    return value;
+  }
+};
+
 const normalizeInlineScript = (value: unknown) => {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
@@ -64,9 +93,13 @@ export function resolveLiveChat(document: SiteDocument, options: ResolveLiveChat
   }
 
   const normalizedSrc = normalizeSrc(app.config?.src);
+  const preferredSrc =
+    normalizedSrc && isWidgetLoaderUrl(normalizedSrc)
+      ? replaceWidgetLoaderKey(normalizedSrc, options.widgetKey)
+      : normalizedSrc;
   const inlineScript = normalizeInlineScript(app.config?.script);
   const fallbackSrc = fallbackWidgetSrc(options.widgetKey);
-  const scriptSrc = normalizedSrc ?? (!inlineScript ? fallbackSrc : null);
+  const scriptSrc = preferredSrc ?? (!inlineScript ? fallbackSrc : null);
 
   if (!scriptSrc && !inlineScript) {
     return {
