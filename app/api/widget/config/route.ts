@@ -12,11 +12,9 @@ import { getWidgetConfig, saveWidgetConfig } from "@/lib/utils/local-store";
 import { isAuthDisabled } from "@/lib/config/auth";
 import { FAQ_PRESETS } from "@/app/components/chatbot/chatbotFaqPresets";
 import {
+  getSiroundChatDemoWidgetOverrides,
   isSiroundChatDemoBot,
-  SIROUNDCHAT_DEMO_WIDGET_KEY,
-  SIROUNDCHAT_DEMO_BUSINESS_NAME,
-  SIROUNDCHAT_DEMO_FAQS,
-  SIROUNDCHAT_DEMO_GREETING
+  SIROUNDCHAT_DEMO_WIDGET_KEY
 } from "@/lib/chatbot/siroundchat-demo";
 
 export const dynamic = "force-dynamic";
@@ -212,11 +210,7 @@ export async function GET(request: Request) {
         businessName: config.businessName ?? business?.business_name ?? null
       })
     ) {
-      config.businessName = SIROUNDCHAT_DEMO_BUSINESS_NAME;
-      config.greeting = SIROUNDCHAT_DEMO_GREETING;
-      config.businessType = "custom";
-      config.faqs = SIROUNDCHAT_DEMO_FAQS;
-      config.iconId = config.iconId ?? "custom-1";
+      Object.assign(config, getSiroundChatDemoWidgetOverrides(config.iconId ?? null));
     }
 
     const publicConfig = WidgetConfigSchema.parse(config);

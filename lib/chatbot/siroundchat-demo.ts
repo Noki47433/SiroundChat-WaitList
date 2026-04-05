@@ -1,7 +1,19 @@
+import type { WidgetConfig, WidgetTheme } from "@/lib/types/core";
+
 export const SIROUNDCHAT_DEMO_WIDGET_KEY = "7ab3238d-0f3d-432a-bf25-543e96247f33";
 export const SIROUNDCHAT_DEMO_BUSINESS_NAME = "SiroundChat";
+export const SIROUNDCHAT_DEMO_ICON_ID = "custom-1";
 export const SIROUNDCHAT_DEMO_GREETING =
   "I'm SiroundChat - I show you how your business can automatically answer customers, capture leads, and take reservations. Ask me anything 👇";
+
+export const SIROUNDCHAT_DEMO_THEME: WidgetTheme = {
+  primary: "#F59E0B",
+  accent: "#FBBF24",
+  secondary: "#FBBF24",
+  background: "#0D1329",
+  text: "#F8FAFC",
+  shape: "rounded"
+};
 
 export const SIROUNDCHAT_DEMO_FAQS = [
   {
@@ -51,6 +63,20 @@ export function isSiroundChatDemoBot({
     normalizedName === "siroundchat demo" ||
     normalizedName.includes("siroundchat")
   );
+}
+
+export function getSiroundChatDemoWidgetOverrides(iconId?: string | null): Pick<
+  WidgetConfig,
+  "businessName" | "greeting" | "businessType" | "faqs" | "iconId" | "theme"
+> {
+  return {
+    businessName: SIROUNDCHAT_DEMO_BUSINESS_NAME,
+    greeting: SIROUNDCHAT_DEMO_GREETING,
+    businessType: "custom",
+    faqs: SIROUNDCHAT_DEMO_FAQS,
+    iconId: iconId ?? SIROUNDCHAT_DEMO_ICON_ID,
+    theme: { ...SIROUNDCHAT_DEMO_THEME }
+  };
 }
 
 export function buildSiroundChatDemoSystemPrompt() {
