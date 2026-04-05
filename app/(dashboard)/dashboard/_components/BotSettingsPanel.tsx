@@ -195,6 +195,7 @@ export function BotSettingsPanel({
 }) {
   const { push } = useToast();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const saveBotSettingsRef = useRef<((options?: { silent?: boolean }) => Promise<BotSettingsResponse | null>) | null>(null);
   const initialFormState: BotSettingsForm = {
     businessName: settings.businessName,
     greeting: settings.greeting,
@@ -380,6 +381,27 @@ export function BotSettingsPanel({
       setSaving(false);
     }
   };
+  saveBotSettingsRef.current = saveBotSettings;
+
+  useEffect(() => {
+    if (!deployComplete || loading || saving || !isDirty) return;
+
+    const timeoutId = window.setTimeout(() => {
+      void saveBotSettingsRef.current?.({ silent: true });
+    }, 800);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [
+    deployComplete,
+    form.businessName,
+    form.greeting,
+    form.logoUrl,
+    form.theme,
+    form.tone,
+    isDirty,
+    loading,
+    saving
+  ]);
 
   const uploadLogoFile = async (file: File) => {
     if (!businessId) {
@@ -594,6 +616,7 @@ export function BotSettingsPanel({
             <Button variant="primary" onClick={() => void saveBotSettings()} disabled={!isDirty || saving}>
               {saving ? "Saving..." : "Save changes"}
             </Button>
+            <p className="mt-2 text-xs text-white/60">Live widget changes save automatically a moment after you edit them.</p>
             {loading ? <p className="mt-2 text-xs text-white/60">Loading settings...</p> : null}
             {loadError ? <p className="mt-2 text-xs text-rose-200">{loadError}</p> : null}
           </div>
