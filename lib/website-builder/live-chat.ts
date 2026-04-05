@@ -38,16 +38,16 @@ const replaceWidgetLoaderKey = (value: string, widgetKey?: string | null) => {
   const trimmedKey = widgetKey?.trim();
   if (!trimmedKey) return value;
 
+  const nextWidgetSrc = `${WIDGET_LOADER_PREFIX}${encodeURIComponent(trimmedKey)}`;
+
   if (value.startsWith(WIDGET_LOADER_PREFIX)) {
-    return `${WIDGET_LOADER_PREFIX}${encodeURIComponent(trimmedKey)}`;
+    return nextWidgetSrc;
   }
 
   try {
     const parsed = new URL(value);
     if (parsed.pathname !== "/api/widget/loader") return value;
-    parsed.searchParams.set("key", trimmedKey);
-    parsed.searchParams.delete("siteId");
-    return parsed.toString();
+    return nextWidgetSrc;
   } catch {
     return value;
   }

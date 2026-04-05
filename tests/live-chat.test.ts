@@ -28,7 +28,7 @@ test("resolveLiveChat rewrites relative widget loader URLs to the current widget
   assert.equal(result.document.apps?.[0]?.config?.src, "/api/widget/loader?key=new-widget-key");
 });
 
-test("resolveLiveChat rewrites absolute widget loader URLs to the current widget key", () => {
+test("resolveLiveChat rewrites absolute widget loader URLs to the current relative loader path", () => {
   const result = resolveLiveChat(
     {
       apps: [
@@ -45,8 +45,29 @@ test("resolveLiveChat rewrites absolute widget loader URLs to the current widget
     { widgetKey: "new-widget-key" }
   );
 
-  assert.equal(result.scriptSrc, "https://siroundchat.com/api/widget/loader?key=new-widget-key");
-  assert.equal(result.document.apps?.[0]?.config?.src, "https://siroundchat.com/api/widget/loader?key=new-widget-key");
+  assert.equal(result.scriptSrc, "/api/widget/loader?key=new-widget-key");
+  assert.equal(result.document.apps?.[0]?.config?.src, "/api/widget/loader?key=new-widget-key");
+});
+
+test("resolveLiveChat rewrites localhost widget loader URLs to the current relative loader path", () => {
+  const result = resolveLiveChat(
+    {
+      apps: [
+        {
+          id: "live-chat",
+          name: "Live Chat",
+          enabled: true,
+          config: {
+            src: "http://localhost:3000/api/widget/loader?key=old-widget-key"
+          }
+        }
+      ]
+    } as any,
+    { widgetKey: "new-widget-key" }
+  );
+
+  assert.equal(result.scriptSrc, "/api/widget/loader?key=new-widget-key");
+  assert.equal(result.document.apps?.[0]?.config?.src, "/api/widget/loader?key=new-widget-key");
 });
 
 test("resolveLiveChat preserves non-widget external scripts", () => {
