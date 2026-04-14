@@ -99,24 +99,6 @@ const normalizeFeatures = (value: unknown) => {
   };
 };
 
-const formatIndustryValidationError = (data: any) => {
-  const validation = data?.validation ?? data?.quality;
-  const issues = Array.isArray(validation?.issues) ? validation.issues : [];
-  if (!issues.length) return data?.error || "Generate failed";
-
-  const criticalIssues = issues.filter((issue: { severity?: string }) => issue?.severity === "critical");
-  const prioritized = criticalIssues.length ? criticalIssues : issues;
-  const lines = prioritized
-    .slice(0, 4)
-    .map((issue: { message?: string; sectionId?: string }) =>
-      issue?.sectionId ? `${issue.message} (${issue.sectionId})` : issue?.message
-    )
-    .filter(Boolean);
-
-  const prefix = validation?.score ? `Quality score ${validation.score}. ` : "";
-  return `${prefix}${lines.join(" • ")}`;
-};
-
 const normalizeStoredBrief = (value: any, siteId: string): GenerationBrief | null => {
   if (!value || typeof value !== "object") return null;
   const tone = normalizeTextOrNull(value.tone) ?? "professional";
@@ -334,17 +316,7 @@ export function GenerationScreen({ siteId }: GenerationScreenProps) {
       });
       if (!response.ok) {
         const data = await response.json().catch(() => null);
-        const validationMessage =
-          data?.code === "INDUSTRY_V2_VALIDATION_FAILED" ? formatIndustryValidationError(data) : null;
-        const qualityIssues = Array.isArray(data?.quality?.issues)
-          ? data.quality.issues
-              .map((issue: { message?: string; suggestion?: string }) =>
-                issue?.suggestion ? `${issue.message} ${issue.suggestion}` : issue?.message
-              )
-              .filter(Boolean)
-              .join(" ")
-          : null;
-        const message = validationMessage || qualityIssues || data?.error || "Generate failed";
+        const message = data?.error || "Generate failed";
         throw new Error(message);
       }
       setStatus("done");

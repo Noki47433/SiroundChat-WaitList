@@ -482,14 +482,7 @@ export default async function AnalyticsPage({
   const avgUserMessages = totalConversations > 0 ? totalUserMessages / totalConversations : null;
   const conversionConversations = Array.from(conversationIds).filter((id) => convertedConversationIds.has(id)).length;
 
-  const meaningfulRate = totalConversations ? meaningfulConversations / totalConversations : 0;
-  const avgMessagesScore = avgUserMessages ? Math.min(avgUserMessages / 6, 1) : 0;
   const conversionRate = totalConversations ? conversionConversations / totalConversations : 0;
-
-  const qualityScore =
-    totalConversations > 0
-      ? Math.round((meaningfulRate * 0.4 + avgMessagesScore * 0.3 + conversionRate * 0.3) * 100)
-      : null;
 
   const conversationDaily = buildDailySeries(conversationRows, rangeStart, rangeDays, timeZone, "created_at");
   const leadDaily = buildDailySeries(leadRows, rangeStart, rangeDays, timeZone, "created_at");
@@ -726,7 +719,6 @@ export default async function AnalyticsPage({
             responseBucketMax={responseBucketMax}
             avgResponseLabel={formatDuration(avgResponseMs)}
             p95ResponseLabel={formatDuration(p95ResponseMs)}
-            qualityScore={qualityScore}
             intentRows={intentRows}
             topConvertedQuestions={topConvertedQuestions}
             topDroppedQuestions={topDroppedQuestions}

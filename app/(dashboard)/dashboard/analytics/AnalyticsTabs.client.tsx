@@ -33,7 +33,6 @@ type AnalyticsTabsProps = {
   responseBucketMax: number;
   avgResponseLabel: string;
   p95ResponseLabel: string;
-  qualityScore: number | null;
   intentRows: IntentRow[];
   topConvertedQuestions: QuestionRow[];
   topDroppedQuestions: QuestionRow[];
@@ -58,7 +57,6 @@ export default function AnalyticsTabs({
   responseBucketMax,
   avgResponseLabel,
   p95ResponseLabel,
-  qualityScore,
   intentRows,
   topConvertedQuestions,
   topDroppedQuestions,
@@ -77,8 +75,6 @@ export default function AnalyticsTabs({
   const hasFunnelData = funnelSteps.some((step) => step.value > 0);
   const hasIntentData = intentRows.length > 0;
   const hasDropData = dropTotal > 0;
-  const hasQualityScore = qualityScore !== null;
-
   const dropSegments = useMemo(
     () => [
       { label: "Immediate drop", value: droppedConversationCount, color: "bg-amber-400" },
@@ -177,22 +173,6 @@ export default function AnalyticsTabs({
                           </div>
                         </div>
                       ))}
-                    </div>
-                  </div>
-                ) : (
-                  <EmptyPanel message={emptyState} />
-                )}
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-                <p className="text-xs uppercase tracking-[0.2em] text-white/40">Quality score</p>
-                {hasQualityScore ? (
-                  <div className="mt-4 flex items-center justify-between">
-                    <p className="text-3xl font-semibold">{qualityScore}</p>
-                    <div className="h-2 w-28 rounded-full bg-white/10">
-                      <div
-                        className="h-2 rounded-full bg-emerald-400"
-                        style={{ width: `${Math.min(Math.max(qualityScore ?? 0, 0), 100)}%` }}
-                      />
                     </div>
                   </div>
                 ) : (

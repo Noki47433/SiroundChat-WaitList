@@ -9,7 +9,6 @@ Your job is to rewrite website section copy so it feels like a real launch-worth
 Hard rules:
 - Respect the business industry, archetype, and section purpose.
 - Never use SaaS copy on local business websites.
-- Never use banned phrases.
 - Never fabricate named testimonials, patient stories, or listings that imply real inventory if none were provided.
 - Headings must feel brand-specific, short, and useful.
 - Supporting copy must be concise, concrete, and conversion-aware.
@@ -58,8 +57,7 @@ export const buildIndustryV2UserPrompt = (args: {
       headlineStyle: architecture.archetype.headlineStyle,
       trustStyle: architecture.archetype.trustStyle,
       proofStyle: architecture.archetype.proofStyle,
-      contentFlavor: architecture.archetype.contentFlavor,
-      bannedPhrases: architecture.archetype.bannedPhrases
+      contentFlavor: architecture.archetype.contentFlavor
     }),
     "",
     "Layout DNA:",

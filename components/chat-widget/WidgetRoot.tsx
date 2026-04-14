@@ -58,10 +58,10 @@ export function WidgetRoot({
     }
 
     window.parent?.postMessage(
-      { type: "promptly-widget-resize", siteId, width: size.width, height: size.height, open },
+      { type: "promptly-widget-resize", siteId, width: size.width, height: size.height, open, primaryColor: theme.primary },
       "*"
     );
-  }, [open, siteId, openSize.width, openSize.height, closedSize.width, closedSize.height, closedSize, openSize]);
+  }, [open, siteId, theme.primary, openSize.width, openSize.height, closedSize.width, closedSize.height, closedSize, openSize]);
 
   useEffect(() => {
     if (disableAnalytics) return;

@@ -36,7 +36,6 @@ export const PROMPT_STAGE_1_PLAN = [
   "Respect token clamps and copy limits.",
   "Do not add unverifiable claims or fake customer names/logos/metrics.",
   "User-facing website copy must sound launch-ready, specific, and customer-facing.",
-  "Forbidden words/phrases in all copy fields: schema, deterministic, pipeline, retry, validation, tests, coverage, onboarding setup.",
   "If vertical is restaurant: nav must be Home/Menu/Reservations/About/Contact, CTA must be reservation/menu oriented, pricing is forbidden unless explicitly requested, and testimonials must be diner/guest language.",
   "If vertical is clinic: copy must be about dental/clinic care, hero and supporting sections must include non-empty photo sources, nav should be services/about/testimonials/contact, and CTA should be appointment oriented.",
   "If vertical is barbershop: copy must mention cuts, fades, beard work, appointments, and repeat local clients. Avoid generic service-business wording."

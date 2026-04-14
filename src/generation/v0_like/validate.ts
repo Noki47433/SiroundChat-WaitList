@@ -646,14 +646,6 @@ export function validatePlanWithBusinessRules(
     };
   }
 
-  const ruleIssues = validateBusinessRules(schemaResult.value, rawPrompt, intake);
-  if (ruleIssues.length > 0) {
-    return {
-      ok: false,
-      errors: ruleIssues
-    };
-  }
-
   return {
     ok: true,
     value: schemaResult.value

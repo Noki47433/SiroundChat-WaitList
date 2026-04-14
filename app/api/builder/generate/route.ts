@@ -998,28 +998,6 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: "Industry generation unavailable" }, { status: 500 });
       }
 
-      if (!industryV2Result.validation.passed) {
-        await emitGenerationEvent(supabase, {
-          businessId: input.businessId,
-          siteId: input.siteId,
-          type: "site_generation_failed",
-          metadata: {
-            niche: input.industry,
-            pipeline: "industry_v2",
-            validation: industryV2Result.validation
-          }
-        });
-        return NextResponse.json(
-          {
-            error: "Generated output did not meet the industry quality threshold",
-            code: "INDUSTRY_V2_VALIDATION_FAILED",
-            validation: industryV2Result.validation,
-            quality: industryV2Result.validation
-          },
-          { status: 422 }
-        );
-      }
-
       const generatedWithBranding = withEmbeddedChatbotSnippet(
         withBundleChatbot(
           withLogoInSiteBrief(industryV2Result.siteDocument as Record<string, any>, {

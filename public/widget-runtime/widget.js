@@ -13,6 +13,19 @@
 
   const closedSize = { width: 66, height: 66 }; // Closed iframe dimensions to match launcher size
   const openSize = { width: 360, height: 840 }; // Open iframe dimensions to fit chat window + launcher
+  const expandHex = (value) => {
+    if (!/^#(?:[0-9a-fA-F]{3}){1,2}$/.test(value)) return null;
+    if (value.length === 7) return value;
+    return `#${value
+      .slice(1)
+      .split("")
+      .map((char) => `${char}${char}`)
+      .join("")}`;
+  };
+  const withAlpha = (value, alpha) => {
+    const expanded = expandHex(value);
+    return expanded ? `${expanded}${alpha}` : "transparent";
+  };
 
   const mount = () => {
     if (!document.body) {
@@ -66,12 +79,15 @@
       logError("iframe failed", { src: iframe.src });
     });
 
-    const applySize = (size, isOpen) => { // Helper to resize the iframe when open/closed changes
+    let currentPrimaryColor = "transparent";
+
+    const applySize = (size, isOpen, primaryColor = currentPrimaryColor) => { // Helper to resize the iframe when open/closed changes
+      currentPrimaryColor = typeof primaryColor === "string" && primaryColor.trim() ? primaryColor.trim() : "transparent";
       container.style.width = `${size.width}px`;
       container.style.height = `${size.height}px`;
       container.style.borderRadius = isOpen ? "30px" : "999px";
-      container.style.background = isOpen ? "transparent" : "rgba(245, 158, 11, 0.12)";
-      container.style.outline = isOpen ? "none" : "2px solid rgba(245, 158, 11, 0.65)";
+      container.style.background = isOpen ? "transparent" : withAlpha(currentPrimaryColor, "1F");
+      container.style.outline = isOpen ? "none" : `2px solid ${currentPrimaryColor}`;
       container.style.boxShadow = isOpen
         ? "none"
         : "0 12px 28px rgba(15, 23, 42, 0.18)";
@@ -91,7 +107,7 @@
       if (!data || data.type !== "promptly-widget-resize") return; // Ignore unrelated messages
       if (data.siteId && data.siteId !== widgetKey) return; // Ignore messages meant for other widget instances
       log("resize message", { width: data.width, height: data.height, open: data.open });
-      applySize({ width: data.width, height: data.height }, data.open); // Resize host + iframe to match widget state
+      applySize({ width: data.width, height: data.height }, data.open, data.primaryColor); // Resize host + iframe to match widget state
     });
   };
 
