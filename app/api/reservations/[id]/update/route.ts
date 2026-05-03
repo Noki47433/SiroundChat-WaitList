@@ -10,6 +10,8 @@ import {
   validateLeadAndMaxDays
 } from "@/lib/reservations/service";
 
+export const dynamic = "force-dynamic";
+
 const UpdateSchema = z
   .object({
     party_size: z.number().int().positive().optional(),
