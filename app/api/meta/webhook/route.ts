@@ -255,24 +255,34 @@ export async function POST(request: Request) {
     }))
   });
 
-  await Promise.all(
-    extracted.messages.map(async (message) => {
-      try {
-        await sendWhatsAppTextMessage({
-          phoneNumberId: message.phoneNumberId,
-          recipientWaId: message.senderWhatsAppId,
-          text: AUTO_REPLY_TEXT
-        });
-      } catch (error) {
-        log("error", "Failed to send WhatsApp auto-reply", {
-          phoneNumberId: message.phoneNumberId,
-          recipientWaId: message.senderWhatsAppId,
-          messageId: message.messageId,
-          error: sanitizeErrorForLog(error)
-        });
-      }
-    })
-  );
+  for (const message of extracted.messages) {
+    log("info", "Attempting WhatsApp auto-reply", {
+      phoneNumberId: message.phoneNumberId,
+      recipientWaId: message.senderWhatsAppId,
+      messageId: message.messageId
+    });
+
+    try {
+      await sendWhatsAppTextMessage({
+        phoneNumberId: message.phoneNumberId,
+        recipientWaId: message.senderWhatsAppId,
+        text: "SiroundChat received your message ✅"
+      });
+
+      log("info", "WhatsApp auto-reply sent", {
+        phoneNumberId: message.phoneNumberId,
+        recipientWaId: message.senderWhatsAppId,
+        messageId: message.messageId
+      });
+    } catch (error) {
+      log("error", "WhatsApp auto-reply failed", {
+        phoneNumberId: message.phoneNumberId,
+        recipientWaId: message.senderWhatsAppId,
+        messageId: message.messageId,
+        error: sanitizeErrorForLog(error)
+      });
+    }
+  }
 
   return NextResponse.json({ ok: true });
 }
