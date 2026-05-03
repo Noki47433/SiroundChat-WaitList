@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { sendWhatsAppTextMessage } from "@/lib/meta/whatsapp";
+import { sendWhatsAppTextMessage, WhatsAppSendError } from "@/lib/meta/whatsapp";
 import { log } from "@/lib/utils/log";
 
 export const runtime = "nodejs";
@@ -58,7 +58,6 @@ const MAX_LOG_ARRAY_ITEMS = 10;
 const MAX_LOG_OBJECT_KEYS = 25;
 const MAX_LOG_STRING_LENGTH = 500;
 const MAX_TEXT_PREVIEW_LENGTH = 160;
-const AUTO_REPLY_TEXT = "SiroundChat received your message ✅";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -116,14 +115,47 @@ const sanitizeForLog = (value: unknown, depth = 0): unknown => {
 };
 
 const sanitizeErrorForLog = (error: unknown) => {
-  if (error instanceof Error) {
+  if (error instanceof WhatsAppSendError) {
     return {
       name: error.name,
-      message: truncateString(error.message, MAX_LOG_STRING_LENGTH)
+      message: truncateString(error.message, MAX_LOG_STRING_LENGTH),
+      status: error.status ?? null,
+      metaErrorCode: error.metaErrorCode ?? null,
+      metaErrorMessage: error.metaErrorMessage
+        ? truncateString(error.metaErrorMessage, MAX_LOG_STRING_LENGTH)
+        : null,
+      metaErrorType: error.metaErrorType ?? null,
+      metaErrorSubcode: error.metaErrorSubcode ?? null,
+      fbtraceId: error.fbtraceId ?? null,
+      accessTokenMissing: error.accessTokenMissing
     };
   }
 
-  return sanitizeForLog(error);
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: truncateString(error.message, MAX_LOG_STRING_LENGTH),
+      status: null,
+      metaErrorCode: null,
+      metaErrorMessage: null,
+      metaErrorType: null,
+      metaErrorSubcode: null,
+      fbtraceId: null,
+      accessTokenMissing: !process.env.META_ACCESS_TOKEN
+    };
+  }
+
+  return {
+    name: "UnknownError",
+    message: truncateString(String(sanitizeForLog(error)), MAX_LOG_STRING_LENGTH),
+    status: null,
+    metaErrorCode: null,
+    metaErrorMessage: null,
+    metaErrorType: null,
+    metaErrorSubcode: null,
+    fbtraceId: null,
+    accessTokenMissing: !process.env.META_ACCESS_TOKEN
+  };
 };
 
 const extractTextMessages = (payload: MetaWebhookPayload): ExtractedWebhookData => {
@@ -255,24 +287,34 @@ export async function POST(request: Request) {
     }))
   });
 
-  await Promise.all(
-    extracted.messages.map(async (message) => {
-      try {
-        await sendWhatsAppTextMessage({
-          phoneNumberId: message.phoneNumberId,
-          recipientWaId: message.senderWhatsAppId,
-          text: AUTO_REPLY_TEXT
-        });
-      } catch (error) {
-        log("error", "Failed to send WhatsApp auto-reply", {
-          phoneNumberId: message.phoneNumberId,
-          recipientWaId: message.senderWhatsAppId,
-          messageId: message.messageId,
-          error: sanitizeErrorForLog(error)
-        });
-      }
-    })
-  );
+  for (const { phoneNumberId, senderWhatsAppId, messageId } of extracted.messages) {
+    log("info", "Attempting WhatsApp auto-reply", {
+      phoneNumberId,
+      recipientWaId: senderWhatsAppId,
+      messageId
+    });
+
+    try {
+      await sendWhatsAppTextMessage({
+        phoneNumberId,
+        recipientWaId: senderWhatsAppId,
+        text: "SiroundChat received your message ✅"
+      });
+
+      log("info", "WhatsApp auto-reply sent", {
+        phoneNumberId,
+        recipientWaId: senderWhatsAppId,
+        messageId
+      });
+    } catch (error) {
+      log("error", "WhatsApp auto-reply failed", {
+        phoneNumberId,
+        recipientWaId: senderWhatsAppId,
+        messageId,
+        error: sanitizeErrorForLog(error)
+      });
+    }
+  }
 
   return NextResponse.json({ ok: true });
 }
