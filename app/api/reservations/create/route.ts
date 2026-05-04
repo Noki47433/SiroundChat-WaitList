@@ -1,13 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
-import {
-  computeUsedCapacityForInterval,
-  ensureRestaurantBootstrap,
-  getOrCreateReservationSettings,
-  loadCapacityRelevantReservations,
-  validateLeadAndMaxDays
-} from "@/lib/reservations/service";
+import { createReservationRecord, ReservationOperationError } from "@/lib/reservations/operations";
+
+export const runtime = "nodejs";
 
 const CreateSchema = z.object({
   restaurantId: z.string().uuid(),
@@ -76,71 +72,38 @@ export async function POST(request: Request) {
     conversationId
   } = parsed.data;
 
-  const startAt = new Date(startAtISO);
-  if (Number.isNaN(startAt.getTime())) {
-    return NextResponse.json({ error: "Invalid startAtISO" }, { status: 400 });
-  }
-
   const admin = getSupabaseAdminClient();
-  const restaurant = await ensureRestaurantBootstrap(admin as any, restaurantId);
-  if (!restaurant) {
-    return NextResponse.json({ error: "Restaurant not found" }, { status: 404 });
+  try {
+    const createdBy = source === "widget" ? "widget" : "chatbot";
+    const result = await createReservationRecord({
+      adminClient: admin as any,
+      restaurantId,
+      customerName,
+      customerPhone,
+      customerEmail,
+      partySize,
+      startAtISO,
+      notes,
+      source: "website",
+      createdBy,
+      status: "confirmed",
+      conversationId: conversationId ?? null,
+      sendSmsAlert: true
+    });
+
+    return NextResponse.json({ reservation: result.reservation });
+  } catch (error) {
+    if (error instanceof ReservationOperationError) {
+      return NextResponse.json(
+        {
+          error: error.message,
+          code: error.code,
+          ...(error.details ?? {})
+        },
+        { status: error.status }
+      );
+    }
+
+    return NextResponse.json({ error: "Failed to create reservation" }, { status: 500 });
   }
-
-  const settings = await getOrCreateReservationSettings(admin as any, restaurantId);
-  const endAt = new Date(startAt.getTime() + settings.default_duration_min * 60_000);
-
-  const leadMaxValidation = validateLeadAndMaxDays(startAt, settings);
-  if (!leadMaxValidation.ok) {
-    return NextResponse.json({ error: leadMaxValidation.message, code: leadMaxValidation.code }, { status: 400 });
-  }
-
-  const overlaps = await loadCapacityRelevantReservations(admin as any, {
-    restaurantId,
-    intervalStart: startAt,
-    intervalEnd: endAt,
-    settings
-  });
-  const usedCapacity = computeUsedCapacityForInterval(overlaps, startAt, endAt, settings);
-
-  if (usedCapacity + partySize > restaurant.total_capacity) {
-    return NextResponse.json(
-      {
-        error: "Not enough capacity at that time.",
-        code: "capacity_conflict",
-        remainingCapacity: Math.max(restaurant.total_capacity - usedCapacity, 0)
-      },
-      { status: 409 }
-    );
-  }
-
-  const createdBy = source === "widget" ? "widget" : "chatbot";
-
-  const insertPayload: Record<string, unknown> = {
-    restaurant_id: restaurantId,
-    business_id: restaurantId,
-    conversation_id: conversationId ?? null,
-    start_at: startAt.toISOString(),
-    end_at: endAt.toISOString(),
-    datetime: startAt.toISOString(),
-    party_size: partySize,
-    customer_name: customerName.trim(),
-    customer_phone: customerPhone?.trim() || null,
-    customer_email: customerEmail?.trim() || null,
-    notes: notes?.trim() || null,
-    status: "confirmed",
-    created_by: createdBy
-  };
-
-  const { data: created, error: createError } = await (admin as any)
-    .from("reservations")
-    .insert(insertPayload)
-    .select("*")
-    .single();
-
-  if (createError || !created) {
-    return NextResponse.json({ error: createError?.message ?? "Failed to create reservation" }, { status: 500 });
-  }
-
-  return NextResponse.json({ reservation: created });
 }

@@ -8,6 +8,9 @@ import {
   getOrCreateReservationSettings
 } from "@/lib/reservations/service";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 const QuerySchema = z.object({
   restaurantId: z.string().uuid().optional(),
   from: z.string().min(1),

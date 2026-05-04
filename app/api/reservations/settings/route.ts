@@ -9,6 +9,9 @@ import {
   type ReservationSettingsRow
 } from "@/lib/reservations/service";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 const SettingsUpdateSchema = z
   .object({
     restaurantId: z.string().uuid().optional(),

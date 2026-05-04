@@ -10,6 +10,7 @@ import { DASHBOARD_NAV } from "./Sidebar";
 
 const routeTitles: Record<string, string> = {
   "/dashboard": "Overview",
+  "/dashboard/inbox": "Inbox",
   "/dashboard/conversations": "Conversations",
   "/dashboard/leads": "Leads",
   "/dashboard/reservations": "Reservations",
@@ -17,7 +18,7 @@ const routeTitles: Record<string, string> = {
   "/dashboard/documents": "Documents",
   "/dashboard/feedback": "Feedback",
   "/dashboard/chatbot/sales": "Update Info",
-  "/dashboard/channels": "Channels",
+  "/dashboard/integrations": "Integrations",
   "/dashboard/builder": "Website Builder",
   "/dashboard/onboarding": "Onboarding",
   "/dashboard/analytics": "Analytics",
