@@ -1,7 +1,7 @@
-import { IntegrationsDashboard } from "@/components/integrations/IntegrationsDashboard";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
 export default function IntegrationsPage() {
-  return <IntegrationsDashboard />;
+  redirect("/dashboard/channels?tab=integrations");
 }

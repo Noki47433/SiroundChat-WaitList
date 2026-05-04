@@ -10,6 +10,7 @@ import { DASHBOARD_NAV } from "./Sidebar";
 
 const routeTitles: Record<string, string> = {
   "/dashboard": "Overview",
+  "/dashboard/channels": "Channels",
   "/dashboard/inbox": "Inbox",
   "/dashboard/conversations": "Conversations",
   "/dashboard/leads": "Leads",

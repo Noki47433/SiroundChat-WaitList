@@ -31,7 +31,13 @@ const statusBadge = (status: "connected" | "disabled" | "needs_reauth") => {
   return { label: "Not connected", variant: "default" as const };
 };
 
-export function IntegrationsDashboard() {
+export function IntegrationsDashboard({
+  showHeader = true,
+  inboxHref = "/dashboard/inbox"
+}: {
+  showHeader?: boolean;
+  inboxHref?: string;
+} = {}) {
   const { push } = useToast();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -95,13 +101,15 @@ export function IntegrationsDashboard() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <p className="text-xs uppercase tracking-[0.2em] text-white/40">Integrations</p>
-        <h2 className="dashboard-heading mt-2 text-3xl font-semibold text-white">Messaging channels</h2>
-        <p className="mt-2 text-sm text-white/60">
-          Connect the channels your restaurant already uses and keep the AI assistant aligned across them.
-        </p>
-      </div>
+      {showHeader ? (
+        <div>
+          <p className="text-xs uppercase tracking-[0.2em] text-white/40">Integrations</p>
+          <h2 className="dashboard-heading mt-2 text-3xl font-semibold text-white">Messaging channels</h2>
+          <p className="mt-2 text-sm text-white/60">
+            Connect the channels your restaurant already uses and keep the AI assistant aligned across them.
+          </p>
+        </div>
+      ) : null}
 
       {loading ? (
         <div className="grid gap-4 xl:grid-cols-3">
@@ -142,7 +150,7 @@ export function IntegrationsDashboard() {
             <div className="flex flex-wrap gap-2">
               {whatsappChannel ? (
                 <>
-                  <Link href="/dashboard/inbox" className={buttonVariants({ variant: "secondary" })}>
+                  <Link href={inboxHref} className={buttonVariants({ variant: "secondary" })}>
                     Open inbox
                   </Link>
                   <Button variant="outline" onClick={() => void toggleAutoReply()} disabled={saving}>

@@ -1,4 +1,4 @@
-import { InboxDashboard } from "@/components/inbox/InboxDashboard";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -9,7 +9,13 @@ export default function InboxPage({
 }: {
   searchParams?: Record<string, string | string[] | undefined>;
 }) {
-  const initialConversationId = toSingle(searchParams?.conversation);
+  const params = new URLSearchParams();
+  params.set("tab", "inbox");
 
-  return <InboxDashboard initialConversationId={initialConversationId} />;
+  const initialConversationId = toSingle(searchParams?.conversation)?.trim();
+  if (initialConversationId) {
+    params.set("conversation", initialConversationId);
+  }
+
+  redirect(`/dashboard/channels?${params.toString()}`);
 }

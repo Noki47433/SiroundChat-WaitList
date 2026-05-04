@@ -570,7 +570,9 @@ export function ReservationsOpsDashboard({ initialReservationId }: { initialRese
                   <Button
                     variant="secondary"
                     onClick={() =>
-                      router.push(`/dashboard/inbox?conversation=${selectedReservation.source_conversation_id}`)
+                      router.push(
+                        `/dashboard/channels?tab=inbox&conversation=${selectedReservation.source_conversation_id}`
+                      )
                     }
                   >
                     Open WhatsApp conversation

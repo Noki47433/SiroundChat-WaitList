@@ -103,7 +103,13 @@ const buildMissingFields = (draft: Record<string, unknown> | null | undefined) =
   return missing;
 };
 
-export function InboxDashboard({ initialConversationId }: { initialConversationId?: string }) {
+export function InboxDashboard({
+  initialConversationId,
+  showHeader = true
+}: {
+  initialConversationId?: string;
+  showHeader?: boolean;
+}) {
   const router = useRouter();
   const { push } = useToast();
   const [loadingConversations, setLoadingConversations] = useState(true);
@@ -271,13 +277,15 @@ export function InboxDashboard({ initialConversationId }: { initialConversationI
 
   return (
     <div className="space-y-6">
-      <div>
-        <p className="text-xs uppercase tracking-[0.2em] text-white/40">Inbox</p>
-        <h2 className="dashboard-heading mt-2 text-3xl font-semibold text-white">Customer conversations</h2>
-        <p className="mt-2 text-sm text-white/60">
-          Manage customer conversations from WhatsApp and your AI assistant.
-        </p>
-      </div>
+      {showHeader ? (
+        <div>
+          <p className="text-xs uppercase tracking-[0.2em] text-white/40">Inbox</p>
+          <h2 className="dashboard-heading mt-2 text-3xl font-semibold text-white">Customer conversations</h2>
+          <p className="mt-2 text-sm text-white/60">
+            Manage customer conversations from WhatsApp and your AI assistant.
+          </p>
+        </div>
+      ) : null}
 
       <div className="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
         <Card className="dashboard-surface flex min-h-[720px] flex-col gap-4 p-0">
