@@ -9,6 +9,7 @@ import {
   type ReservationSettingsRow
 } from "@/lib/reservations/service";
 
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const SettingsUpdateSchema = z

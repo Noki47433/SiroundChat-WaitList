@@ -8,6 +8,7 @@ import {
   getOrCreateReservationSettings
 } from "@/lib/reservations/service";
 
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const QuerySchema = z.object({

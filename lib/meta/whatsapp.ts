@@ -16,6 +16,7 @@ type MetaApiErrorPayload = {
     error_subcode?: number;
     fbtrace_id?: string;
   };
+  messages?: Array<{ id?: string }>;
 };
 
 type WhatsAppSendErrorOptions = {
@@ -79,11 +80,18 @@ const parseMetaErrorPayload = (payload: unknown) => {
   };
 };
 
+const readMetaMessageId = (payload: unknown) => {
+  if (!isRecord(payload) || !Array.isArray(payload.messages)) return null;
+  const first = payload.messages[0];
+  if (!isRecord(first)) return null;
+  return typeof first.id === "string" && first.id.trim() ? first.id.trim() : null;
+};
+
 export async function sendWhatsAppTextMessage({
   phoneNumberId,
   recipientWaId,
   text
-}: SendWhatsAppTextMessageParams): Promise<void> {
+}: SendWhatsAppTextMessageParams): Promise<string | null> {
   const accessToken = process.env.META_ACCESS_TOKEN;
   const accessTokenMissing = !accessToken;
   const normalizedPhoneNumberId = toNonEmptyString(phoneNumberId);
@@ -93,27 +101,31 @@ export async function sendWhatsAppTextMessage({
   if (accessTokenMissing) {
     throw new WhatsAppSendError({
       message: "META_ACCESS_TOKEN is not configured",
+      status: 500,
       accessTokenMissing: true
     });
   }
 
   if (!normalizedPhoneNumberId) {
     throw new WhatsAppSendError({
-      message: "phoneNumberId is required",
+      message: "Missing WhatsApp phone number id",
+      status: 400,
       accessTokenMissing
     });
   }
 
   if (!normalizedRecipientWaId) {
     throw new WhatsAppSendError({
-      message: "recipientWaId is required",
+      message: "Missing WhatsApp recipient id",
+      status: 400,
       accessTokenMissing
     });
   }
 
   if (!normalizedText) {
     throw new WhatsAppSendError({
-      message: "text is required",
+      message: "Missing WhatsApp message text",
+      status: 400,
       accessTokenMissing
     });
   }
@@ -149,12 +161,13 @@ export async function sendWhatsAppTextMessage({
     });
   }
 
+  const payload = (await response.json().catch(() => null)) as MetaApiErrorPayload | null;
+
   if (response.ok) {
-    return;
+    return readMetaMessageId(payload);
   }
 
-  const errorPayload = (await response.json().catch(() => null)) as MetaApiErrorPayload | null;
-  const parsedError = parseMetaErrorPayload(errorPayload);
+  const parsedError = parseMetaErrorPayload(payload);
 
   throw new WhatsAppSendError({
     message: parsedError?.message
