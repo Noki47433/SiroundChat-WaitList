@@ -4,6 +4,8 @@ import { userHasLaunchAccess } from "@/lib/server/launch-access";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import { getTenantFromSession } from "@/lib/utils/tenant";
 
+export const dynamic = "force-dynamic";
+
 const BodySchema = z.object({
   reservationId: z.string().uuid(),
   status: z.enum(["pending", "confirmed", "canceled", "cancelled", "seated", "completed", "no_show"])

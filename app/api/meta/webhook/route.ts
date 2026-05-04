@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { generateBusinessChatbotReply } from "@/lib/chatbot/business-chat-engine";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
-import { sendWhatsAppTextMessage } from "@/lib/meta/whatsapp";
+import { sendWhatsAppTextMessage, WhatsAppSendError } from "@/lib/meta/whatsapp";
 import { log } from "@/lib/utils/log";
 
 export const runtime = "nodejs";
@@ -118,14 +118,47 @@ const sanitizeForLog = (value: unknown, depth = 0): unknown => {
 };
 
 const sanitizeErrorForLog = (error: unknown) => {
-  if (error instanceof Error) {
+  if (error instanceof WhatsAppSendError) {
     return {
       name: error.name,
-      message: truncateString(error.message, MAX_LOG_STRING_LENGTH)
+      message: truncateString(error.message, MAX_LOG_STRING_LENGTH),
+      status: error.status ?? null,
+      metaErrorCode: error.metaErrorCode ?? null,
+      metaErrorMessage: error.metaErrorMessage
+        ? truncateString(error.metaErrorMessage, MAX_LOG_STRING_LENGTH)
+        : null,
+      metaErrorType: error.metaErrorType ?? null,
+      metaErrorSubcode: error.metaErrorSubcode ?? null,
+      fbtraceId: error.fbtraceId ?? null,
+      accessTokenMissing: error.accessTokenMissing
     };
   }
 
-  return sanitizeForLog(error);
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: truncateString(error.message, MAX_LOG_STRING_LENGTH),
+      status: null,
+      metaErrorCode: null,
+      metaErrorMessage: null,
+      metaErrorType: null,
+      metaErrorSubcode: null,
+      fbtraceId: null,
+      accessTokenMissing: !process.env.META_ACCESS_TOKEN
+    };
+  }
+
+  return {
+    name: "UnknownError",
+    message: truncateString(String(sanitizeForLog(error)), MAX_LOG_STRING_LENGTH),
+    status: null,
+    metaErrorCode: null,
+    metaErrorMessage: null,
+    metaErrorType: null,
+    metaErrorSubcode: null,
+    fbtraceId: null,
+    accessTokenMissing: !process.env.META_ACCESS_TOKEN
+  };
 };
 
 const findCreatedReservationId = (actions: Array<{ type?: string; payload?: Record<string, unknown> }>) => {
