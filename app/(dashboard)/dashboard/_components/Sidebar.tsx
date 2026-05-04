@@ -38,7 +38,7 @@ type NavSection = {
 
 const CORE_NAV: NavItem[] = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
-  { href: "/dashboard/inbox", label: "Inbox", icon: MessageSquare },
+  { href: "/dashboard/channels", label: "Channels", icon: Link2 },
   { href: "/dashboard/conversations", label: "Conversations", icon: MessageSquare },
   { href: "/dashboard/leads", label: "Leads", icon: Users },
   { href: "/dashboard/reservations", label: "Reservations", icon: CalendarCheck2 },
@@ -50,7 +50,6 @@ const GROWTH_NAV: NavItem[] = [
   { href: "/dashboard/documents", label: "Documents", icon: FileText },
   { href: "/dashboard/feedback", label: "Feedback", icon: MessageSquareQuote },
   { href: "/dashboard/chatbot/sales", label: "Update Info", icon: Sparkles },
-  { href: "/dashboard/integrations", label: "Integrations", icon: Link2 },
   { href: "/dashboard/analytics", label: "Analytics", icon: LineChart },
   { href: "/dashboard/analytics/website", label: "Website Analytics", icon: Globe }
 ];
