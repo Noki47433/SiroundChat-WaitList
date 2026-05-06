@@ -51,12 +51,13 @@ export async function POST(request: Request, { params }: { params: { id: string 
     return NextResponse.json({ error: "Conversation is missing a WhatsApp recipient id" }, { status: 400 });
   }
 
+  const replyBody = parsed.data.body.trim();
   let outboundMessageId: string | null = null;
   try {
     outboundMessageId = await sendWhatsAppTextMessage({
       phoneNumberId,
       recipientWaId: conversation.external_customer_id,
-      text: parsed.data.body.trim()
+      text: replyBody
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to send WhatsApp reply";
@@ -65,39 +66,52 @@ export async function POST(request: Request, { params }: { params: { id: string 
 
   const nowIso = new Date().toISOString();
 
-  const { error: messageInsertError } = await (context.supabase as any).from("messages").insert({
-    conversation_id: conversation.id,
-    business_id: context.businessId,
-    sender: "human",
-    direction: "outbound",
-    content: parsed.data.body.trim(),
-    body: parsed.data.body.trim(),
-    provider_message_id: outboundMessageId,
-    raw_payload: {
-      manual_reply: true
-    }
-  });
+  const { data: createdMessage, error: messageInsertError } = await (context.supabase as any)
+    .from("messages")
+    .insert({
+      conversation_id: conversation.id,
+      business_id: context.businessId,
+      sender: "human",
+      direction: "outbound",
+      content: replyBody,
+      body: replyBody,
+      provider_message_id: outboundMessageId,
+      raw_payload: {
+        manual_reply: true
+      }
+    })
+    .select("id,direction,body,created_at")
+    .single();
 
-  if (messageInsertError) {
+  if (messageInsertError || !createdMessage?.id) {
     return NextResponse.json({ error: messageInsertError.message }, { status: 500 });
   }
 
-  const { error: conversationUpdateError } = await (context.supabase as any)
+  const { data: updatedConversation, error: conversationUpdateError } = await (context.supabase as any)
     .from("conversations")
     .update({
       status: "human",
-      last_message_preview: parsed.data.body.trim(),
+      last_message_preview: replyBody,
       last_message_at: nowIso
     })
     .eq("id", conversation.id)
-    .eq("business_id", context.businessId);
+    .eq("business_id", context.businessId)
+    .select("id,status,last_message_preview,last_message_at")
+    .single();
 
-  if (conversationUpdateError) {
+  if (conversationUpdateError || !updatedConversation?.id) {
     return NextResponse.json({ error: conversationUpdateError.message }, { status: 500 });
   }
 
   return NextResponse.json({
     ok: true,
-    providerMessageId: outboundMessageId
+    providerMessageId: outboundMessageId,
+    message: {
+      id: createdMessage.id,
+      direction: createdMessage.direction ?? "outbound",
+      body: createdMessage.body ?? replyBody,
+      created_at: createdMessage.created_at ?? nowIso
+    },
+    conversation: updatedConversation
   });
 }

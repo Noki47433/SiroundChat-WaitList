@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import type { FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -52,6 +53,13 @@ type ConversationDetailResponse = {
   conversation: ConversationRow;
   messages: MessageRow[];
   linkedReservation: ReservationRow | null;
+};
+
+type ReplyResponse = {
+  ok: true;
+  providerMessageId: string | null;
+  message: MessageRow;
+  conversation: Pick<ConversationRow, "id" | "status" | "last_message_preview" | "last_message_at">;
 };
 
 const STATUS_FILTERS: Array<{ value: "all" | ConversationStatus; label: string }> = [
@@ -112,6 +120,8 @@ export function InboxDashboard({
 }) {
   const router = useRouter();
   const { push } = useToast();
+  const threadViewportRef = useRef<HTMLDivElement | null>(null);
+  const bottomAnchorRef = useRef<HTMLDivElement | null>(null);
   const [loadingConversations, setLoadingConversations] = useState(true);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [savingStatus, setSavingStatus] = useState<ConversationStatus | null>(null);
@@ -123,6 +133,39 @@ export function InboxDashboard({
   const [detail, setDetail] = useState<ConversationDetailResponse | null>(null);
   const [replyText, setReplyText] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const scrollThreadToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
+    const viewport = threadViewportRef.current;
+    if (!viewport) return;
+
+    window.requestAnimationFrame(() => {
+      if (bottomAnchorRef.current) {
+        bottomAnchorRef.current.scrollIntoView({ behavior, block: "end" });
+        return;
+      }
+
+      viewport.scrollTo({
+        top: viewport.scrollHeight,
+        behavior
+      });
+    });
+  }, []);
+
+  const upsertConversation = useCallback((updater: (current: ConversationRow) => ConversationRow | null) => {
+    setConversations((current) => {
+      const next = current
+        .map((conversation) => updater(conversation))
+        .filter((conversation): conversation is ConversationRow => Boolean(conversation));
+
+      next.sort((left, right) => {
+        const leftTime = left.last_message_at ? new Date(left.last_message_at).getTime() : 0;
+        const rightTime = right.last_message_at ? new Date(right.last_message_at).getTime() : 0;
+        return rightTime - leftTime;
+      });
+
+      return next;
+    });
+  }, []);
 
   const loadConversations = async (nextStatus = statusFilter, nextSearch = search) => {
     setLoadingConversations(true);
@@ -203,12 +246,40 @@ export function InboxDashboard({
     void loadConversationDetail(selectedConversationId);
   }, [loadConversationDetail, selectedConversationId]);
 
+  useEffect(() => {
+    const conversationId = detail?.conversation.id;
+    const messageCount = detail?.messages.length ?? 0;
+
+    if (!conversationId || messageCount === 0) return;
+    scrollThreadToBottom(messageCount > 4 ? "auto" : "smooth");
+  }, [detail?.conversation.id, detail?.messages.length, scrollThreadToBottom]);
+
   const draftFields = detail?.conversation?.reservation_draft ?? null;
   const missingDraftFields = buildMissingFields(draftFields);
+  const inboxShellHeightClass = showHeader ? "xl:h-[calc(100dvh-14rem)]" : "xl:h-[calc(100dvh-20rem)]";
 
   const updateConversationStatus = async (status: ConversationStatus) => {
-    if (!selectedConversationId) return;
+    if (!selectedConversationId || !detail?.conversation) return;
+
+    const previousStatus = detail.conversation.status;
+    if (previousStatus === status) return;
+
     setSavingStatus(status);
+    setDetail((current) =>
+      current
+        ? {
+            ...current,
+            conversation: {
+              ...current.conversation,
+              status
+            }
+          }
+        : current
+    );
+    upsertConversation((conversation) =>
+      conversation.id === selectedConversationId ? { ...conversation, status } : conversation
+    );
+
     try {
       const response = await fetch(`/api/inbox/conversations/${selectedConversationId}/status`, {
         method: "PATCH",
@@ -219,24 +290,32 @@ export function InboxDashboard({
       if (!response.ok) {
         throw new Error(payload?.error ?? "Failed to update conversation");
       }
-
-      setConversations((current) =>
-        current.map((conversation) =>
-          conversation.id === selectedConversationId ? { ...conversation, status } : conversation
-        )
-      );
       setDetail((current) =>
         current
           ? {
               ...current,
               conversation: {
                 ...current.conversation,
-                status
+                status: payload?.conversation?.status ?? status
               }
             }
           : current
       );
     } catch (error) {
+      setDetail((current) =>
+        current
+          ? {
+              ...current,
+              conversation: {
+                ...current.conversation,
+                status: previousStatus
+              }
+            }
+          : current
+      );
+      upsertConversation((conversation) =>
+        conversation.id === selectedConversationId ? { ...conversation, status: previousStatus } : conversation
+      );
       push({
         title: "Status update failed",
         message: error instanceof Error ? error.message : "Unknown error",
@@ -249,12 +328,14 @@ export function InboxDashboard({
 
   const sendReply = async () => {
     if (!selectedConversationId || !replyText.trim()) return;
+
+    const trimmedReply = replyText.trim();
     setSendingReply(true);
     try {
       const response = await fetch(`/api/inbox/conversations/${selectedConversationId}/reply`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body: replyText.trim() })
+        body: JSON.stringify({ body: trimmedReply })
       });
       const payload = await response.json();
       if (!response.ok) {
@@ -262,8 +343,33 @@ export function InboxDashboard({
       }
 
       setReplyText("");
-      await loadConversations(statusFilter, search);
-      await loadConversationDetail(selectedConversationId);
+      const reply = payload as ReplyResponse;
+
+      setDetail((current) =>
+        current
+          ? {
+              ...current,
+              conversation: {
+                ...current.conversation,
+                status: reply.conversation.status,
+                last_message_preview: reply.conversation.last_message_preview,
+                last_message_at: reply.conversation.last_message_at
+              },
+              messages: [...current.messages, reply.message]
+            }
+          : current
+      );
+      upsertConversation((conversation) =>
+        conversation.id === selectedConversationId
+          ? {
+              ...conversation,
+              status: reply.conversation.status,
+              last_message_preview: reply.conversation.last_message_preview,
+              last_message_at: reply.conversation.last_message_at
+            }
+          : conversation
+      );
+      scrollThreadToBottom();
     } catch (error) {
       push({
         title: "Reply failed",
@@ -273,6 +379,11 @@ export function InboxDashboard({
     } finally {
       setSendingReply(false);
     }
+  };
+
+  const handleReplySubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    await sendReply();
   };
 
   return (
@@ -287,8 +398,8 @@ export function InboxDashboard({
         </div>
       ) : null}
 
-      <div className="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
-        <Card className="dashboard-surface flex min-h-[720px] flex-col gap-4 p-0">
+      <div className={`grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)] ${inboxShellHeightClass}`}>
+        <Card className="dashboard-surface flex min-h-[620px] flex-col overflow-hidden p-0 xl:min-h-0">
           <div className="border-b border-white/10 px-5 py-5">
             <div>
               <h3 className="dashboard-heading text-lg font-semibold text-white">Inbox</h3>
@@ -318,7 +429,7 @@ export function InboxDashboard({
             />
           </div>
 
-          <div className="flex-1 overflow-y-auto px-3 pb-3">
+          <div className="flex-1 overflow-y-auto px-3 pb-3 xl:min-h-0">
             {loadingConversations ? (
               <div className="space-y-3 p-2">
                 {Array.from({ length: 6 }).map((_, index) => (
@@ -379,9 +490,9 @@ export function InboxDashboard({
           </div>
         </Card>
 
-        <Card className="dashboard-surface min-h-[720px] p-0">
+        <Card className="dashboard-surface min-h-[620px] overflow-hidden p-0 xl:min-h-0">
           {!selectedConversationId ? (
-            <div className="flex h-full min-h-[720px] items-center justify-center p-8 text-center">
+            <div className="flex h-full min-h-[620px] items-center justify-center p-8 text-center xl:min-h-0">
               <div className="max-w-sm space-y-3">
                 <p className="text-lg font-semibold text-white">Select a conversation to view messages.</p>
                 <p className="text-sm text-white/55">
@@ -398,7 +509,7 @@ export function InboxDashboard({
               </div>
             </div>
           ) : (
-            <div className="flex h-full flex-col">
+            <div className="flex h-full min-h-0 flex-col">
               <div className="border-b border-white/10 px-6 py-5">
                 <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
                   <div>
@@ -424,6 +535,7 @@ export function InboxDashboard({
                     <Button
                       variant={detail.conversation.status === "bot" ? "primary" : "secondary"}
                       size="sm"
+                      type="button"
                       onClick={() => void updateConversationStatus("bot")}
                       disabled={savingStatus !== null}
                     >
@@ -432,6 +544,7 @@ export function InboxDashboard({
                     <Button
                       variant={detail.conversation.status === "human" ? "primary" : "secondary"}
                       size="sm"
+                      type="button"
                       onClick={() => void updateConversationStatus("human")}
                       disabled={savingStatus !== null}
                     >
@@ -440,6 +553,7 @@ export function InboxDashboard({
                     <Button
                       variant="outline"
                       size="sm"
+                      type="button"
                       onClick={() => void updateConversationStatus("closed")}
                       disabled={savingStatus !== null}
                     >
@@ -449,15 +563,18 @@ export function InboxDashboard({
                 </div>
               </div>
 
-              <div className="grid flex-1 gap-6 p-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-                <div className="flex min-h-0 flex-col gap-4">
-                  <div className="dashboard-inset flex-1 overflow-y-auto rounded-3xl p-4">
-                    <div className="space-y-3">
+              <div className="grid flex-1 min-h-0 gap-6 overflow-hidden p-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+                <div className="flex min-h-0 flex-col overflow-hidden">
+                  <div
+                    ref={threadViewportRef}
+                    className="dashboard-inset flex-1 overflow-y-auto rounded-[1.75rem] px-4 py-4 scroll-smooth xl:min-h-0"
+                  >
+                    <div className="space-y-3 pb-24">
                       {detail.messages.map((message) => {
                         const inbound = message.direction === "inbound";
                         return (
                           <div key={message.id} className={`flex ${inbound ? "justify-start" : "justify-end"}`}>
-                            <div className={`max-w-[78%] ${inbound ? "items-start" : "items-end"}`}>
+                            <div className={`flex max-w-[min(84%,42rem)] flex-col ${inbound ? "items-start" : "items-end"}`}>
                               <div className="mb-1 flex items-center gap-2 text-[11px] text-white/45">
                                 <span>{inbound ? "Customer" : "SiroundChat"}</span>
                                 <span>{formatDateTime(message.created_at)}</span>
@@ -475,33 +592,38 @@ export function InboxDashboard({
                           </div>
                         );
                       })}
+                      <div ref={bottomAnchorRef} />
                     </div>
                   </div>
 
-                  <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-4">
-                    <div className="mb-3 flex items-center justify-between">
+                  <form
+                    onSubmit={(event) => void handleReplySubmit(event)}
+                    className="sticky bottom-0 mt-4 rounded-[1.75rem] border border-white/10 bg-[#070d17]/94 p-4 shadow-[0_-12px_32px_rgba(0,0,0,0.28)] backdrop-blur"
+                  >
+                    <div className="mb-3 flex items-center justify-between gap-3">
                       <div>
                         <p className="text-sm font-semibold text-white">Manual reply</p>
                         <p className="text-xs text-white/50">
-                          Sending a manual reply switches this conversation to human takeover.
+                          Sending a manual reply keeps the thread in human takeover.
                         </p>
                       </div>
+                      {sendingReply ? <p className="text-xs text-[#ffe08a]">Sending message...</p> : null}
                     </div>
                     <Textarea
-                      rows={4}
+                      rows={3}
                       value={replyText}
                       onChange={(event) => setReplyText(event.target.value)}
                       placeholder="Type your reply here"
                     />
                     <div className="mt-3 flex justify-end">
-                      <Button onClick={() => void sendReply()} disabled={sendingReply || !replyText.trim()}>
+                      <Button type="submit" disabled={sendingReply || !replyText.trim()}>
                         {sendingReply ? "Sending..." : "Send reply"}
                       </Button>
                     </div>
-                  </div>
+                  </form>
                 </div>
 
-                <div className="space-y-4">
+                <div className="space-y-4 overflow-y-auto xl:min-h-0 xl:pr-1">
                   {detail.linkedReservation ? (
                     <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-4">
                       <div className="flex items-center justify-between gap-3">
@@ -532,6 +654,7 @@ export function InboxDashboard({
                         <Button
                           size="sm"
                           variant="secondary"
+                          type="button"
                           onClick={() =>
                             router.push(`/dashboard/reservations?reservationId=${detail.linkedReservation?.id}`)
                           }
