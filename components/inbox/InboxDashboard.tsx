@@ -256,7 +256,7 @@ export function InboxDashboard({
 
   const draftFields = detail?.conversation?.reservation_draft ?? null;
   const missingDraftFields = buildMissingFields(draftFields);
-  const inboxShellHeightClass = showHeader ? "xl:h-[calc(100dvh-10rem)]" : "xl:h-[calc(100dvh-12rem)]";
+  const inboxShellHeightClass = showHeader ? "xl:h-[calc(100dvh-8rem)]" : "xl:h-[calc(100dvh-10rem)]";
 
   const updateConversationStatus = async (status: ConversationStatus) => {
     if (!selectedConversationId || !detail?.conversation) return;
@@ -565,7 +565,7 @@ export function InboxDashboard({
 
               <div className="grid flex-1 min-h-0 gap-6 overflow-hidden p-6 xl:grid-cols-[minmax(0,1fr)_320px]">
                 <div className="flex min-h-0 flex-col overflow-hidden xl:items-center xl:justify-center">
-                  <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[2.5rem] border border-[#ffd87224] bg-[#08101b]/96 shadow-[0_28px_80px_rgba(0,0,0,0.42)] xl:h-[min(82dvh,860px)] xl:w-[390px] xl:max-w-full xl:flex-none xl:self-center">
+                  <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[2.5rem] border border-[#ffd87224] bg-[#08101b]/96 shadow-[0_28px_80px_rgba(0,0,0,0.42)] xl:h-full xl:max-h-[760px] xl:w-auto xl:max-w-full xl:flex-none xl:self-center xl:aspect-[9/16]">
                     <div className="flex items-center justify-between border-b border-white/10 px-5 py-4 text-[11px] uppercase tracking-[0.24em] text-white/40">
                       <span>Conversation preview</span>
                       <span>WhatsApp</span>
@@ -606,7 +606,7 @@ export function InboxDashboard({
 
                     <form
                       onSubmit={(event) => void handleReplySubmit(event)}
-                      className="sticky bottom-0 border-t border-white/10 bg-[#0b1627]/96 p-4 shadow-[0_-12px_32px_rgba(0,0,0,0.28)] backdrop-blur"
+                      className="sticky bottom-0 shrink-0 border-t border-white/10 bg-[#0b1627]/96 p-4 shadow-[0_-12px_32px_rgba(0,0,0,0.28)] backdrop-blur"
                     >
                       <div className="mb-3 flex items-center justify-between gap-3">
                         <div>
@@ -618,7 +618,7 @@ export function InboxDashboard({
                         {sendingReply ? <p className="text-xs text-[#ffe08a]">Sending message...</p> : null}
                       </div>
                       <Textarea
-                        rows={3}
+                        rows={2}
                         value={replyText}
                         onChange={(event) => setReplyText(event.target.value)}
                         placeholder="Type your reply here"
