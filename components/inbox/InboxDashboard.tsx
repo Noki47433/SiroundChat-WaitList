@@ -256,7 +256,7 @@ export function InboxDashboard({
 
   const draftFields = detail?.conversation?.reservation_draft ?? null;
   const missingDraftFields = buildMissingFields(draftFields);
-  const inboxShellHeightClass = showHeader ? "xl:h-[calc(100dvh-14rem)]" : "xl:h-[calc(100dvh-20rem)]";
+  const inboxShellHeightClass = showHeader ? "xl:h-[calc(100dvh-10rem)]" : "xl:h-[calc(100dvh-12rem)]";
 
   const updateConversationStatus = async (status: ConversationStatus) => {
     if (!selectedConversationId || !detail?.conversation) return;
@@ -565,67 +565,70 @@ export function InboxDashboard({
 
               <div className="grid flex-1 min-h-0 gap-6 overflow-hidden p-6 xl:grid-cols-[minmax(0,1fr)_320px]">
                 <div className="flex min-h-0 flex-col overflow-hidden xl:items-center xl:justify-center">
-                  <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[2.5rem] border border-[#ffd87224] bg-[#08101b]/96 shadow-[0_28px_80px_rgba(0,0,0,0.42)] xl:w-full xl:max-w-[390px] xl:flex-none xl:self-center xl:aspect-[9/16] xl:max-h-full">
+                  <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[2.5rem] border border-[#ffd87224] bg-[#08101b]/96 shadow-[0_28px_80px_rgba(0,0,0,0.42)] xl:h-[min(82dvh,860px)] xl:w-[390px] xl:max-w-full xl:flex-none xl:self-center">
                     <div className="flex items-center justify-between border-b border-white/10 px-5 py-4 text-[11px] uppercase tracking-[0.24em] text-white/40">
                       <span>Conversation preview</span>
                       <span>WhatsApp</span>
                     </div>
-                  <div
-                    ref={threadViewportRef}
-                    className="flex-1 overflow-y-auto px-4 py-4 scroll-smooth xl:min-h-0"
-                  >
-                    <div className="space-y-3 pb-24">
-                      {detail.messages.map((message) => {
-                        const inbound = message.direction === "inbound";
-                        return (
-                          <div key={message.id} className={`flex ${inbound ? "justify-start" : "justify-end"}`}>
-                            <div className={`flex max-w-[min(84%,42rem)] flex-col ${inbound ? "items-start" : "items-end"}`}>
-                              <div className="mb-1 flex items-center gap-2 text-[11px] text-white/45">
-                                <span>{inbound ? "Customer" : "SiroundChat"}</span>
-                                <span>{formatDateTime(message.created_at)}</span>
-                              </div>
+
+                    <div
+                      ref={threadViewportRef}
+                      className="flex-1 overflow-y-auto px-4 py-4 scroll-smooth xl:min-h-0"
+                    >
+                      <div className="space-y-3 pb-24">
+                        {detail.messages.map((message) => {
+                          const inbound = message.direction === "inbound";
+                          return (
+                            <div key={message.id} className={`flex ${inbound ? "justify-start" : "justify-end"}`}>
                               <div
-                                className={`rounded-3xl px-4 py-3 text-sm leading-6 ${
-                                  inbound
-                                    ? "bg-white text-neutral-900"
-                                    : "bg-[#102038] text-white shadow-[0_16px_40px_rgba(0,0,0,0.35)]"
-                                }`}
+                                className={`flex max-w-[min(84%,42rem)] flex-col ${inbound ? "items-start" : "items-end"}`}
                               >
-                                {message.body}
+                                <div className="mb-1 flex items-center gap-2 text-[11px] text-white/45">
+                                  <span>{inbound ? "Customer" : "SiroundChat"}</span>
+                                  <span>{formatDateTime(message.created_at)}</span>
+                                </div>
+                                <div
+                                  className={`rounded-3xl px-4 py-3 text-sm leading-6 ${
+                                    inbound
+                                      ? "bg-white text-neutral-900"
+                                      : "bg-[#102038] text-white shadow-[0_16px_40px_rgba(0,0,0,0.35)]"
+                                  }`}
+                                >
+                                  {message.body}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        );
-                      })}
-                      <div ref={bottomAnchorRef} />
-                    </div>
-                  </div>
-
-                  <form
-                    onSubmit={(event) => void handleReplySubmit(event)}
-                    className="sticky bottom-0 border-t border-white/10 bg-[#0b1627]/96 p-4 shadow-[0_-12px_32px_rgba(0,0,0,0.28)] backdrop-blur"
-                  >
-                    <div className="mb-3 flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-semibold text-white">Manual reply</p>
-                        <p className="text-xs text-white/50">
-                          Sending a manual reply keeps the thread in human takeover.
-                        </p>
+                          );
+                        })}
+                        <div ref={bottomAnchorRef} />
                       </div>
-                      {sendingReply ? <p className="text-xs text-[#ffe08a]">Sending message...</p> : null}
                     </div>
-                    <Textarea
-                      rows={3}
-                      value={replyText}
-                      onChange={(event) => setReplyText(event.target.value)}
-                      placeholder="Type your reply here"
-                    />
-                    <div className="mt-3 flex justify-end">
-                      <Button type="submit" disabled={sendingReply || !replyText.trim()}>
-                        {sendingReply ? "Sending..." : "Send reply"}
-                      </Button>
-                    </div>
-                  </form>
+
+                    <form
+                      onSubmit={(event) => void handleReplySubmit(event)}
+                      className="sticky bottom-0 border-t border-white/10 bg-[#0b1627]/96 p-4 shadow-[0_-12px_32px_rgba(0,0,0,0.28)] backdrop-blur"
+                    >
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-white">Manual reply</p>
+                          <p className="text-xs text-white/50">
+                            Sending a manual reply keeps the thread in human takeover.
+                          </p>
+                        </div>
+                        {sendingReply ? <p className="text-xs text-[#ffe08a]">Sending message...</p> : null}
+                      </div>
+                      <Textarea
+                        rows={3}
+                        value={replyText}
+                        onChange={(event) => setReplyText(event.target.value)}
+                        placeholder="Type your reply here"
+                      />
+                      <div className="mt-3 flex justify-end">
+                        <Button type="submit" disabled={sendingReply || !replyText.trim()}>
+                          {sendingReply ? "Sending..." : "Send reply"}
+                        </Button>
+                      </div>
+                    </form>
                   </div>
                 </div>
 
