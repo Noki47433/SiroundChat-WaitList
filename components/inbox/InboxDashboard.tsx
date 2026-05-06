@@ -564,10 +564,15 @@ export function InboxDashboard({
               </div>
 
               <div className="grid flex-1 min-h-0 gap-6 overflow-hidden p-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-                <div className="flex min-h-0 flex-col overflow-hidden">
+                <div className="flex min-h-0 flex-col overflow-hidden xl:items-center xl:justify-center">
+                  <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[2.5rem] border border-[#ffd87224] bg-[#08101b]/96 shadow-[0_28px_80px_rgba(0,0,0,0.42)] xl:w-full xl:max-w-[390px] xl:flex-none xl:self-center xl:aspect-[9/16] xl:max-h-full">
+                    <div className="flex items-center justify-between border-b border-white/10 px-5 py-4 text-[11px] uppercase tracking-[0.24em] text-white/40">
+                      <span>Conversation preview</span>
+                      <span>WhatsApp</span>
+                    </div>
                   <div
                     ref={threadViewportRef}
-                    className="dashboard-inset flex-1 overflow-y-auto rounded-[1.75rem] px-4 py-4 scroll-smooth xl:min-h-0"
+                    className="flex-1 overflow-y-auto px-4 py-4 scroll-smooth xl:min-h-0"
                   >
                     <div className="space-y-3 pb-24">
                       {detail.messages.map((message) => {
@@ -598,7 +603,7 @@ export function InboxDashboard({
 
                   <form
                     onSubmit={(event) => void handleReplySubmit(event)}
-                    className="sticky bottom-0 mt-4 rounded-[1.75rem] border border-white/10 bg-[#070d17]/94 p-4 shadow-[0_-12px_32px_rgba(0,0,0,0.28)] backdrop-blur"
+                    className="sticky bottom-0 border-t border-white/10 bg-[#0b1627]/96 p-4 shadow-[0_-12px_32px_rgba(0,0,0,0.28)] backdrop-blur"
                   >
                     <div className="mb-3 flex items-center justify-between gap-3">
                       <div>
@@ -621,6 +626,7 @@ export function InboxDashboard({
                       </Button>
                     </div>
                   </form>
+                  </div>
                 </div>
 
                 <div className="space-y-4 overflow-y-auto xl:min-h-0 xl:pr-1">
