@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireBusinessUser } from "@/lib/server/business-auth";
+import { sendInstagramTextMessage } from "@/lib/meta/instagram";
 import { sendWhatsAppTextMessage } from "@/lib/meta/whatsapp";
 
 export const runtime = "nodejs";
@@ -28,7 +29,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
     .select("id,business_id,channel_type,external_customer_id,metadata")
     .eq("id", params.id)
     .eq("business_id", context.businessId)
-    .eq("channel_type", "whatsapp")
+    .in("channel_type", ["whatsapp", "instagram"])
     .maybeSingle();
 
   if (conversationError) {
@@ -40,27 +41,46 @@ export async function POST(request: Request, { params }: { params: { id: string 
   }
 
   const metadata = isRecord(conversation.metadata) ? conversation.metadata : {};
-  const phoneNumberId =
-    typeof metadata.whatsapp_phone_number_id === "string" ? metadata.whatsapp_phone_number_id.trim() : "";
-
-  if (!phoneNumberId) {
-    return NextResponse.json({ error: "WhatsApp channel is missing a phone number id" }, { status: 400 });
-  }
 
   if (!conversation.external_customer_id) {
-    return NextResponse.json({ error: "Conversation is missing a WhatsApp recipient id" }, { status: 400 });
+    return NextResponse.json({ error: "Conversation is missing a channel recipient id" }, { status: 400 });
   }
 
   const replyBody = parsed.data.body.trim();
   let outboundMessageId: string | null = null;
   try {
-    outboundMessageId = await sendWhatsAppTextMessage({
-      phoneNumberId,
-      recipientWaId: conversation.external_customer_id,
-      text: replyBody
-    });
+    if (conversation.channel_type === "instagram") {
+      const instagramAccountId =
+        typeof metadata.instagram_business_account_id === "string"
+          ? metadata.instagram_business_account_id.trim()
+          : "";
+
+      if (!instagramAccountId) {
+        return NextResponse.json({ error: "Instagram channel is missing an account id" }, { status: 400 });
+      }
+
+      const sendResult = await sendInstagramTextMessage({
+        instagramAccountId,
+        recipientId: conversation.external_customer_id,
+        text: replyBody
+      });
+      outboundMessageId = sendResult.messageId ?? null;
+    } else {
+      const phoneNumberId =
+        typeof metadata.whatsapp_phone_number_id === "string" ? metadata.whatsapp_phone_number_id.trim() : "";
+
+      if (!phoneNumberId) {
+        return NextResponse.json({ error: "WhatsApp channel is missing a phone number id" }, { status: 400 });
+      }
+
+      outboundMessageId = await sendWhatsAppTextMessage({
+        phoneNumberId,
+        recipientWaId: conversation.external_customer_id,
+        text: replyBody
+      });
+    }
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to send WhatsApp reply";
+    const message = error instanceof Error ? error.message : "Failed to send channel reply";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 

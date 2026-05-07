@@ -24,7 +24,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     .update({ status: parsed.data.status })
     .eq("id", params.id)
     .eq("business_id", context.businessId)
-    .eq("channel_type", "whatsapp")
+    .in("channel_type", ["whatsapp", "instagram"])
     .select("id,status")
     .single();
 

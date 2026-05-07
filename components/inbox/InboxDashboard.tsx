@@ -12,10 +12,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/toast";
 
 type ConversationStatus = "bot" | "human" | "closed";
+type InboxChannel = "whatsapp" | "instagram";
 
 type ConversationRow = {
   id: string;
-  channel_type: "whatsapp";
+  channel_type: InboxChannel;
   customer_display_name: string | null;
   external_customer_id: string | null;
   status: ConversationStatus;
@@ -67,6 +68,12 @@ const STATUS_FILTERS: Array<{ value: "all" | ConversationStatus; label: string }
   { value: "bot", label: "Bot active" },
   { value: "human", label: "Human takeover" },
   { value: "closed", label: "Closed" }
+];
+
+const CHANNEL_FILTERS: Array<{ value: "all" | InboxChannel; label: string }> = [
+  { value: "all", label: "All channels" },
+  { value: "whatsapp", label: "WhatsApp" },
+  { value: "instagram", label: "Instagram" }
 ];
 
 const statusVariant: Record<ConversationStatus, "info" | "warning" | "default"> = {
@@ -127,6 +134,7 @@ export function InboxDashboard({
   const [savingStatus, setSavingStatus] = useState<ConversationStatus | null>(null);
   const [sendingReply, setSendingReply] = useState(false);
   const [statusFilter, setStatusFilter] = useState<"all" | ConversationStatus>("all");
+  const [channelFilter, setChannelFilter] = useState<"all" | InboxChannel>("all");
   const [search, setSearch] = useState("");
   const [conversations, setConversations] = useState<ConversationRow[]>([]);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(initialConversationId ?? null);
@@ -167,13 +175,18 @@ export function InboxDashboard({
     });
   }, []);
 
-  const loadConversations = async (nextStatus = statusFilter, nextSearch = search) => {
+  const loadConversations = async (
+    nextStatus = statusFilter,
+    nextSearch = search,
+    nextChannel = channelFilter
+  ) => {
     setLoadingConversations(true);
     setErrorMessage(null);
     try {
       const params = new URLSearchParams();
       if (nextStatus !== "all") params.set("status", nextStatus);
       if (nextSearch.trim()) params.set("q", nextSearch.trim());
+      if (nextChannel !== "all") params.set("channel", nextChannel);
 
       const response = await fetch(`/api/inbox/conversations?${params.toString()}`, {
         cache: "no-store"
@@ -231,12 +244,12 @@ export function InboxDashboard({
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
-      void loadConversations(statusFilter, search);
+      void loadConversations(statusFilter, search, channelFilter);
     }, 200);
 
     return () => window.clearTimeout(timeout);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusFilter, search]);
+  }, [channelFilter, statusFilter, search]);
 
   useEffect(() => {
     if (!selectedConversationId) {
@@ -421,6 +434,22 @@ export function InboxDashboard({
                 </button>
               ))}
             </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {CHANNEL_FILTERS.map((filter) => (
+                <button
+                  key={filter.value}
+                  type="button"
+                  onClick={() => setChannelFilter(filter.value)}
+                  className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                    channelFilter === filter.value
+                      ? "border-[#52d9c766] bg-[#52d9c71a] text-white"
+                      : "border-white/10 text-white/65 hover:border-white/20 hover:text-white"
+                  }`}
+                >
+                  {filter.label}
+                </button>
+              ))}
+            </div>
             <Input
               value={search}
               onChange={(event) => setSearch(event.target.value)}
@@ -467,8 +496,15 @@ export function InboxDashboard({
                         <p className="mt-1 truncate text-xs text-white/55">{conversation.external_customer_id}</p>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Badge variant="success" className="bg-emerald-500/15 text-emerald-100">
-                          WhatsApp
+                        <Badge
+                          variant={conversation.channel_type === "instagram" ? "warning" : "success"}
+                          className={
+                            conversation.channel_type === "instagram"
+                              ? "bg-amber-500/15 text-amber-100"
+                              : "bg-emerald-500/15 text-emerald-100"
+                          }
+                        >
+                          {conversation.channel_type === "instagram" ? "Instagram" : "WhatsApp"}
                         </Badge>
                         <Badge variant={statusVariant[conversation.status]} className="capitalize">
                           {conversation.status === "bot"
@@ -517,8 +553,15 @@ export function InboxDashboard({
                       <h3 className="dashboard-heading text-2xl font-semibold text-white">
                         {detail.conversation.customer_display_name || detail.conversation.external_customer_id}
                       </h3>
-                      <Badge variant="success" className="bg-emerald-500/15 text-emerald-100">
-                        WhatsApp
+                      <Badge
+                        variant={detail.conversation.channel_type === "instagram" ? "warning" : "success"}
+                        className={
+                          detail.conversation.channel_type === "instagram"
+                            ? "bg-amber-500/15 text-amber-100"
+                            : "bg-emerald-500/15 text-emerald-100"
+                        }
+                      >
+                        {detail.conversation.channel_type === "instagram" ? "Instagram" : "WhatsApp"}
                       </Badge>
                       <Badge variant={statusVariant[detail.conversation.status]} className="capitalize">
                         {detail.conversation.status === "bot"
@@ -568,7 +611,7 @@ export function InboxDashboard({
                   <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[2.5rem] border border-[#ffd87224] bg-[#08101b]/96 shadow-[0_28px_80px_rgba(0,0,0,0.42)] xl:h-full xl:max-h-[760px] xl:w-auto xl:max-w-full xl:flex-none xl:self-center xl:aspect-[9/16]">
                     <div className="flex items-center justify-between border-b border-white/10 px-5 py-4 text-[11px] uppercase tracking-[0.24em] text-white/40">
                       <span>Conversation preview</span>
-                      <span>WhatsApp</span>
+                      <span>{detail.conversation.channel_type === "instagram" ? "Instagram" : "WhatsApp"}</span>
                     </div>
 
                     <div

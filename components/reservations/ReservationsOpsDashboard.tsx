@@ -13,7 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 
 type ReservationStatus = "pending" | "confirmed" | "completed" | "canceled" | "seated" | "no_show";
-type ReservationSource = "website" | "whatsapp" | "manual";
+type ReservationSource = "website" | "whatsapp" | "instagram" | "manual";
 
 type ReservationRow = {
   id: string;
@@ -78,6 +78,7 @@ const statusVariant: Record<ReservationStatus, "warning" | "success" | "default"
 const sourceLabel: Record<ReservationSource, string> = {
   website: "Website",
   whatsapp: "WhatsApp",
+  instagram: "Instagram",
   manual: "Manual"
 };
 
@@ -395,6 +396,7 @@ export function ReservationsOpsDashboard({ initialReservationId }: { initialRese
             <option value="all">All sources</option>
             <option value="website">Website</option>
             <option value="whatsapp">WhatsApp</option>
+            <option value="instagram">Instagram</option>
             <option value="manual">Manual</option>
           </Select>
           <div className="flex gap-2">
@@ -475,7 +477,15 @@ export function ReservationsOpsDashboard({ initialReservationId }: { initialRese
                     <td className="px-4 py-4 text-white/70">{reservation.party_size}</td>
                     <td className="px-4 py-4">
                       <Badge
-                        variant={reservation.source === "whatsapp" ? "success" : reservation.source === "manual" ? "warning" : "info"}
+                        variant={
+                          reservation.source === "whatsapp"
+                            ? "success"
+                            : reservation.source === "instagram"
+                              ? "warning"
+                              : reservation.source === "manual"
+                                ? "warning"
+                                : "info"
+                        }
                       >
                         {sourceLabel[reservation.source]}
                       </Badge>
@@ -567,13 +577,15 @@ export function ReservationsOpsDashboard({ initialReservationId }: { initialRese
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-white/60">Source</span>
                   <Badge
-                    variant={
-                      selectedReservation.source === "whatsapp"
-                        ? "success"
-                        : selectedReservation.source === "manual"
-                          ? "warning"
-                          : "info"
-                    }
+                      variant={
+                        selectedReservation.source === "whatsapp"
+                          ? "success"
+                          : selectedReservation.source === "instagram"
+                            ? "warning"
+                            : selectedReservation.source === "manual"
+                              ? "warning"
+                              : "info"
+                      }
                   >
                     {sourceLabel[selectedReservation.source]}
                   </Badge>

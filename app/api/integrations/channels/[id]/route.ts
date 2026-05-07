@@ -32,7 +32,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     .eq("id", params.id)
     .eq("business_id", context.businessId)
     .select(
-      "id,business_id,channel_type,provider,status,whatsapp_phone_number_id,whatsapp_business_account_id,display_phone_number,auto_reply_enabled,created_at,updated_at"
+      "id,business_id,channel_type,provider,status,whatsapp_phone_number_id,whatsapp_business_account_id,instagram_business_account_id,instagram_page_id,display_phone_number,auto_reply_enabled,created_at,updated_at"
     )
     .single();
 

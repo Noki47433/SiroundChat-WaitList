@@ -7,7 +7,8 @@ export const dynamic = "force-dynamic";
 
 const QuerySchema = z.object({
   q: z.string().optional(),
-  status: z.enum(["all", "bot", "human", "closed"]).optional()
+  status: z.enum(["all", "bot", "human", "closed"]).optional(),
+  channel: z.enum(["all", "whatsapp", "instagram"]).optional()
 });
 
 export async function GET(request: Request) {
@@ -17,7 +18,8 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const parsed = QuerySchema.safeParse({
     q: url.searchParams.get("q") ?? undefined,
-    status: url.searchParams.get("status") ?? undefined
+    status: url.searchParams.get("status") ?? undefined,
+    channel: url.searchParams.get("channel") ?? undefined
   });
 
   if (!parsed.success) {
@@ -30,12 +32,15 @@ export async function GET(request: Request) {
       "id,channel_type,customer_display_name,external_customer_id,status,intent,reservation_draft,linked_reservation_id,last_message_preview,last_message_at,metadata,created_at"
     )
     .eq("business_id", context.businessId)
-    .eq("channel_type", "whatsapp")
     .order("last_message_at", { ascending: false })
     .limit(200);
 
   if (parsed.data.status && parsed.data.status !== "all") {
     query = query.eq("status", parsed.data.status);
+  }
+
+  if (parsed.data.channel && parsed.data.channel !== "all") {
+    query = query.eq("channel_type", parsed.data.channel);
   }
 
   const { data, error } = await query;
