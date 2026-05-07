@@ -38,7 +38,7 @@ const getOpenAIClient = () => {
   return openaiClient;
 };
 
-export type BusinessChatChannel = "website" | "whatsapp";
+export type BusinessChatChannel = "website" | "whatsapp" | "instagram";
 
 export type BusinessChatMessage = {
   role: "user" | "assistant";
@@ -51,7 +51,7 @@ export type BusinessChatAction =
       payload: {
         reservationId: string;
         status: "pending" | "confirmed";
-        source: "website" | "whatsapp";
+        source: "website" | "whatsapp" | "instagram";
       };
     }
   | {
@@ -1088,8 +1088,10 @@ async function runReservationFlow(params: {
           };
         }
 
-        const reservationStatus = params.channel === "whatsapp" ? "pending" : "confirmed";
-        const reservationSource = params.channel === "whatsapp" ? "whatsapp" : "website";
+        const reservationStatus =
+          params.channel === "whatsapp" || params.channel === "instagram" ? "pending" : "confirmed";
+        const reservationSource =
+          params.channel === "whatsapp" ? "whatsapp" : params.channel === "instagram" ? "instagram" : "website";
         const created = await createReservationRecord({
           adminClient: params.admin,
           restaurantId: params.businessId,

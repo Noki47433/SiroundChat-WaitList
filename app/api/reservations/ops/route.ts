@@ -10,14 +10,14 @@ export const dynamic = "force-dynamic";
 const QuerySchema = z.object({
   q: z.string().optional(),
   status: z.enum(["all", "pending", "confirmed", "completed", "canceled", "no_show", "seated"]).optional(),
-  source: z.enum(["all", "website", "whatsapp", "manual"]).optional(),
+  source: z.enum(["all", "website", "whatsapp", "instagram", "manual"]).optional(),
   dateFrom: z.string().optional(),
   dateTo: z.string().optional(),
   partySize: z.string().optional()
 });
 
 const resolveSource = (row: { source?: string | null; created_by?: string | null }) => {
-  if (row.source === "website" || row.source === "whatsapp" || row.source === "manual") {
+  if (row.source === "website" || row.source === "whatsapp" || row.source === "instagram" || row.source === "manual") {
     return row.source;
   }
 

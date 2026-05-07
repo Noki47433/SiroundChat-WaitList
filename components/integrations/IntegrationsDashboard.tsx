@@ -16,6 +16,8 @@ type ChannelRow = {
   status: "connected" | "disabled" | "needs_reauth";
   whatsapp_phone_number_id: string | null;
   whatsapp_business_account_id: string | null;
+  instagram_business_account_id: string | null;
+  instagram_page_id: string | null;
   display_phone_number: string | null;
   auto_reply_enabled: boolean;
 };
@@ -73,15 +75,18 @@ export function IntegrationsDashboard({
     () => data.channels.find((channel) => channel.channel_type === "whatsapp") ?? null,
     [data.channels]
   );
+  const instagramChannel = useMemo(
+    () => data.channels.find((channel) => channel.channel_type === "instagram") ?? null,
+    [data.channels]
+  );
 
-  const toggleAutoReply = async () => {
-    if (!whatsappChannel) return;
+  const toggleAutoReply = async (channel: ChannelRow) => {
     setSaving(true);
     try {
-      const response = await fetch(`/api/integrations/channels/${whatsappChannel.id}`, {
+      const response = await fetch(`/api/integrations/channels/${channel.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ auto_reply_enabled: !whatsappChannel.auto_reply_enabled })
+        body: JSON.stringify({ auto_reply_enabled: !channel.auto_reply_enabled })
       });
       const payload = await response.json();
       if (!response.ok) {
@@ -153,7 +158,7 @@ export function IntegrationsDashboard({
                   <Link href={inboxHref} className={buttonVariants({ variant: "secondary" })}>
                     Open inbox
                   </Link>
-                  <Button variant="outline" onClick={() => void toggleAutoReply()} disabled={saving}>
+                  <Button variant="outline" onClick={() => void toggleAutoReply(whatsappChannel)} disabled={saving}>
                     {whatsappChannel.auto_reply_enabled ? "Disable auto-reply" : "Enable auto-reply"}
                   </Button>
                 </>
@@ -172,12 +177,39 @@ export function IntegrationsDashboard({
                     Instagram DM automation will use the same SiroundChat inbox and AI assistant.
                   </p>
                 </div>
-                <Badge variant="default">Coming soon</Badge>
+                <Badge variant={statusBadge(instagramChannel?.status ?? "disabled").variant}>
+                  {statusBadge(instagramChannel?.status ?? "disabled").label}
+                </Badge>
               </div>
+
+              {instagramChannel ? (
+                <div className="mt-5 space-y-2 text-sm text-white/70">
+                  <p>Instagram account ID: {instagramChannel.instagram_business_account_id || "—"}</p>
+                  <p>Facebook page ID: {instagramChannel.instagram_page_id || "—"}</p>
+                  <p>Auto-reply: {instagramChannel.auto_reply_enabled ? "Enabled" : "Disabled"}</p>
+                </div>
+              ) : (
+                <div className="mt-5 rounded-2xl border border-dashed border-white/15 bg-white/[0.03] p-4 text-sm text-white/60">
+                  This workspace does not have a connected Instagram Business inbox yet.
+                </div>
+              )}
             </div>
-            <Button variant="outline" disabled>
-              Coming soon
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              {instagramChannel ? (
+                <>
+                  <Link href={inboxHref} className={buttonVariants({ variant: "secondary" })}>
+                    Open inbox
+                  </Link>
+                  <Button variant="outline" onClick={() => void toggleAutoReply(instagramChannel)} disabled={saving}>
+                    {instagramChannel.auto_reply_enabled ? "Disable auto-reply" : "Enable auto-reply"}
+                  </Button>
+                </>
+              ) : (
+                <Button variant="outline" disabled>
+                  Setup required
+                </Button>
+              )}
+            </div>
           </Card>
 
           <Card className="dashboard-surface flex flex-col justify-between gap-4">

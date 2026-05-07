@@ -12,7 +12,7 @@ export async function GET() {
     (context.supabase as any)
       .from("business_channels")
       .select(
-        "id,business_id,channel_type,provider,status,whatsapp_phone_number_id,whatsapp_business_account_id,display_phone_number,auto_reply_enabled,created_at,updated_at"
+        "id,business_id,channel_type,provider,status,whatsapp_phone_number_id,whatsapp_business_account_id,instagram_business_account_id,instagram_page_id,display_phone_number,auto_reply_enabled,created_at,updated_at"
       )
       .eq("business_id", context.businessId)
       .order("created_at", { ascending: false }),

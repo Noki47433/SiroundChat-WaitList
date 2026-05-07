@@ -26,7 +26,7 @@ export class ReservationOperationError extends Error {
   }
 }
 
-export type ReservationCreateSource = "website" | "whatsapp" | "manual";
+export type ReservationCreateSource = "website" | "whatsapp" | "instagram" | "manual";
 export type ReservationCreateBy = "dashboard" | "chatbot" | "widget" | "phone";
 export type ReservationCreateStatus = "pending" | "confirmed";
 
