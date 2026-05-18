@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
+import {
+  AddReservationDialog,
+  type ManualReservationRecord,
+  type ManualReservationValues
+} from "@/components/reservations/AddReservationDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -14,23 +20,7 @@ import { useToast } from "@/components/ui/toast";
 
 type ReservationStatus = "pending" | "confirmed" | "completed" | "canceled" | "seated" | "no_show";
 type ReservationSource = "website" | "whatsapp" | "manual";
-
-type ReservationRow = {
-  id: string;
-  source: ReservationSource;
-  source_conversation_id: string | null;
-  start_at: string;
-  end_at: string;
-  party_size: number;
-  customer_name: string;
-  customer_phone: string | null;
-  customer_email: string | null;
-  notes: string | null;
-  special_request: string | null;
-  status: ReservationStatus;
-  created_by: string;
-  created_at: string;
-};
+type ReservationRow = ManualReservationRecord;
 
 type OpsResponse = {
   reservations: ReservationRow[];
@@ -99,7 +89,10 @@ export function ReservationsOpsDashboard({ initialReservationId }: { initialRese
   const [loading, setLoading] = useState(true);
   const [savingStatus, setSavingStatus] = useState<string | null>(null);
   const [savingSettings, setSavingSettings] = useState(false);
+  const [addReservationOpen, setAddReservationOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [focusReservationId, setFocusReservationId] = useState<string | null>(initialReservationId ?? null);
+  const [refreshNonce, setRefreshNonce] = useState(0);
   const [selectedStatus, setSelectedStatus] = useState<"pending" | "confirmed" | "completed" | "canceled" | "all">(
     "pending"
   );
@@ -161,11 +154,12 @@ export function ReservationsOpsDashboard({ initialReservationId }: { initialRese
       const typed = payload as OpsResponse;
       setData(typed);
 
-      if (initialReservationId && !selectedReservation) {
-        const match = typed.reservations.find((reservation) => reservation.id === initialReservationId);
+      if (focusReservationId) {
+        const match = typed.reservations.find((reservation) => reservation.id === focusReservationId);
         if (match) {
           setSelectedReservation(match);
           setDetailOpen(true);
+          setFocusReservationId(null);
         }
       } else if (selectedReservation) {
         const next = typed.reservations.find((reservation) => reservation.id === selectedReservation.id) ?? null;
@@ -194,10 +188,13 @@ export function ReservationsOpsDashboard({ initialReservationId }: { initialRese
 
     return () => window.clearTimeout(timeout);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedStatus, source, search, dateFrom, dateTo, partySize]);
+  }, [selectedStatus, source, search, dateFrom, dateTo, partySize, refreshNonce]);
 
   const reservations = data?.reservations ?? [];
   const summary = data?.summary ?? { pending: 0, confirmed: 0, completed: 0, canceled: 0 };
+  const hasActiveFilters = Boolean(
+    search.trim() || dateFrom || dateTo || partySize || source !== "all" || selectedStatus !== "pending"
+  );
 
   const summaryCards = {
     pending: summary.pending ?? 0,
@@ -281,6 +278,18 @@ export function ReservationsOpsDashboard({ initialReservationId }: { initialRese
     }
   };
 
+  const handleReservationCreated = (reservation: ManualReservationRecord, values: ManualReservationValues) => {
+    setFocusReservationId(reservation.id);
+    setSelectedReservation(null);
+    setSelectedStatus("confirmed");
+    setSource("manual");
+    setSearch("");
+    setDateFrom(values.date);
+    setDateTo(values.date);
+    setPartySize("");
+    setRefreshNonce((current) => current + 1);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -288,10 +297,17 @@ export function ReservationsOpsDashboard({ initialReservationId }: { initialRese
           <p className="text-xs uppercase tracking-[0.2em] text-white/40">Reservations</p>
           <h2 className="dashboard-heading mt-2 text-3xl font-semibold text-white">Reservation operations</h2>
           <p className="mt-2 text-sm text-white/60">
-            Manage reservation requests from your website, WhatsApp, and AI assistant.
+            Keep website, WhatsApp, and offline reservations in one calm control center.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Button
+            onClick={() => setAddReservationOpen(true)}
+            className="rounded-2xl bg-[#ffd24a] text-neutral-950 shadow-[0_18px_48px_rgba(255,210,74,0.18)] hover:bg-[#ffdc76]"
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Add Reservation
+          </Button>
           <Button variant="secondary" onClick={() => void openSettings()}>
             Reservation settings
           </Button>
@@ -368,10 +384,23 @@ export function ReservationsOpsDashboard({ initialReservationId }: { initialRese
           </div>
         ) : reservations.length === 0 ? (
           <div className="rounded-3xl border border-dashed border-white/15 bg-white/[0.03] p-8 text-center">
-            <p className="text-lg font-semibold text-white">No reservations found.</p>
-            <p className="mt-2 text-sm text-white/55">
-              Try another status or date range, or wait for new reservation requests to arrive.
+            <p className="text-lg font-semibold text-white">
+              {hasActiveFilters ? "No reservations match these filters." : "No pending reservations right now."}
             </p>
+            <p className="mt-2 text-sm text-white/55">
+              {hasActiveFilters
+                ? "Try another status or date range, or add a reservation manually."
+                : "Phone calls, walk-ins, and message bookings can all be added here in seconds."}
+            </p>
+            <div className="mt-5 flex justify-center">
+              <Button
+                onClick={() => setAddReservationOpen(true)}
+                className="rounded-2xl bg-[#ffd24a] text-neutral-950 hover:bg-[#ffdc76]"
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Add Reservation
+              </Button>
+            </div>
           </div>
         ) : (
           <div className="overflow-x-auto rounded-3xl border border-white/10">
@@ -643,6 +672,14 @@ export function ReservationsOpsDashboard({ initialReservationId }: { initialRese
           />
         </div>
       </Modal>
+
+      <AddReservationDialog
+        open={addReservationOpen}
+        onOpenChange={setAddReservationOpen}
+        timeZone={data?.settings.timezone ?? "Europe/Belgrade"}
+        slotIntervalMin={data?.settings.slotIntervalMin ?? 15}
+        onCreated={handleReservationCreated}
+      />
     </div>
   );
 }

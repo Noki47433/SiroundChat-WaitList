@@ -45,6 +45,7 @@ type CreateReservationRecordParams = {
   conversationId?: string | null;
   sourceConversationId?: string | null;
   sendSmsAlert?: boolean;
+  enforceLeadAndMaxDays?: boolean;
 };
 
 const cleanNullableText = (value?: string | null) => {
@@ -67,7 +68,8 @@ export async function createReservationRecord({
   status = "confirmed",
   conversationId = null,
   sourceConversationId = null,
-  sendSmsAlert = true
+  sendSmsAlert = true,
+  enforceLeadAndMaxDays = true
 }: CreateReservationRecordParams) {
   const safeName = customerName.trim();
   if (!safeName) {
@@ -96,12 +98,14 @@ export async function createReservationRecord({
   const settings = await getOrCreateReservationSettings(adminClient, restaurantId);
   const endAt = new Date(startAt.getTime() + settings.default_duration_min * 60_000);
 
-  const leadMaxValidation = validateLeadAndMaxDays(startAt, settings);
-  if (!leadMaxValidation.ok) {
-    throw new ReservationOperationError(leadMaxValidation.message, {
-      status: 400,
-      code: leadMaxValidation.code
-    });
+  if (enforceLeadAndMaxDays) {
+    const leadMaxValidation = validateLeadAndMaxDays(startAt, settings);
+    if (!leadMaxValidation.ok) {
+      throw new ReservationOperationError(leadMaxValidation.message, {
+        status: 400,
+        code: leadMaxValidation.code
+      });
+    }
   }
 
   const overlaps = await loadCapacityRelevantReservations(adminClient, {
