@@ -2,24 +2,13 @@ import "server-only";
 
 const META_GRAPH_API_VERSION = "v25.0";
 
-type SendWhatsAppTextMessageParams = {
-  phoneNumberId: string;
-  recipientWaId: string;
+type SendInstagramTextMessageParams = {
+  instagramAccountId: string;
+  recipientId: string;
   text: string;
 };
 
-type MetaApiErrorPayload = {
-  error?: {
-    type?: string;
-    code?: number;
-    message?: string;
-    error_subcode?: number;
-    fbtrace_id?: string;
-  };
-  messages?: Array<{ id?: string }>;
-};
-
-type WhatsAppSendErrorOptions = {
+type InstagramSendErrorOptions = {
   message: string;
   status?: number;
   metaErrorType?: string;
@@ -35,7 +24,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const toNonEmptyString = (value: string) => value.trim();
 
-export class WhatsAppSendError extends Error {
+export class InstagramSendError extends Error {
   readonly status?: number;
   readonly metaErrorType?: string;
   readonly metaErrorCode?: number;
@@ -53,9 +42,9 @@ export class WhatsAppSendError extends Error {
     metaErrorSubcode,
     fbtraceId,
     accessTokenMissing = false
-  }: WhatsAppSendErrorOptions) {
+  }: InstagramSendErrorOptions) {
     super(message);
-    this.name = "WhatsAppSendError";
+    this.name = "InstagramSendError";
     this.status = status;
     this.metaErrorType = metaErrorType;
     this.metaErrorCode = metaErrorCode;
@@ -81,50 +70,60 @@ const parseMetaErrorPayload = (payload: unknown) => {
 };
 
 const readMetaMessageId = (payload: unknown) => {
-  if (!isRecord(payload) || !Array.isArray(payload.messages)) return null;
-  const first = payload.messages[0];
-  if (!isRecord(first)) return null;
-  return typeof first.id === "string" && first.id.trim() ? first.id.trim() : null;
+  if (!isRecord(payload)) return null;
+
+  if (typeof payload.message_id === "string" && payload.message_id.trim()) {
+    return payload.message_id.trim();
+  }
+
+  if (Array.isArray(payload.messages)) {
+    const first = payload.messages[0];
+    if (isRecord(first) && typeof first.id === "string" && first.id.trim()) {
+      return first.id.trim();
+    }
+  }
+
+  return null;
 };
 
-export async function sendWhatsAppTextMessage({
-  phoneNumberId,
-  recipientWaId,
+export async function sendInstagramTextMessage({
+  instagramAccountId,
+  recipientId,
   text
-}: SendWhatsAppTextMessageParams): Promise<string | null> {
-  const accessToken = process.env.META_ACCESS_TOKEN;
+}: SendInstagramTextMessageParams): Promise<{ messageId?: string }> {
+  const accessToken = process.env.META_PAGE_ACCESS_TOKEN || process.env.META_ACCESS_TOKEN;
   const accessTokenMissing = !accessToken;
-  const normalizedPhoneNumberId = toNonEmptyString(phoneNumberId);
-  const normalizedRecipientWaId = toNonEmptyString(recipientWaId);
+  const normalizedInstagramAccountId = toNonEmptyString(instagramAccountId);
+  const normalizedRecipientId = toNonEmptyString(recipientId);
   const normalizedText = toNonEmptyString(text);
 
   if (accessTokenMissing) {
-    throw new WhatsAppSendError({
-      message: "META_ACCESS_TOKEN is not configured",
+    throw new InstagramSendError({
+      message: "Meta page access token is not configured",
       status: 500,
       accessTokenMissing: true
     });
   }
 
-  if (!normalizedPhoneNumberId) {
-    throw new WhatsAppSendError({
-      message: "Missing WhatsApp phone number id",
+  if (!normalizedInstagramAccountId) {
+    throw new InstagramSendError({
+      message: "Missing Instagram business account id",
       status: 400,
       accessTokenMissing
     });
   }
 
-  if (!normalizedRecipientWaId) {
-    throw new WhatsAppSendError({
-      message: "Missing WhatsApp recipient id",
+  if (!normalizedRecipientId) {
+    throw new InstagramSendError({
+      message: "Missing Instagram recipient id",
       status: 400,
       accessTokenMissing
     });
   }
 
   if (!normalizedText) {
-    throw new WhatsAppSendError({
-      message: "Missing WhatsApp message text",
+    throw new InstagramSendError({
+      message: "Missing Instagram message text",
       status: 400,
       accessTokenMissing
     });
@@ -134,7 +133,7 @@ export async function sendWhatsAppTextMessage({
 
   try {
     response = await fetch(
-      `https://graph.facebook.com/${META_GRAPH_API_VERSION}/${encodeURIComponent(normalizedPhoneNumberId)}/messages`,
+      `https://graph.facebook.com/${META_GRAPH_API_VERSION}/${encodeURIComponent(normalizedInstagramAccountId)}/messages`,
       {
         method: "POST",
         headers: {
@@ -143,36 +142,37 @@ export async function sendWhatsAppTextMessage({
         },
         cache: "no-store",
         body: JSON.stringify({
-          messaging_product: "whatsapp",
-          to: normalizedRecipientWaId,
-          type: "text",
-          text: {
-            preview_url: false,
-            body: normalizedText
+          recipient: {
+            id: normalizedRecipientId
+          },
+          messaging_type: "RESPONSE",
+          message: {
+            text: normalizedText
           }
         })
       }
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown network error";
-    throw new WhatsAppSendError({
-      message: `Failed to call Meta WhatsApp API: ${message}`,
+    throw new InstagramSendError({
+      message: `Failed to call Meta Instagram API: ${message}`,
       accessTokenMissing
     });
   }
 
-  const payload = (await response.json().catch(() => null)) as MetaApiErrorPayload | null;
+  const payload = (await response.json().catch(() => null)) as unknown;
 
   if (response.ok) {
-    return readMetaMessageId(payload);
+    const messageId = readMetaMessageId(payload);
+    return messageId ? { messageId } : {};
   }
 
   const parsedError = parseMetaErrorPayload(payload);
 
-  throw new WhatsAppSendError({
+  throw new InstagramSendError({
     message: parsedError?.message
-      ? `Meta WhatsApp API request failed with status ${response.status}: ${parsedError.message}`
-      : `Meta WhatsApp API request failed with status ${response.status}`,
+      ? `Meta Instagram API request failed with status ${response.status}: ${parsedError.message}`
+      : `Meta Instagram API request failed with status ${response.status}`,
     status: response.status,
     metaErrorType: parsedError?.type,
     metaErrorCode: parsedError?.code,

@@ -84,6 +84,39 @@ const formatDateTime = (value?: string | null) => {
   });
 };
 
+function SettingsField({
+  label,
+  hint,
+  value,
+  onChange,
+  min,
+  step = 1
+}: {
+  label: string;
+  hint: string;
+  value: string;
+  onChange: (value: string) => void;
+  min?: number;
+  step?: number;
+}) {
+  return (
+    <label className="space-y-2">
+      <div>
+        <p className="text-sm font-semibold text-white">{label}</p>
+        <p className="mt-1 text-xs leading-5 text-white/55">{hint}</p>
+      </div>
+      <Input
+        type="number"
+        inputMode="numeric"
+        min={min}
+        step={step}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </label>
+  );
+}
+
 export function ReservationsOpsDashboard({ initialReservationId }: { initialReservationId?: string }) {
   const router = useRouter();
   const { push } = useToast();
@@ -233,20 +266,47 @@ export function ReservationsOpsDashboard({ initialReservationId }: { initialRese
   };
 
   const saveSettings = async () => {
+    const parsedValues = {
+      total_capacity: Number(settingsForm.total_capacity),
+      slot_interval_min: Number(settingsForm.slot_interval_min),
+      default_duration_min: Number(settingsForm.default_duration_min),
+      lead_time_min: Number(settingsForm.lead_time_min),
+      max_days_ahead: Number(settingsForm.max_days_ahead),
+      buffer_before_min: Number(settingsForm.buffer_before_min),
+      buffer_after_min: Number(settingsForm.buffer_after_min)
+    };
+
+    if (
+      !Number.isFinite(parsedValues.total_capacity) ||
+      parsedValues.total_capacity <= 0 ||
+      !Number.isFinite(parsedValues.slot_interval_min) ||
+      parsedValues.slot_interval_min <= 0 ||
+      !Number.isFinite(parsedValues.default_duration_min) ||
+      parsedValues.default_duration_min <= 0 ||
+      !Number.isFinite(parsedValues.max_days_ahead) ||
+      parsedValues.max_days_ahead <= 0 ||
+      !Number.isFinite(parsedValues.lead_time_min) ||
+      parsedValues.lead_time_min < 0 ||
+      !Number.isFinite(parsedValues.buffer_before_min) ||
+      parsedValues.buffer_before_min < 0 ||
+      !Number.isFinite(parsedValues.buffer_after_min) ||
+      parsedValues.buffer_after_min < 0
+    ) {
+      push({
+        title: "Check your settings",
+        message:
+          "Capacity, slot interval, duration, and max days ahead must be greater than zero. Notice and buffer values cannot be negative.",
+        variant: "error"
+      });
+      return;
+    }
+
     setSavingSettings(true);
     try {
       const response = await fetch("/api/reservations/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          total_capacity: Number(settingsForm.total_capacity),
-          slot_interval_min: Number(settingsForm.slot_interval_min),
-          default_duration_min: Number(settingsForm.default_duration_min),
-          lead_time_min: Number(settingsForm.lead_time_min),
-          max_days_ahead: Number(settingsForm.max_days_ahead),
-          buffer_before_min: Number(settingsForm.buffer_before_min),
-          buffer_after_min: Number(settingsForm.buffer_after_min)
-        })
+        body: JSON.stringify(parsedValues)
       });
       const payload = await response.json();
       if (!response.ok) {
@@ -446,7 +506,15 @@ export function ReservationsOpsDashboard({ initialReservationId }: { initialRese
                     <td className="px-4 py-4 text-white/70">{reservation.party_size}</td>
                     <td className="px-4 py-4">
                       <Badge
-                        variant={reservation.source === "whatsapp" ? "success" : reservation.source === "manual" ? "warning" : "info"}
+                        variant={
+                          reservation.source === "whatsapp"
+                            ? "success"
+                            : reservation.source === "instagram"
+                              ? "warning"
+                              : reservation.source === "manual"
+                                ? "warning"
+                                : "info"
+                        }
                       >
                         {sourceLabel[reservation.source]}
                       </Badge>
@@ -538,13 +606,15 @@ export function ReservationsOpsDashboard({ initialReservationId }: { initialRese
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-white/60">Source</span>
                   <Badge
-                    variant={
-                      selectedReservation.source === "whatsapp"
-                        ? "success"
-                        : selectedReservation.source === "manual"
-                          ? "warning"
-                          : "info"
-                    }
+                      variant={
+                        selectedReservation.source === "whatsapp"
+                          ? "success"
+                          : selectedReservation.source === "instagram"
+                            ? "warning"
+                            : selectedReservation.source === "manual"
+                              ? "warning"
+                              : "info"
+                      }
                   >
                     {sourceLabel[selectedReservation.source]}
                   </Badge>
@@ -619,59 +689,74 @@ export function ReservationsOpsDashboard({ initialReservationId }: { initialRese
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
         title="Reservation settings"
+        size="lg"
         footer={
           <>
-            <Button variant="outline" onClick={() => setSettingsOpen(false)}>
+            <Button type="button" variant="outline" onClick={() => setSettingsOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={() => void saveSettings()} disabled={savingSettings}>
+            <Button type="button" onClick={() => void saveSettings()} disabled={savingSettings}>
               {savingSettings ? "Saving..." : "Save settings"}
             </Button>
           </>
         }
       >
-        <div className="grid gap-3 md:grid-cols-2">
-          <Input
-            value={settingsForm.total_capacity}
-            onChange={(event) => setSettingsForm((current) => ({ ...current, total_capacity: event.target.value }))}
-            placeholder="Total capacity"
-          />
-          <Input
-            value={settingsForm.slot_interval_min}
-            onChange={(event) => setSettingsForm((current) => ({ ...current, slot_interval_min: event.target.value }))}
-            placeholder="Slot interval (minutes)"
-          />
-          <Input
-            value={settingsForm.default_duration_min}
-            onChange={(event) =>
-              setSettingsForm((current) => ({ ...current, default_duration_min: event.target.value }))
-            }
-            placeholder="Average table duration"
-          />
-          <Input
-            value={settingsForm.lead_time_min}
-            onChange={(event) => setSettingsForm((current) => ({ ...current, lead_time_min: event.target.value }))}
-            placeholder="Lead time (minutes)"
-          />
-          <Input
-            value={settingsForm.max_days_ahead}
-            onChange={(event) => setSettingsForm((current) => ({ ...current, max_days_ahead: event.target.value }))}
-            placeholder="Max days ahead"
-          />
-          <Input
-            value={settingsForm.buffer_before_min}
-            onChange={(event) =>
-              setSettingsForm((current) => ({ ...current, buffer_before_min: event.target.value }))
-            }
-            placeholder="Buffer before"
-          />
-          <Input
-            value={settingsForm.buffer_after_min}
-            onChange={(event) =>
-              setSettingsForm((current) => ({ ...current, buffer_after_min: event.target.value }))
-            }
-            placeholder="Buffer after"
-          />
+        <div className="space-y-5">
+          <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 text-sm text-white/70">
+            These settings help SiroundChat decide when reservations should be accepted or marked as unavailable.
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <SettingsField
+              label="Total seats / capacity (guests)"
+              hint="Maximum number of guests your restaurant can handle at the same time."
+              value={settingsForm.total_capacity}
+              min={1}
+              onChange={(value) => setSettingsForm((current) => ({ ...current, total_capacity: value }))}
+            />
+            <SettingsField
+              label="Reservation slot interval (minutes)"
+              hint="How often customers can book. Example: every 30 minutes."
+              value={settingsForm.slot_interval_min}
+              min={1}
+              onChange={(value) => setSettingsForm((current) => ({ ...current, slot_interval_min: value }))}
+            />
+            <SettingsField
+              label="Average table duration (minutes)"
+              hint="How long a typical reservation blocks capacity. Example: 90 minutes."
+              value={settingsForm.default_duration_min}
+              min={1}
+              onChange={(value) => setSettingsForm((current) => ({ ...current, default_duration_min: value }))}
+            />
+            <SettingsField
+              label="Minimum notice before booking (minutes)"
+              hint="How soon before the reservation time customers are allowed to book."
+              value={settingsForm.lead_time_min}
+              min={0}
+              onChange={(value) => setSettingsForm((current) => ({ ...current, lead_time_min: value }))}
+            />
+            <SettingsField
+              label="Max days in advance"
+              hint="How far into the future customers can request a reservation."
+              value={settingsForm.max_days_ahead}
+              min={1}
+              onChange={(value) => setSettingsForm((current) => ({ ...current, max_days_ahead: value }))}
+            />
+            <SettingsField
+              label="Buffer before reservation (minutes)"
+              hint="Extra preparation time to protect before each reservation starts."
+              value={settingsForm.buffer_before_min}
+              min={0}
+              onChange={(value) => setSettingsForm((current) => ({ ...current, buffer_before_min: value }))}
+            />
+            <SettingsField
+              label="Buffer after reservation (minutes)"
+              hint="Extra cleanup or reset time to keep after each reservation ends."
+              value={settingsForm.buffer_after_min}
+              min={0}
+              onChange={(value) => setSettingsForm((current) => ({ ...current, buffer_after_min: value }))}
+            />
+          </div>
         </div>
       </Modal>
 
