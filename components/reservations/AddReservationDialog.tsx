@@ -16,7 +16,7 @@ const TIME_PATTERN = /^\d{2}:\d{2}$/;
 
 export type ManualReservationRecord = {
   id: string;
-  source: "website" | "whatsapp" | "manual";
+  source: "website" | "whatsapp" | "instagram" | "manual";
   source_conversation_id: string | null;
   start_at: string;
   end_at: string;

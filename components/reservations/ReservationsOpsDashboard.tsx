@@ -19,7 +19,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 
 type ReservationStatus = "pending" | "confirmed" | "completed" | "canceled" | "seated" | "no_show";
-type ReservationSource = "website" | "whatsapp" | "manual";
+type ReservationSource = "website" | "whatsapp" | "instagram" | "manual";
 type ReservationRow = ManualReservationRecord;
 
 type OpsResponse = {
@@ -68,6 +68,7 @@ const statusVariant: Record<ReservationStatus, "warning" | "success" | "default"
 const sourceLabel: Record<ReservationSource, string> = {
   website: "Website",
   whatsapp: "WhatsApp",
+  instagram: "Instagram",
   manual: "Manual"
 };
 
@@ -351,6 +352,7 @@ export function ReservationsOpsDashboard({ initialReservationId }: { initialRese
             <option value="all">All sources</option>
             <option value="website">Website</option>
             <option value="whatsapp">WhatsApp</option>
+            <option value="instagram">Instagram</option>
             <option value="manual">Manual</option>
           </Select>
           <div className="flex gap-2">
