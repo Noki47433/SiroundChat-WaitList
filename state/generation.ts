@@ -2,6 +2,7 @@
 
 import { create } from "zustand";
 import type { ContentLanguage, GenerationBriefData, QualityMode } from "@/lib/builder/generation-config";
+import type { StudioGenerationSpec } from "@/lib/website-studio/schema";
 
 export type GenerationStatus = "idle" | "generating" | "done" | "error";
 export type ProgressStatus = "running" | "completed";
@@ -11,6 +12,7 @@ export type GenerationBrief = {
   businessId: string;
   businessName: string;
   industry: string;
+  themeStyle?: string;
   contentLanguage: ContentLanguage;
   qualityMode: QualityMode;
   generationBrief: GenerationBriefData;
@@ -22,6 +24,9 @@ export type GenerationBrief = {
   fontFamily?: string;
   logoUrl?: string | null;
   description?: string;
+  rawPrompt?: string;
+  enhancedPrompt?: string;
+  selectedTemplate?: string;
   contact?: {
     email?: string | null;
     phone?: string | null;
@@ -46,6 +51,7 @@ export type GenerationBrief = {
   };
   hasOwnPhotos?: boolean;
   chatbotEmbedSnippet?: string | null;
+  studioSpec?: StudioGenerationSpec;
   goal?: string;
   pages?: string[];
 };

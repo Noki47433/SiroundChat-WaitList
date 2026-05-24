@@ -1,38 +1,43 @@
 import {
-  getFullEntitlements
+  resolveBillingEntitlements
 } from "@/lib/billing/entitlements";
 import { getWorkspaceSubscription } from "@/src/billing/getSubscription";
 import {
+  hasEntitlement,
   type PlanId
 } from "@/src/billing/entitlements";
 
 type PlanFlags = {
   canPublish: boolean;
   canRegenerate: boolean;
+  canAttachChatbotToWebsite: boolean;
 };
 
-export async function getBuilderPlanForBusiness(businessId: string) {
+async function resolveBuilderPlan(businessId: string) {
   const subscription = await getWorkspaceSubscription(businessId);
-  const plan = (subscription.plan_id ?? "website") as PlanId;
-  const entitlements = getFullEntitlements();
+  const plan = subscription.plan_id as PlanId;
+  const entitlements = resolveBillingEntitlements(
+    subscription.raw_billing_plan_id,
+    subscription.is_access_active
+  );
+
+  const flags: PlanFlags = {
+    canPublish: hasEntitlement(entitlements, "publish_website"),
+    canRegenerate: hasEntitlement(entitlements, "website_builder"),
+    canAttachChatbotToWebsite: hasEntitlement(entitlements, "chatbot_website_injection")
+  };
+
   return {
     plan,
-    flags: {
-      canPublish: Boolean(entitlements.publish_website),
-      canRegenerate: Boolean(entitlements.website_builder)
-    }
+    entitlements,
+    flags
   };
 }
 
+export async function getBuilderPlanForBusiness(businessId: string) {
+  return resolveBuilderPlan(businessId);
+}
+
 export async function getBuilderPlanForRoute(businessId: string) {
-  const subscription = await getWorkspaceSubscription(businessId);
-  const plan = (subscription.plan_id ?? "website") as PlanId;
-  const entitlements = getFullEntitlements();
-  return {
-    plan,
-    flags: {
-      canPublish: Boolean(entitlements.publish_website),
-      canRegenerate: Boolean(entitlements.website_builder)
-    }
-  };
+  return resolveBuilderPlan(businessId);
 }

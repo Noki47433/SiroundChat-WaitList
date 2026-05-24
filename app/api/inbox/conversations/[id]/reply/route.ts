@@ -15,7 +15,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
 export async function POST(request: Request, { params }: { params: { id: string } }) {
-  const { context, response } = await requireBusinessUser();
+  const { context, response } = await requireBusinessUser({ entitlement: "social_replies" });
   if (response) return response;
 
   const payload = await request.json().catch(() => null);

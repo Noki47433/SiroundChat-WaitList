@@ -13,7 +13,8 @@ const QuerySchema = z.object({
   source: z.enum(["all", "website", "whatsapp", "instagram", "manual"]).optional(),
   dateFrom: z.string().optional(),
   dateTo: z.string().optional(),
-  partySize: z.string().optional()
+  partySize: z.string().optional(),
+  actionType: z.string().optional(),
 });
 
 const resolveSource = (row: { source?: string | null; created_by?: string | null }) => {
@@ -29,7 +30,7 @@ const resolveSource = (row: { source?: string | null; created_by?: string | null
 };
 
 export async function GET(request: Request) {
-  const { context, response } = await requireBusinessUser();
+  const { context, response } = await requireBusinessUser({ entitlement: "reservation_management" });
   if (response) return response;
 
   const url = new URL(request.url);
@@ -39,7 +40,8 @@ export async function GET(request: Request) {
     source: url.searchParams.get("source") ?? undefined,
     dateFrom: url.searchParams.get("dateFrom") ?? undefined,
     dateTo: url.searchParams.get("dateTo") ?? undefined,
-    partySize: url.searchParams.get("partySize") ?? undefined
+    partySize: url.searchParams.get("partySize") ?? undefined,
+    actionType: url.searchParams.get("actionType") ?? undefined,
   });
 
   if (!parsed.success) {
@@ -51,12 +53,19 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Reservations are unavailable right now." }, { status: 500 });
   }
 
-  const restaurant = await ensureRestaurantBootstrap(admin as any, context.businessId, context.userId);
-  if (!restaurant) {
-    return NextResponse.json({ error: "Restaurant not found" }, { status: 404 });
-  }
+  const requestedActionType = parsed.data.actionType ?? "restaurant_reservation";
+  const isRestaurantFlow = requestedActionType === "restaurant_reservation";
 
-  const settings = await getOrCreateReservationSettings(context.supabase as any, context.businessId);
+  let restaurant: Awaited<ReturnType<typeof ensureRestaurantBootstrap>> | null = null;
+  let settings: Awaited<ReturnType<typeof getOrCreateReservationSettings>> | null = null;
+
+  if (isRestaurantFlow) {
+    restaurant = await ensureRestaurantBootstrap(admin as any, context.businessId, context.userId);
+    if (!restaurant) {
+      return NextResponse.json({ error: "Restaurant not found" }, { status: 404 });
+    }
+    settings = await getOrCreateReservationSettings(context.supabase as any, context.businessId);
+  }
 
   let query = (context.supabase as any)
     .from("reservations")
@@ -64,7 +73,8 @@ export async function GET(request: Request) {
       "id,restaurant_id,business_id,conversation_id,source,source_conversation_id,start_at,end_at,datetime,party_size,customer_name,customer_phone,customer_email,notes,special_request,status,created_by,created_at,updated_at,canceled_at,completed_at,seated_at,no_show_at"
     )
     .eq("business_id", context.businessId)
-    .order("start_at", { ascending: true })
+    .eq("action_type", requestedActionType)
+    .order("created_at", { ascending: false })
     .limit(500);
 
   if (parsed.data.dateFrom) {
@@ -133,10 +143,10 @@ export async function GET(request: Request) {
     },
     settings: {
       restaurantId: context.businessId,
-      totalCapacity: restaurant.total_capacity,
-      timezone: restaurant.timezone,
-      slotIntervalMin: settings.slot_interval_min,
-      defaultDurationMin: settings.default_duration_min
+      totalCapacity: restaurant?.total_capacity ?? 0,
+      timezone: restaurant?.timezone ?? "Europe/Belgrade",
+      slotIntervalMin: settings?.slot_interval_min ?? 15,
+      defaultDurationMin: settings?.default_duration_min ?? 90,
     }
   });
 }

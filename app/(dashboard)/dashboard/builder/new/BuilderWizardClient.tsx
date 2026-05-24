@@ -19,6 +19,7 @@ import {
   type GenerationBriefData,
   type QualityMode
 } from "@/lib/builder/generation-config";
+import { buildRestaurantStudioSpecFromGenerationPayload } from "@/lib/website-studio/spec-builder";
 
 const INDUSTRY_OPTIONS = [
   "Restaurant",
@@ -42,6 +43,15 @@ type SocialLinks = {
   tiktok?: string;
   linkedin?: string;
   website?: string;
+};
+
+const persistGenerationBrief = (siteId: string, payload: unknown) => {
+  try {
+    window.localStorage.setItem(`sc_generation_brief:${siteId}`, JSON.stringify(payload));
+    window.localStorage.removeItem("builderDraftSiteId");
+  } catch (error) {
+    console.warn("[BUILDER_WIZARD_STORAGE_ERROR]", error);
+  }
 };
 
 type ToggleKey =
@@ -1001,7 +1011,14 @@ export function BuilderWizardClient({
         hasOwnPhotos: draft.hasOwnPhotos
       };
 
-      window.localStorage.setItem(`sc_generation_brief:${siteId}`, JSON.stringify(payload));
+      const studioPayload = {
+        ...payload,
+        studioSource: "guided_setup" as const
+      };
+      persistGenerationBrief(siteId, {
+        ...studioPayload,
+        studioSpec: buildRestaurantStudioSpecFromGenerationPayload(studioPayload)
+      });
       window.localStorage.removeItem("builderDraftSiteId");
       markChecklistTaskComplete("create_website", true);
       router.push(`/editor/${siteId}/generate`);

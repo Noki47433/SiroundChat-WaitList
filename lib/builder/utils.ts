@@ -3,6 +3,9 @@ import type { SiteContent, TemplateKey } from "@/lib/builder/types";
 const resolveTemplateKeyFromId = (templateId?: string | null): TemplateKey | null => {
   const value = (templateId ?? "").trim();
   if (!value) return null;
+  if (["evasion", "essence", "hously", "food-truck"].includes(value)) {
+    return value as TemplateKey;
+  }
   if (value === "restaurant-editorial") return "restaurant_v1";
   if (value === "barbershop-editorial") return "service_v1";
   if (value === "dental-assurance") return "service_v1";

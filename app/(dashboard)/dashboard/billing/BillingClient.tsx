@@ -1,18 +1,21 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
 import { Manrope, Space_Grotesk } from "next/font/google";
 import { useSearchParams } from "next/navigation";
-import { Check, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
+import { ArrowRight, Check, Clock3, CreditCard, Loader2, Lock } from "lucide-react";
 import { useToast } from "@/components/ui/toast";
 import {
-  PENDING_PAYMENT_STALE_MINUTES,
   BILLING_PLANS,
+  SETUP_AMOUNT_CENTS,
+  getPublicBillingPlanId,
+  isBillingPlanId,
   type BillingPaymentKind,
-  type BillingPlanId,
-  type BillingSubscriptionStatus
+  type BillingSubscriptionStatus,
+  type PublicBillingPlanId
 } from "@/lib/billing/plans";
+import type { PlanId } from "@/src/billing/plans";
+import { getRecommendedPlanName, getUpgradeCopy } from "@/src/billing/upgrade";
 
 const headingFont = Space_Grotesk({
   subsets: ["latin"],
@@ -27,16 +30,21 @@ const bodyFont = Manrope({
 type SubscriptionRecord = {
   id: string;
   business_id: string;
-  billing_plan_id: BillingPlanId;
+  raw_billing_plan_id: string;
+  billing_plan_id: PublicBillingPlanId;
+  plan_id: PlanId;
   status: BillingSubscriptionStatus;
   trial_end: string | null;
   current_period_end: string | null;
   created_at: string;
   updated_at: string;
+  access_source: "subscription" | "manual_override" | "none";
   pending_payment_kind: BillingPaymentKind | null;
-  pending_payment_plan_id: BillingPlanId | null;
+  pending_payment_plan_id: string | null;
   pending_payment_created_at: string | null;
   pending_payment_is_stale: boolean;
+  manual_override_reason: string | null;
+  manual_override_expires_at: string | null;
 };
 
 type BillingClientProps = {
@@ -44,112 +52,164 @@ type BillingClientProps = {
   initialSubscription: SubscriptionRecord;
 };
 
-type CompareRow = {
-  label: string;
-  website_19: string;
-  bundle_29: string;
-  chatbot_19: string;
-  importance: string;
+const PLAN_SURFACES: Record<PublicBillingPlanId, string> = {
+  website_only:
+    "from-[rgba(63,104,176,0.2)] via-[rgba(29,48,82,0.12)] to-transparent",
+  chatbot_only:
+    "from-[rgba(51,154,164,0.2)] via-[rgba(18,61,68,0.12)] to-transparent",
+  website_chatbot:
+    "from-[rgba(214,167,94,0.24)] via-[rgba(87,58,18,0.14)] to-transparent",
+  social_inbox:
+    "from-[rgba(77,164,119,0.2)] via-[rgba(18,56,39,0.12)] to-transparent",
+  omni_channel:
+    "from-[rgba(222,181,112,0.22)] via-[rgba(92,66,22,0.14)] to-transparent"
 };
 
-const PLAN_FEATURES: Record<BillingPlanId, string[]> = {
-  website_19: [
-    "Unlimited landing pages with drag-and-drop editing",
-    "Custom domain + SSL with one-click publish",
-    "Lead forms synced directly to your workspace",
-    "SEO + social metadata controls",
-    "Traffic-to-lead analytics dashboard"
+const PLAN_BORDERS: Record<PublicBillingPlanId, string> = {
+  website_only: "border-[#7ea2df33] hover:border-[#8fb4ef55]",
+  chatbot_only: "border-[#63d1d833] hover:border-[#71dde455]",
+  website_chatbot: "border-[#f2c67a55] hover:border-[#ffd69380]",
+  social_inbox: "border-[#79d4aa33] hover:border-[#89e5ba55]",
+  omni_channel: "border-[#e4bc7655] hover:border-[#f0cf9480]"
+};
+
+const PLAN_VALUE_STATEMENTS: Record<PublicBillingPlanId, string> = {
+  website_only: "Launch a polished restaurant website with contact and reservation basics.",
+  chatbot_only: "Automate customer questions and lead capture from your existing site.",
+  website_chatbot: "Your website and AI assistant working together.",
+  social_inbox: "Handle WhatsApp and Instagram conversations from one workspace.",
+  omni_channel: "Everything SiroundChat offers across website, AI, inbox, and operations."
+};
+
+const PLAN_DISPLAY_FEATURES: Record<PublicBillingPlanId, string[]> = {
+  website_only: [
+    "Website builder",
+    "Publishing",
+    "Contact capture",
+    "Reservation form",
+    "Basic website analytics"
   ],
-  chatbot_19: [
-    "24/7 AI chatbot trained on your business content",
-    "Embed-ready widget with brand styling controls",
-    "Lead qualification prompts in chat",
-    "Conversation analytics and intent tracking",
-    "Human handoff context for faster follow-up"
+  chatbot_only: [
+    "AI replies",
+    "Knowledge base",
+    "External embed",
+    "Lead capture",
+    "Reservation support"
   ],
-  bundle_29: [
-    "Website + chatbot in one growth workspace",
-    "Unified lead funnel (forms + chat)",
-    "Conversion-focused templates and CTA blocks",
-    "Unified analytics: visits, chats, leads, bookings",
-    "Priority support lane for growth-blocking issues",
-    "Best value: save €9/month vs separate plans"
+  website_chatbot: [
+    "Everything in Website Only",
+    "Everything in AI Chatbot Only",
+    "Chatbot on your SiroundChat website",
+    "Unified reservations and leads",
+    "Deeper analytics"
+  ],
+  social_inbox: [
+    "WhatsApp inbox",
+    "Instagram inbox",
+    "Unified conversations",
+    "Human takeover",
+    "Social reply automation"
+  ],
+  omni_channel: [
+    "Website builder",
+    "AI chatbot",
+    "WhatsApp and Instagram",
+    "Unified inbox",
+    "Reservations and analytics",
+    "Priority workflows"
   ]
 };
 
-const COMPARE_ROWS: CompareRow[] = [
-  {
-    label: "Primary outcome",
-    website_19: "Launch and convert with a professional website",
-    bundle_29: "Grow with website + chatbot full-funnel coverage",
-    chatbot_19: "Convert conversations into qualified leads",
-    importance: "Defines where most ROI is created first."
-  },
-  {
-    label: "Lead capture channels",
-    website_19: "Website forms",
-    bundle_29: "Website forms + chatbot",
-    chatbot_19: "Chatbot only",
-    importance: "More channels usually means less lead leakage."
-  },
-  {
-    label: "Analytics depth",
-    website_19: "Traffic + form conversion",
-    bundle_29: "Unified traffic + chat + lead + booking",
-    chatbot_19: "Chat volume + lead qualification",
-    importance: "Clear visibility helps improve conversion faster."
-  },
-  {
-    label: "Best fit",
-    website_19: "Businesses fixing weak web conversion",
-    bundle_29: "Teams focused on predictable monthly growth",
-    chatbot_19: "Teams with strong traffic but slow response time",
-    importance: "Plan-to-goal fit drives adoption and retention."
-  },
-  {
-    label: "Support level",
-    website_19: "Standard",
-    bundle_29: "Priority support lane",
-    chatbot_19: "Standard",
-    importance: "Faster support minimizes downtime during campaigns."
-  }
-];
-
-const PLAN_RENDER_ORDER: BillingPlanId[] = ["website_19", "bundle_29", "chatbot_19"];
+const formatMoney = (value: number) =>
+  new Intl.NumberFormat("en-IE", {
+    style: "currency",
+    currency: "EUR",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(value);
 
 const formatDate = (value: string | null) => {
-  if (!value) return "-";
+  if (!value) return "Not scheduled";
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "-";
-  return date.toLocaleString(undefined, {
+  if (Number.isNaN(date.getTime())) return "Not scheduled";
+  return date.toLocaleDateString(undefined, {
     year: "numeric",
     month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZoneName: "short"
+    day: "2-digit"
   });
 };
 
-const statusLabel = (subscription: SubscriptionRecord) => {
-  if (subscription.pending_payment_kind === "renewal" && !subscription.pending_payment_is_stale) {
-    return "Pending renewal payment";
+const formatWorkspaceId = (workspaceId: string) =>
+  workspaceId.length > 16
+    ? `${workspaceId.slice(0, 8)}...${workspaceId.slice(-4)}`
+    : workspaceId;
+
+const statusPresentation = (subscription: SubscriptionRecord) => {
+  if (subscription.status === "free_internal") {
+    return {
+      label: "Internal access active",
+      detail: subscription.manual_override_reason ?? "This workspace currently has an internal access override.",
+      tone: "text-[#f3dfaa]"
+    };
   }
+
+  if (subscription.pending_payment_kind === "renewal" && !subscription.pending_payment_is_stale) {
+    return {
+      label: "Waiting for renewal confirmation",
+      detail: "Paysera is still confirming the payment for this workspace.",
+      tone: "text-[#f3dfaa]"
+    };
+  }
+
   if (
     subscription.status === "pending_setup" &&
     subscription.pending_payment_kind === "setup" &&
     !subscription.pending_payment_is_stale
   ) {
-    return "Pending setup payment";
+    return {
+      label: "Waiting for Paysera confirmation",
+      detail: "Your plan will unlock as soon as Paysera confirms the payment securely.",
+      tone: "text-[#f3dfaa]"
+    };
   }
-  if (subscription.pending_payment_kind && subscription.pending_payment_is_stale) {
-    return "Checkout expired";
+
+  if (subscription.status === "trialing") {
+    return {
+      label: "Plan active",
+      detail: `Access is live until ${formatDate(subscription.current_period_end)}.`,
+      tone: "text-[#bce8cf]"
+    };
   }
-  if (subscription.status === "pending_setup") return "Pending setup";
-  if (subscription.status === "trialing") return "Trialing";
-  if (subscription.status === "active") return "Active";
-  if (subscription.status === "past_due") return "Past due";
-  return "Canceled";
+
+  if (subscription.status === "active") {
+    return {
+      label: "Plan active",
+      detail: `Current period ends on ${formatDate(subscription.current_period_end)}.`,
+      tone: "text-[#bce8cf]"
+    };
+  }
+
+  if (subscription.status === "past_due") {
+    return {
+      label: "Billing needs attention",
+      detail: "Paid tools are paused until payment is confirmed again.",
+      tone: "text-[#ffd4a3]"
+    };
+  }
+
+  if (subscription.status === "canceled") {
+    return {
+      label: "No active billing",
+      detail: "Choose a plan to restore paid access for this workspace.",
+      tone: "text-white/65"
+    };
+  }
+
+  return {
+    label: subscription.pending_payment_is_stale ? "Checkout expired" : "No active plan",
+    detail: "Pick the module set your restaurant needs.",
+    tone: "text-white/65"
+  };
 };
 
 export function BillingClient({ workspaceId, initialSubscription }: BillingClientProps) {
@@ -157,33 +217,63 @@ export function BillingClient({ workspaceId, initialSubscription }: BillingClien
   const searchParams = useSearchParams();
   const blockedKey = searchParams?.get("blocked");
 
-  const [subscription] = useState(initialSubscription);
-  const [pendingPlanId, setPendingPlanId] = useState<BillingPlanId | null>(null);
-  const [showCompare, setShowCompare] = useState(false);
+  const [pendingPlanId, setPendingPlanId] = useState<PublicBillingPlanId | null>(null);
+  const subscription = initialSubscription;
+  const blockedCopy = blockedKey ? getUpgradeCopy(blockedKey as Parameters<typeof getUpgradeCopy>[0]) : null;
+  const blockedPlanName = blockedKey
+    ? getRecommendedPlanName(blockedKey as Parameters<typeof getRecommendedPlanName>[0])
+    : null;
+  const status = statusPresentation(subscription);
 
-  const hasActiveAccessState = useMemo(
-    () => subscription.status === "trialing" || subscription.status === "active",
-    [subscription.status]
-  );
-  const hasLivePendingSetup = useMemo(
-    () =>
-      subscription.status === "pending_setup" &&
-      subscription.pending_payment_kind === "setup" &&
-      !subscription.pending_payment_is_stale,
-    [subscription.pending_payment_is_stale, subscription.pending_payment_kind, subscription.status]
-  );
-  const hasLivePendingRenewal = useMemo(
-    () => subscription.pending_payment_kind === "renewal" && !subscription.pending_payment_is_stale,
-    [subscription.pending_payment_is_stale, subscription.pending_payment_kind]
-  );
-  const checkoutBlocked = hasActiveAccessState || hasLivePendingSetup || hasLivePendingRenewal;
+  const hasProcessingPayment =
+    subscription.pending_payment_kind !== null && !subscription.pending_payment_is_stale;
+  const hasLivePlan = subscription.access_source !== "none";
+  const isLockedByActiveBilling =
+    subscription.status === "trialing" ||
+    subscription.status === "active" ||
+    subscription.status === "free_internal";
 
-  const orderedPlans = useMemo(() => {
-    const planMap = new Map(BILLING_PLANS.map((plan) => [plan.id, plan]));
-    return PLAN_RENDER_ORDER.map((id) => planMap.get(id)).filter(Boolean) as typeof BILLING_PLANS;
-  }, []);
+  const pendingSubscriptionPlanId = useMemo(() => {
+    if (!hasProcessingPayment || !subscription.pending_payment_plan_id) return null;
+    if (!isBillingPlanId(subscription.pending_payment_plan_id)) return null;
+    return getPublicBillingPlanId(subscription.pending_payment_plan_id);
+  }, [hasProcessingPayment, subscription.pending_payment_plan_id]);
 
-  const startCheckout = async (planId: BillingPlanId) => {
+  const currentPlanId = hasLivePlan ? subscription.billing_plan_id : null;
+
+  const currentPlanName = useMemo(() => {
+    const selectedPlanId = currentPlanId ?? pendingSubscriptionPlanId;
+    if (!selectedPlanId) return "No active plan";
+    return BILLING_PLANS.find((plan) => plan.publicId === selectedPlanId)?.name ?? "No active plan";
+  }, [currentPlanId, pendingSubscriptionPlanId]);
+
+  const secondaryMeta = useMemo(() => {
+    if (subscription.status === "trialing" || subscription.status === "active") {
+      return `Current period · ${formatDate(subscription.current_period_end)}`;
+    }
+
+    if (subscription.status === "free_internal" && subscription.manual_override_expires_at) {
+      return `Override until · ${formatDate(subscription.manual_override_expires_at)}`;
+    }
+
+    if (hasProcessingPayment && subscription.pending_payment_kind === "renewal") {
+      return "Renewal checkout · Processing";
+    }
+
+    if (hasProcessingPayment) {
+      return "Setup checkout · Processing";
+    }
+
+    return `Setup payment · ${formatMoney(SETUP_AMOUNT_CENTS / 100)}`;
+  }, [
+    hasProcessingPayment,
+    subscription.current_period_end,
+    subscription.manual_override_expires_at,
+    subscription.pending_payment_kind,
+    subscription.status
+  ]);
+
+  const startCheckout = async (planId: PublicBillingPlanId) => {
     setPendingPlanId(planId);
 
     try {
@@ -213,204 +303,184 @@ export function BillingClient({ workspaceId, initialSubscription }: BillingClien
   };
 
   return (
-    <div className={`${bodyFont.className} relative mx-auto w-full max-w-[1120px] overflow-hidden rounded-[2rem] border border-[#3a5f8a66] bg-[#080e18] p-6 text-[#e8edf7] md:p-8`}>
-      <div className="pointer-events-none absolute -left-24 top-8 h-72 w-72 rounded-full bg-[#27599644] blur-[90px]" />
-      <div className="pointer-events-none absolute -right-20 bottom-0 h-80 w-80 rounded-full bg-[#2f6e8e3d] blur-[110px]" />
-      <div className={`pointer-events-none absolute left-1/2 top-2 hidden -translate-x-1/2 select-none text-[118px] leading-none text-[#d8e6ff0d] md:block ${headingFont.className}`}>
-        Pricing
-      </div>
-
-      <div className="relative z-10 space-y-6">
-        <div className="space-y-2">
-          <h1 className={`text-4xl tracking-tight text-white ${headingFont.className}`}>Billing</h1>
-          <p className="text-base text-white/75">
-            First-time setup charges <span className="font-semibold text-white">€1.00</span> and starts the 14-day trial only after callback confirmation. Expired workspaces renew at the selected monthly price after verified payment.
-          </p>
-          <p className="text-xs text-white/45">Workspace: {workspaceId}</p>
-        </div>
-
-        {blockedKey ? (
-          <div className="rounded-2xl border border-[#ffd87255] bg-[#ffd34a1c] px-4 py-3 text-sm text-[#ffe9ad]">
-            Access to <span className="font-semibold">{blockedKey}</span> is currently locked.
-          </div>
-        ) : null}
-
-        <div className="rounded-[1.6rem] border border-white/15 bg-white/[0.04] p-5 text-sm text-white/82 backdrop-blur-xl">
-          <p>
-            <span className="text-white/60">Status:</span>{" "}
-            <span className="font-semibold text-white">{statusLabel(subscription)}</span>
-          </p>
-          <p>
-            <span className="text-white/60">Trial end:</span> {formatDate(subscription.trial_end)}
-          </p>
-          <p>
-            <span className="text-white/60">Current period end:</span> {formatDate(subscription.current_period_end)}
-          </p>
-          {subscription.pending_payment_kind ? (
-            <p>
-              <span className="text-white/60">Pending checkout:</span>{" "}
-              {subscription.pending_payment_kind === "setup" ? "Setup payment" : "Renewal payment"}
-              {subscription.pending_payment_plan_id ? ` for ${subscription.pending_payment_plan_id}` : ""}
-              {subscription.pending_payment_created_at ? ` started ${formatDate(subscription.pending_payment_created_at)}` : ""}
-              {subscription.pending_payment_is_stale ? " (expired, safe to retry)" : ""}
-            </p>
-          ) : null}
-        </div>
-
-        <div className="grid gap-5 lg:grid-cols-3">
-          {orderedPlans.map((plan) => {
-            const isCurrentPlan = subscription.billing_plan_id === plan.id;
-            const isPending = pendingPlanId === plan.id;
-            const isBundle = plan.id === "bundle_29";
-            const buttonDisabled = checkoutBlocked || isPending || Boolean(pendingPlanId);
-
-            return (
-              <div
-                key={plan.id}
-                className={[
-                  "relative",
-                  isBundle ? "z-20 lg:-my-3 lg:scale-[1.06]" : "z-10"
-                ].join(" ")}
-              >
-                {isBundle ? (
-                  <>
-                    <div className="pointer-events-none absolute -inset-[1px] overflow-hidden rounded-[1.9rem]">
-                      <div className="absolute -inset-[130%] bg-[conic-gradient(from_180deg,#57b7d8,#7b78d6,#5f87b7,#57b7d8)] animate-[spin_10s_linear_infinite]" />
-                    </div>
-                    <div className="pointer-events-none absolute -inset-1 rounded-[2rem] bg-[#4f9cd233] blur-xl" />
-                  </>
-                ) : null}
-
-                <div
-                  className={[
-                    "relative overflow-hidden rounded-[1.7rem] p-6 backdrop-blur-xl",
-                    isBundle
-                      ? "m-[1.5px] border border-[#8fc9e85f] bg-gradient-to-b from-[#17304ccc] to-[#111f33f0] shadow-[0_0_40px_#4fa0c041]"
-                      : isCurrentPlan
-                        ? "border border-[#7aaad18f] bg-gradient-to-b from-[#132438cc] to-[#0d1624f0] shadow-[0_0_35px_#2f5f8a44]"
-                        : "border border-white/15 bg-gradient-to-b from-[#121826c9] to-[#0d1320e6]"
-                  ].join(" ")}
-                >
-                  <div className="absolute -right-16 -top-16 h-44 w-44 rounded-full bg-[#4f8fb52e] blur-3xl" />
-                  <div className="relative z-10">
-                    {isBundle ? (
-                      <span className="inline-flex rounded-full border border-[#8fc9e87d] bg-[#8fc9e820] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.15em] text-[#dff3ff]">
-                        Most Popular
-                      </span>
-                    ) : null}
-
-                    <p className={[
-                      "text-sm text-white/75",
-                      isBundle ? "mt-3" : ""
-                    ].join(" ")}>{plan.name}</p>
-
-                    <p className={[
-                      `${headingFont.className} font-semibold leading-none text-white`,
-                      isBundle ? "text-[40px]" : "text-[34px]"
-                    ].join(" ")}>
-                      €{(plan.priceCents / 100).toFixed(2)}
-                      <span className={[
-                        "text-white/90",
-                        isBundle ? "text-[24px]" : "text-[21px]"
-                      ].join(" ")}>/month</span>
-                    </p>
-
-                    <ul className="mt-5 space-y-2.5">
-                      {PLAN_FEATURES[plan.id].map((feature) => (
-                        <li key={feature} className="flex items-center gap-2 text-sm text-white/84">
-                          <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-white/15 text-white">
-                            <Check className="h-3.5 w-3.5" />
-                          </span>
-                          <span>{feature}</span>
-                        </li>
-                      ))}
-                    </ul>
-
-                    <button
-                      type="button"
-                      onClick={() => startCheckout(plan.id)}
-                      disabled={buttonDisabled}
-                      data-tutorial-target="billing-switch-plan"
-                      className="mt-6 inline-flex w-full items-center justify-center rounded-full bg-white px-4 py-2.5 text-sm font-semibold text-black transition hover:bg-white/90 disabled:cursor-not-allowed disabled:bg-white/60"
-                    >
-                      {isPending ? (
-                        <span className="inline-flex items-center gap-2">
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                          Redirecting...
-                        </span>
-                      ) : isCurrentPlan && hasActiveAccessState ? (
-                        "Current plan active"
-                      ) : hasLivePendingSetup || hasLivePendingRenewal ? (
-                        "Checkout pending"
-                      ) : (
-                        "Choose Plan"
-                      )}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="space-y-4">
-          <button
-            type="button"
-            onClick={() => setShowCompare((value) => !value)}
-            className="inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/[0.04] px-4 py-2 text-sm font-semibold text-white hover:bg-white/[0.1]"
-          >
-            Compare Plans
-            {showCompare ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-          </button>
-
-          {showCompare ? (
-            <div className="overflow-hidden rounded-2xl border border-white/15 bg-white/[0.03]">
-              <div className="overflow-x-auto">
-                <table className="min-w-[960px] w-full text-left text-sm">
-                  <thead className="bg-white/[0.06] text-white">
-                    <tr>
-                      <th className="px-4 py-3 text-xs uppercase tracking-[0.13em] text-white/70">Compare Plans</th>
-                      <th className="px-4 py-3 text-sm font-semibold text-white">Website</th>
-                      <th className={`px-4 py-3 text-sm font-semibold text-white ${headingFont.className}`}>Bundle</th>
-                      <th className="px-4 py-3 text-sm font-semibold text-white">Chatbot</th>
-                      <th className="px-4 py-3 text-xs uppercase tracking-[0.13em] text-white/70">Why It Matters</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {COMPARE_ROWS.map((row) => (
-                      <tr key={row.label} className="border-t border-white/10 align-top">
-                        <td className="px-4 py-3 font-semibold text-white">{row.label}</td>
-                        <td className="px-4 py-3 text-white/85">{row.website_19}</td>
-                        <td className="px-4 py-3 text-white/90">{row.bundle_29}</td>
-                        <td className="px-4 py-3 text-white/85">{row.chatbot_19}</td>
-                        <td className="px-4 py-3 text-white/65">{row.importance}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          ) : null}
-        </div>
-
-        {checkoutBlocked ? (
-          <p className="text-sm text-white/72">
-            {hasActiveAccessState
-              ? "Manual renewal opens only after the current billing period ends."
-              : `Pending checkout remains non-active until callback verification. If it expires, retry after ${PENDING_PAYMENT_STALE_MINUTES} minutes.`}
-          </p>
-        ) : null}
-
-        <p className="text-xs text-white/50">
-          Only callback-confirmed payments activate or renew subscriptions. The success page alone does not activate access.
+    <section className={`${bodyFont.className} mx-auto w-full max-w-[1700px] pb-8 text-[#e8edf7]`}>
+      <div className="mx-auto max-w-4xl text-center">
+        <p className="text-[11px] uppercase tracking-[0.28em] text-white/40">SiroundChat billing</p>
+        <h1 className={`mt-4 text-4xl font-semibold tracking-[-0.04em] text-white sm:text-5xl lg:text-6xl ${headingFont.className}`}>
+          Upgrade your plan
+        </h1>
+        <p className="mx-auto mt-4 max-w-2xl text-sm leading-7 text-white/68 sm:text-base">
+          Pick the module set your restaurant needs. Access unlocks after verified Paysera confirmation.
         </p>
 
-        <div className="text-xs">
-          <Link href="/dashboard" className="text-white/60 transition hover:text-white">
-            Back to dashboard
-          </Link>
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+          <div className="rounded-full border border-white/10 bg-white/[0.03] px-4 py-2 text-sm text-white/78">
+            Current plan · <span className="font-semibold text-white">{currentPlanName}</span>
+          </div>
+          <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-4 py-2 text-sm text-white/78">
+            <Clock3 className="h-4 w-4 text-[#f0d08f]" />
+            <span className="font-medium text-white">{status.label}</span>
+          </div>
+          <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-4 py-2 text-sm text-white/78">
+            <CreditCard className="h-4 w-4 text-[#f0d08f]" />
+            {secondaryMeta}
+          </div>
+          <div className="rounded-full border border-white/10 bg-white/[0.03] px-4 py-2 text-sm text-white/62">
+            Workspace · {formatWorkspaceId(workspaceId)}
+          </div>
         </div>
+
+        <p className={`mx-auto mt-4 max-w-2xl text-sm leading-6 ${status.tone}`}>{status.detail}</p>
+
+        {blockedCopy ? (
+          <div className="mx-auto mt-6 max-w-3xl rounded-[1.7rem] border border-[#f2cb7e33] bg-[#f2cb7e10] px-5 py-4 text-left text-sm text-[#eed8a2]">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-start gap-3">
+                <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-[#f2cb7e33] bg-black/20">
+                  <Lock className="h-4 w-4 text-[#f0d08f]" />
+                </span>
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.22em] text-[#c7af74]">Feature locked</p>
+                  <p className="mt-1 font-semibold text-white">{blockedCopy.title}</p>
+                  <p className="mt-1 leading-6 text-[#e5d1a0]">{blockedCopy.description}</p>
+                </div>
+              </div>
+              {blockedPlanName ? (
+                <div className="rounded-full border border-[#f2cb7e33] bg-white/[0.04] px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-white/76">
+                  Best fit · {blockedPlanName}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
       </div>
-    </div>
+
+      <div className="mt-12 grid gap-5 md:grid-cols-2 xl:grid-cols-5">
+        {BILLING_PLANS.map((plan) => {
+          const isCurrentPlan = currentPlanId === plan.publicId;
+          const isPendingSelection = pendingSubscriptionPlanId === plan.publicId;
+          const isStartingCheckout = pendingPlanId === plan.publicId;
+          const isRecommended = plan.publicId === "website_chatbot";
+          const canRestoreCurrentPlan =
+            isCurrentPlan && (subscription.status === "past_due" || subscription.status === "canceled");
+
+          const buttonDisabled =
+            isStartingCheckout ||
+            isPendingSelection ||
+            (isCurrentPlan && isLockedByActiveBilling) ||
+            hasProcessingPayment ||
+            (isLockedByActiveBilling && !isCurrentPlan);
+
+          const buttonLabel = isStartingCheckout
+            ? "Redirecting to Paysera"
+            : isPendingSelection
+              ? "Waiting for Paysera"
+              : isCurrentPlan && isLockedByActiveBilling
+                ? "Current plan"
+                : canRestoreCurrentPlan
+                  ? "Restore this plan"
+                  : subscription.status === "past_due" || subscription.status === "canceled"
+                    ? "Switch to this plan"
+                    : "Choose this plan";
+
+          return (
+            <article
+              key={plan.id}
+              className={`group relative flex h-full flex-col overflow-hidden rounded-[2.15rem] border bg-[linear-gradient(180deg,rgba(17,20,29,0.95),rgba(9,11,17,0.98))] p-6 transition duration-200 ease-out hover:-translate-y-1 ${PLAN_BORDERS[plan.publicId]} ${isRecommended ? "shadow-[0_24px_90px_rgba(211,166,87,0.12)]" : ""}`}
+            >
+              <div className={`pointer-events-none absolute inset-x-0 top-0 h-36 bg-gradient-to-b ${PLAN_SURFACES[plan.publicId]}`} />
+              <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.04),transparent_24%)]" />
+
+              <div className="relative z-10 flex h-full flex-col">
+                <div className="flex min-h-[56px] flex-wrap items-start justify-between gap-2">
+                  <div className="flex flex-wrap gap-2">
+                    {isRecommended ? (
+                      <span className="rounded-full border border-[#f3cb8155] bg-[#f3cb8115] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#f1d394]">
+                        Recommended
+                      </span>
+                    ) : null}
+                    {plan.badge === "ALL-IN" ? (
+                      <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/60">
+                        Complete
+                      </span>
+                    ) : null}
+                    {isCurrentPlan ? (
+                      <span className="rounded-full border border-[#7bd4a14a] bg-[#7bd4a118] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#bfeace]">
+                        Current plan
+                      </span>
+                    ) : null}
+                    {!isCurrentPlan && isPendingSelection ? (
+                      <span className="rounded-full border border-[#f3cb8155] bg-[#f3cb8115] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#f1d394]">
+                        Pending checkout
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="mt-4">
+                  <h2 className={`text-[2rem] font-semibold tracking-[-0.04em] text-white ${headingFont.className}`}>
+                    {plan.name}
+                  </h2>
+                  <p className="mt-2 text-sm leading-6 text-white/64">{PLAN_VALUE_STATEMENTS[plan.publicId]}</p>
+                </div>
+
+                <div className="mt-6">
+                  <p className="text-[3.1rem] font-semibold tracking-[-0.05em] text-white">
+                    {formatMoney(plan.priceCents / 100)}
+                  </p>
+                  <p className="mt-1 text-sm text-white/50">per month</p>
+                </div>
+
+                <ul className="mt-6 space-y-3 text-sm text-white/82">
+                  {PLAN_DISPLAY_FEATURES[plan.publicId].map((feature) => (
+                    <li key={feature} className="flex items-start gap-3">
+                      <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.04]">
+                        <Check className="h-3.5 w-3.5 text-[#f0d08f]" />
+                      </span>
+                      <span className="leading-6">{feature}</span>
+                    </li>
+                  ))}
+                </ul>
+
+                <div className="mt-8 flex-1" />
+
+                <button
+                  type="button"
+                  data-tutorial-target={plan.publicId === "website_chatbot" ? "billing-switch-plan" : undefined}
+                  disabled={buttonDisabled}
+                  onClick={() => startCheckout(plan.publicId)}
+                  className={`mt-6 inline-flex h-12 w-full items-center justify-center gap-2 rounded-full text-sm font-semibold transition ${
+                    buttonDisabled
+                      ? "cursor-not-allowed border border-white/10 bg-white/[0.05] text-white/40"
+                      : isRecommended
+                        ? "bg-[#f3e7c0] text-black hover:bg-white"
+                        : "bg-white text-black hover:bg-white/95"
+                  }`}
+                >
+                  {isStartingCheckout ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      {buttonLabel}
+                    </>
+                  ) : (
+                    <>
+                      {buttonLabel}
+                      {!buttonDisabled ? <ArrowRight className="h-4 w-4" /> : null}
+                    </>
+                  )}
+                </button>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+
+      <div className="mx-auto mt-10 max-w-3xl text-center">
+        <p className="text-sm leading-7 text-white/56">
+          Checkout starts with a verified {formatMoney(SETUP_AMOUNT_CENTS / 100)} setup payment. Your plan activates
+          only after Paysera confirms the payment securely on the server.
+        </p>
+      </div>
+    </section>
   );
 }

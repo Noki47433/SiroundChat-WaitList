@@ -49,7 +49,7 @@ const parseUpdatePayload = (payload: z.infer<typeof SettingsUpdateSchema>) => {
 };
 
 export async function GET(request: Request) {
-  const { context, response } = await requireBusinessUser();
+  const { context, response } = await requireBusinessUser({ entitlement: "reservation_management" });
   if (response) return response;
 
   const restaurantId = resolveRestaurantId(request, context.businessId);
@@ -78,7 +78,7 @@ export async function GET(request: Request) {
 }
 
 export async function PUT(request: Request) {
-  const { context, response } = await requireBusinessUser();
+  const { context, response } = await requireBusinessUser({ entitlement: "reservation_management" });
   if (response) return response;
 
   const payload = await request.json().catch(() => null);

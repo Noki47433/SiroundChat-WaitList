@@ -12,7 +12,7 @@ const QuerySchema = z.object({
 });
 
 export async function GET(request: Request) {
-  const { context, response } = await requireBusinessUser();
+  const { context, response } = await requireBusinessUser({ entitlement: "unified_inbox" });
   if (response) return response;
 
   const url = new URL(request.url);

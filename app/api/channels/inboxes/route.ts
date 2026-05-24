@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireBusinessUser } from "@/lib/server/business-auth";
+import {
+  buildUpgradeRequiredResponse,
+  getBusinessEntitlementAccess
+} from "@/lib/server/billing-access";
 import { log } from "@/lib/utils/log";
 
 const BodySchema = z.object({
@@ -11,7 +15,7 @@ const BodySchema = z.object({
 });
 
 export async function GET() {
-  const { context, response } = await requireBusinessUser();
+  const { context, response } = await requireBusinessUser({ entitlement: "unified_inbox" });
   if (response) return response;
 
   const supabase = context.supabase as any;
@@ -32,13 +36,19 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const { context, response } = await requireBusinessUser();
+  const { context, response } = await requireBusinessUser({ entitlement: "channel_settings" });
   if (response) return response;
 
   const payload = await request.json().catch(() => null);
   const parsed = BodySchema.safeParse(payload);
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  }
+
+  const requiredEntitlement = parsed.data.channel === "instagram" ? "instagram" : "whatsapp";
+  const channelAccess = await getBusinessEntitlementAccess(context.businessId, requiredEntitlement);
+  if (!channelAccess.allowed) {
+    return buildUpgradeRequiredResponse(requiredEntitlement, channelAccess);
   }
 
   const supabase = context.supabase as any;

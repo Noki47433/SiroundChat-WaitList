@@ -82,6 +82,7 @@ export default async function EmbedPage({
         logoUrl={config?.logoUrl ?? undefined}
         iconId={config?.iconId ?? undefined}
         businessName={config?.businessName ?? "Chatbot"}
+        quickButtons={config?.quickButtons ?? undefined}
       />
     </div>
   );

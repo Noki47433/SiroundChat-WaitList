@@ -1,6 +1,14 @@
 import { z } from "zod";
 
-export const TemplateKeySchema = z.enum(["restaurant_v1", "service_v1", "generic_v1"]);
+export const TemplateKeySchema = z.enum([
+  "restaurant_v1",
+  "service_v1",
+  "generic_v1",
+  "evasion",
+  "essence",
+  "hously",
+  "food-truck"
+]);
 export type TemplateKey = z.infer<typeof TemplateKeySchema>;
 
 const requiredText = (max: number) => z.string().trim().min(1).max(max);

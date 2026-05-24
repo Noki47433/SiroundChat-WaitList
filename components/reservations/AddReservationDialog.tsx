@@ -20,7 +20,7 @@ export type ManualReservationRecord = {
   source_conversation_id: string | null;
   start_at: string;
   end_at: string;
-  party_size: number;
+  party_size: number | null;
   customer_name: string;
   customer_phone: string | null;
   customer_email: string | null;

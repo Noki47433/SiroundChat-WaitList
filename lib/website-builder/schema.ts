@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { StudioSiteBriefMetadataSchema } from "@/lib/website-studio/schema";
 import { TEMPLATE_ALLOWED_VARIANTS, TEMPLATE_META } from "@/lib/website-builder/templates/registry";
 
 const TemplateIdSchema = z.string().refine(
@@ -290,6 +291,7 @@ const SiteBriefSchema = z
         fontFamily: z.string().optional()
       })
       .optional(),
+    studio: StudioSiteBriefMetadataSchema.optional(),
     designDNA: z
       .object({
         variationSeed: z.string().optional(),

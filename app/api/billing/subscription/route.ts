@@ -1,15 +1,12 @@
 import { NextResponse } from "next/server";
 import {
-  getFullEntitlements
-} from "@/lib/billing/entitlements";
-import { userHasLaunchAccess } from "@/lib/server/launch-access";
-import {
   normalizeWorkspaceId,
   resolveBillingWorkspaceSelection
 } from "@/lib/server/billing-access";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import { getWorkspaceSubscription } from "@/src/billing/getSubscription";
 import { getPlanDefinition } from "@/src/billing/plans";
+import { resolveBillingEntitlements } from "@/lib/billing/entitlements";
 
 export const dynamic = "force-dynamic";
 
@@ -21,10 +18,6 @@ export async function GET(request: Request) {
 
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  if (!(await userHasLaunchAccess(user.id))) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const { searchParams } = new URL(request.url);
@@ -51,8 +44,8 @@ export async function GET(request: Request) {
 
   try {
     const subscription = await getWorkspaceSubscription(selection.businessId);
-    const accessActive = true;
-    const entitlements = getFullEntitlements();
+    const accessActive = subscription.is_access_active;
+    const entitlements = resolveBillingEntitlements(subscription.raw_billing_plan_id, accessActive);
 
     return NextResponse.json(
       {

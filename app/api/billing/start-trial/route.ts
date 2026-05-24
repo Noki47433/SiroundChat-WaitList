@@ -19,7 +19,6 @@ import {
 import {
   resolveBillingWorkspaceSelection
 } from "@/lib/server/billing-access";
-import { userHasLaunchAccess } from "@/lib/server/launch-access";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import { getSupabaseServerAdminClientIfAvailable } from "@/lib/supabase/serverAdmin";
 
@@ -57,10 +56,6 @@ export async function POST(request: Request) {
 
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  if (!(await userHasLaunchAccess(user.id))) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const payload = (await request.json().catch(() => null)) as
@@ -406,6 +401,21 @@ export async function POST(request: Request) {
         subscriptionId,
         orderId,
         error: demoSubscriptionError
+      });
+      return NextResponse.json({ error: "Failed to activate local demo billing flow" }, { status: 500 });
+    }
+
+    const { error: demoAccessError } = await admin
+      .from("businesses")
+      .update({ launch_access: true, updated_at: new Date().toISOString() })
+      .eq("id", businessId);
+
+    if (demoAccessError) {
+      console.error("[BILLING_START_DEMO_ACCESS_ERROR]", {
+        businessId,
+        subscriptionId,
+        orderId,
+        error: demoAccessError
       });
       return NextResponse.json({ error: "Failed to activate local demo billing flow" }, { status: 500 });
     }

@@ -18,7 +18,7 @@ const ManualReservationSchema = z.object({
 });
 
 export async function POST(request: Request) {
-  const { context, response } = await requireBusinessUser();
+  const { context, response } = await requireBusinessUser({ entitlement: "reservation_management" });
   if (response) return response;
 
   const payload = await request.json().catch(() => null);

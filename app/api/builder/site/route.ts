@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { userHasLaunchAccess } from "@/lib/server/launch-access";
+import {
+  buildUpgradeRequiredResponse,
+  getBusinessEntitlementAccess
+} from "@/lib/server/billing-access";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import { getSupabaseServerAdminClientIfAvailable } from "@/lib/supabase/serverAdmin";
 import { buildFallbackContent } from "@/lib/builder/ai";
@@ -11,12 +15,68 @@ import {
   sanitizeGenerationBrief
 } from "@/lib/builder/generation-config";
 import { buildSeoFields, buildSitePath, selectTemplateKey, slugify } from "@/lib/builder/utils";
+import { ThemeStyleIdSchema, type ThemeStyleId } from "@/lib/builder/template-sites/schema";
+import {
+  isRestaurantStylePrompt,
+  resolveRestaurantIntent,
+  selectRestaurantTemplate
+} from "@/lib/builder/template-sites/selection";
+
+const INTEGRATED_TEMPLATE_IDS = [
+  "evasion",
+  "essence",
+  "hously",
+  "food-truck"
+] as const;
+
+const LEGACY_TEMPLATE_IDS = [
+  "restaurant-editorial",
+  "barbershop-editorial",
+  "dental-assurance",
+  "real-estate-signature",
+  "clinic-clean",
+  "beauty-lux",
+  "corporate-sleek",
+  "auto-modern",
+  "home-services-trust",
+  "legal-clarity",
+  "portfolio-minimal",
+  "ecommerce-simple",
+  "hospitality-resort"
+] as const;
+
+const getSupportedExplicitTemplateId = (templateId?: string | null) => {
+  const trimmed = (templateId ?? "").trim();
+  if (!trimmed) return null;
+  if (INTEGRATED_TEMPLATE_IDS.includes(trimmed as (typeof INTEGRATED_TEMPLATE_IDS)[number])) {
+    return {
+      templateId: trimmed,
+      templateKind: "integrated" as const
+    };
+  }
+  if (LEGACY_TEMPLATE_IDS.includes(trimmed as (typeof LEGACY_TEMPLATE_IDS)[number])) {
+    return {
+      templateId: trimmed,
+      templateKind: "legacy" as const
+    };
+  }
+  return null;
+};
 
 const selectTemplateId = (industry: string, templateId?: string | null) => {
-  const trimmed = (templateId ?? "").trim();
-  if (trimmed) return trimmed;
+  const explicit = getSupportedExplicitTemplateId(templateId);
+  if (explicit) return explicit.templateId;
   const normalized = industry.toLowerCase();
-  if (normalized.includes("restaurant")) return "restaurant-editorial";
+  if (
+    normalized.includes("restaurant") ||
+    normalized.includes("cafe") ||
+    normalized.includes("dining") ||
+    normalized.includes("hospitality") ||
+    normalized.includes("food & beverage") ||
+    normalized.includes("food and beverage")
+  ) {
+    return "hously";
+  }
   if (normalized.includes("clinic") || normalized.includes("medical")) return "clinic-clean";
   if (normalized.includes("beauty") || normalized.includes("salon") || normalized.includes("spa")) {
     return "beauty-lux";
@@ -33,6 +93,80 @@ const selectTemplateId = (industry: string, templateId?: string | null) => {
   }
   if (normalized.includes("service")) return "auto-modern";
   return "auto-modern";
+};
+
+const resolveTemplateSelection = (
+  industry: string,
+  description: string,
+  templateId?: string | null,
+  themeStyle?: ThemeStyleId | null,
+  options?: {
+    generationBrief?: {
+      primaryCtaGoal?: string | null;
+      coreOffer?: string | null;
+      topServices?: string[] | null;
+    } | null;
+    features?: {
+      includeReservation?: boolean;
+      includeGallery?: boolean;
+    } | null;
+  },
+  palette?: {
+    primaryColor?: string | null;
+    secondaryColor?: string | null;
+  }
+) => {
+  const restaurantIntent = resolveRestaurantIntent({
+    prompt: description,
+    industry,
+    templateId,
+    generationBrief: options?.generationBrief ?? null,
+    features: options?.features ?? null,
+    services: options?.generationBrief?.topServices ?? null
+  });
+  const explicit = getSupportedExplicitTemplateId(templateId);
+  if (restaurantIntent.isRestaurant) {
+    const selected =
+      explicit?.templateKind === "integrated"
+        ? explicit.templateId
+        : selectRestaurantTemplate(description, industry, themeStyle ?? null, palette).template;
+    return {
+      templateId: selected,
+      templateKey: selected,
+      routing: "integrated_restaurant" as const,
+      restaurantIntent
+    };
+  }
+
+  if (explicit) {
+    return {
+      templateId: explicit.templateId,
+      templateKey:
+        explicit.templateKind === "integrated"
+          ? explicit.templateId
+          : selectTemplateKey(industry, explicit.templateId),
+      routing: explicit.templateKind === "integrated" ? ("integrated_explicit" as const) : ("legacy_explicit" as const),
+      restaurantIntent
+    };
+  }
+
+  if (isRestaurantStylePrompt(description, industry)) {
+    const selected = selectRestaurantTemplate(description, industry, themeStyle ?? null, palette);
+    return {
+      templateId: selected.template,
+      templateKey: selected.template,
+      routing: "integrated_restaurant" as const,
+      restaurantIntent
+    };
+  }
+
+  const resolvedTemplateId = selectTemplateId(industry, templateId);
+  return {
+    templateId: resolvedTemplateId,
+    templateKey: selectTemplateKey(industry, resolvedTemplateId),
+    routing: "legacy_default" as const,
+    restaurantIntent
+  };
 };
 
 const ColorSchema = z
@@ -100,6 +234,7 @@ const CreateSchema = z.object({
   businessName: z.string().min(1),
   industry: z.string().min(1),
   description: z.string().min(1),
+  themeStyle: ThemeStyleIdSchema.optional().nullable(),
   tone: ToneSchema,
   pagesMode: PagesModeSchema,
   templateId: z.string().optional().nullable(),
@@ -121,6 +256,7 @@ const UpdateSchema = z.object({
   businessName: z.string().min(1).optional(),
   industry: z.string().min(1).optional(),
   description: z.string().min(1).optional(),
+  themeStyle: ThemeStyleIdSchema.optional().nullable(),
   tone: ToneSchema,
   pagesMode: PagesModeSchema,
   templateId: z.string().optional().nullable(),
@@ -224,11 +360,16 @@ export async function GET(request: Request) {
     admin,
     siteId,
     userData.user.id,
-    "id,business_id,status,template_key,template_id,tone,pages_mode,opening_hours,socials,has_own_photos,site_document,slug,path,primary_color,secondary_color,font_family,logo_url,business_name,industry,description,contact_email,contact_phone,contact_address,include_services,include_testimonials,include_pricing,include_faq,include_contact,include_reservation,include_gallery,content_language,generation_brief"
+    "id,business_id,status,template_key,template_id,tone,pages_mode,opening_hours,socials,has_own_photos,site_document,slug,path,primary_color,secondary_color,font_family,logo_url,business_name,industry,description,contact_email,contact_phone,contact_address,include_services,include_testimonials,include_pricing,include_faq,include_contact,include_reservation,include_gallery,content_language,generation_brief,published_url,updated_at"
   );
 
   if (!site) {
     return NextResponse.json({ error: "Site not found" }, { status: 404 });
+  }
+
+  const billingAccess = await getBusinessEntitlementAccess(site.business_id as string, "website_builder");
+  if (!billingAccess.allowed) {
+    return buildUpgradeRequiredResponse("website_builder", billingAccess);
   }
 
   return NextResponse.json(site);
@@ -266,8 +407,36 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Business not found" }, { status: 404 });
   }
 
-  const templateId = selectTemplateId(input.industry, input.templateId);
-  const templateKey = selectTemplateKey(input.industry, templateId);
+  const billingAccess = await getBusinessEntitlementAccess(input.businessId, "website_builder");
+  if (!billingAccess.allowed) {
+    return buildUpgradeRequiredResponse("website_builder", billingAccess);
+  }
+
+  const templateSelection = resolveTemplateSelection(
+    input.industry,
+    input.description,
+    input.templateId,
+    input.themeStyle,
+    {
+      generationBrief: input.generationBrief ?? null,
+      features: input.features ?? null
+    },
+    {
+      primaryColor: input.primaryColor ?? null,
+      secondaryColor: input.secondaryColor ?? null
+    }
+  );
+  const templateId = templateSelection.templateId;
+  const templateKey = templateSelection.templateKey;
+  console.info("[BUILDER_SITE_TEMPLATE_SELECTION]", {
+    businessId: input.businessId,
+    industry: input.industry,
+    routing: templateSelection.routing,
+    templateId,
+    templateKey,
+    restaurantIntent: templateSelection.restaurantIntent.isRestaurant,
+    restaurantSignals: templateSelection.restaurantIntent.matchedSignals
+  });
   const baseSlug = slugify(input.businessName);
   const contentLanguage = input.contentLanguage ?? "en";
   const generationBrief = sanitizeGenerationBrief(
@@ -382,7 +551,9 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     siteId: siteRow.id,
-    id: siteRow.id
+    id: siteRow.id,
+    templateId,
+    templateKey
   });
 }
 
@@ -413,28 +584,57 @@ export async function PATCH(request: Request) {
   const input = parsed.data;
   const updates: Record<string, unknown> = {};
 
-  const existingSite = await getOwnedSite(admin, input.siteId, userData.user.id, "id");
+  const existingSite = await getOwnedSite(admin, input.siteId, userData.user.id, "id,business_id");
 
   if (!existingSite?.id) {
     return NextResponse.json({ error: "Site not found" }, { status: 404 });
   }
 
+  const billingAccess = await getBusinessEntitlementAccess(existingSite.business_id as string, "website_builder");
+  if (!billingAccess.allowed) {
+    return buildUpgradeRequiredResponse("website_builder", billingAccess);
+  }
+
   if (input.businessName) updates.business_name = input.businessName;
   if (input.industry) {
     updates.industry = input.industry;
-    const resolvedTemplateId = selectTemplateId(input.industry, input.templateId ?? null);
-    updates.template_id = resolvedTemplateId;
-    updates.template_key = selectTemplateKey(input.industry, resolvedTemplateId);
+    const selection = resolveTemplateSelection(
+      input.industry,
+      input.description ?? "",
+      input.templateId ?? null,
+      input.themeStyle,
+      {
+        generationBrief: input.generationBrief ?? null,
+        features: input.features ?? null
+      },
+      {
+        primaryColor: input.primaryColor ?? null,
+        secondaryColor: input.secondaryColor ?? null
+      }
+    );
+    updates.template_id = selection.templateId;
+    updates.template_key = selection.templateKey;
   }
   if (input.description) updates.description = input.description;
   if (input.tone !== undefined) updates.tone = input.tone;
   if (input.pagesMode !== undefined) updates.pages_mode = input.pagesMode;
   if (input.templateId !== undefined) {
-    updates.template_id = input.templateId;
-    updates.template_key = selectTemplateKey(
+    const selection = resolveTemplateSelection(
       input.industry ?? String(updates.industry ?? ""),
-      input.templateId
+      input.description ?? "",
+      input.templateId,
+      input.themeStyle,
+      {
+        generationBrief: input.generationBrief ?? null,
+        features: input.features ?? null
+      },
+      {
+        primaryColor: input.primaryColor ?? null,
+        secondaryColor: input.secondaryColor ?? null
+      }
     );
+    updates.template_id = selection.templateId;
+    updates.template_key = selection.templateKey;
   }
   if (input.primaryColor !== undefined) updates.primary_color = input.primaryColor;
   if (input.secondaryColor !== undefined) updates.secondary_color = input.secondaryColor;
@@ -477,6 +677,15 @@ export async function PATCH(request: Request) {
     if (input.features.includeGallery !== undefined) {
       updates.include_gallery = input.features.includeGallery;
     }
+  }
+
+  if (updates.template_id || updates.template_key) {
+    console.info("[BUILDER_SITE_TEMPLATE_UPDATE]", {
+      siteId: input.siteId,
+      industry: input.industry ?? null,
+      templateId: updates.template_id ?? null,
+      templateKey: updates.template_key ?? null
+    });
   }
 
   const { error } = await (admin as any)

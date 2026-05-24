@@ -18,12 +18,21 @@ type NotificationSettings = {
   close_rate: number | null;
 };
 
+type SmsAlertSettings = {
+  sms_alert_phone: string | null;
+  sms_alerts_enabled: boolean;
+};
+
+const E164_PHONE_REGEX = /^\+[1-9]\d{7,14}$/;
+
 export function NotificationSettingsPanel({
   businessId,
-  initial
+  initial,
+  smsInitial
 }: {
   businessId: string;
   initial: NotificationSettings;
+  smsInitial: SmsAlertSettings;
 }) {
   const { push } = useToast();
   const [form, setForm] = useState(() => ({
@@ -32,7 +41,9 @@ export function NotificationSettingsPanel({
     min_severity_to_toast: initial.min_severity_to_toast,
     currency: initial.currency ?? "EUR",
     avg_order_value: initial.avg_order_value?.toString() ?? "",
-    close_rate: initial.close_rate?.toString() ?? ""
+    close_rate: initial.close_rate?.toString() ?? "",
+    sms_alert_phone: smsInitial.sms_alert_phone ?? "",
+    sms_alerts_enabled: smsInitial.sms_alerts_enabled
   }));
   const [saving, setSaving] = useState(false);
 
@@ -53,23 +64,46 @@ export function NotificationSettingsPanel({
       return;
     }
 
+    const smsAlertPhone = form.sms_alert_phone.trim();
+    if (smsAlertPhone && !E164_PHONE_REGEX.test(smsAlertPhone)) {
+      push({
+        title: "Invalid SMS alert phone",
+        message: "Use international format, for example +38344123456.",
+        variant: "error"
+      });
+      return;
+    }
+
     setSaving(true);
     const supabase = getSupabaseBrowserClient();
-    const { error } = await (supabase as any)
-      .from("business_notification_settings")
-      .update({
-        deliver_in_app: form.deliver_in_app,
-        deliver_push: form.deliver_push,
-        min_severity_to_toast: form.min_severity_to_toast,
-        currency: form.currency.trim().toUpperCase() || "EUR",
-        avg_order_value: avgOrderValue,
-        close_rate: closeRate
-      })
-      .eq("business_id", businessId);
+    const [{ error: notificationError }, { error: businessError }] = await Promise.all([
+      (supabase as any)
+        .from("business_notification_settings")
+        .update({
+          deliver_in_app: form.deliver_in_app,
+          deliver_push: form.deliver_push,
+          min_severity_to_toast: form.min_severity_to_toast,
+          currency: form.currency.trim().toUpperCase() || "EUR",
+          avg_order_value: avgOrderValue,
+          close_rate: closeRate
+        })
+        .eq("business_id", businessId),
+      (supabase as any)
+        .from("businesses")
+        .update({
+          sms_alert_phone: smsAlertPhone || null,
+          sms_alerts_enabled: form.sms_alerts_enabled
+        })
+        .eq("id", businessId)
+    ]);
     setSaving(false);
 
-    if (error) {
-      push({ title: "Failed to save settings", message: error.message, variant: "error" });
+    if (notificationError || businessError) {
+      push({
+        title: "Failed to save settings",
+        message: notificationError?.message ?? businessError?.message ?? "Could not save settings right now.",
+        variant: "error"
+      });
       return;
     }
 
@@ -143,6 +177,34 @@ export function NotificationSettingsPanel({
             onChange={(event) => updateField("deliver_push", event.target.checked)}
           />
           Allow browser push alerts
+        </label>
+      </div>
+
+      <div className="space-y-4 rounded-xl border border-white/10 bg-white/5 p-4">
+        <div>
+          <h4 className="text-sm font-semibold text-white">Reservation SMS alerts</h4>
+          <p className="mt-1 text-xs text-white/60">
+            Send a plain SMS to the owner/admin when a new reservation is created.
+          </p>
+        </div>
+
+        <label className="flex items-center gap-3 text-sm text-white/70">
+          <Switch
+            checked={form.sms_alerts_enabled}
+            onChange={(event) => updateField("sms_alerts_enabled", event.target.checked)}
+          />
+          Enable reservation SMS alerts
+        </label>
+
+        <label className="text-xs text-white/60">
+          SMS alert phone
+          <Input
+            value={form.sms_alert_phone}
+            onChange={(event) => updateField("sms_alert_phone", event.target.value)}
+            placeholder="+38344123456"
+            className="mt-2"
+          />
+          <span className="mt-1 block text-xs text-white/45">Use international format, for example +38344123456.</span>
         </label>
       </div>
 

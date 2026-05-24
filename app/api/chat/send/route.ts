@@ -16,7 +16,10 @@ import {
 import { awardBadgeIfNew, createNotificationIfNotExists } from "@/lib/notifications/engine";
 import { log } from "@/lib/utils/log";
 import { getTimeZoneOffsetMs } from "@/lib/utils/timezone";
-import { getBusinessEntitlementAccess } from "@/lib/server/billing-access";
+import {
+  buildUpgradeRequiredPayload,
+  getBusinessEntitlementAccess
+} from "@/lib/server/billing-access";
 import { runChatbotOrchestrator } from "@/lib/chatbot/orchestrator";
 import { scheduleReservationFollowups } from "@/lib/automations/scheduler";
 import {
@@ -34,8 +37,53 @@ import {
 } from "@/lib/chatbot/siroundchat-demo";
 import { calculateAiTextCostUsd } from "@/lib/ai/costs";
 import { isHumanTakeoverEnabled } from "@/lib/chat/takeover";
+import { createGenericRequestRecord } from "@/lib/reservations/request-operations";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+const ACTION_COMPLETION_PHRASES = [
+  "i'll pass your",
+  "i will pass your",
+  "pass your request",
+  "pass this request",
+  "submitted your request",
+  "request to the team",
+  "they will confirm",
+  "team will be in touch",
+  "team will confirm",
+  "will be in touch shortly",
+  "will reach out to confirm",
+  "forwarded your",
+  "have forwarded",
+  "i've noted your",
+  "noted your request",
+  "we have your",
+  "we've received your",
+  "received your request",
+  "your request has been",
+  "will contact you shortly",
+  "will get back to you",
+  "soon as possible",
+];
+
+const extractNameFromConversation = (text: string): string | null => {
+  const patterns = [
+    /(?:my name is|i am|i'm|this is|call me|emri im është|emri im eshte)\s+([A-Za-zÀ-ÖØ-öø-ÿ][a-zA-ZÀ-ÖØ-öø-ÿ]+(?: [A-Za-zÀ-ÖØ-öø-ÿ][a-zA-ZÀ-ÖØ-öø-ÿ]+)*)/i,
+    /^([A-Za-zÀ-ÖØ-öø-ÿ][a-zA-ZÀ-ÖØ-öø-ÿ]+(?: [A-Za-zÀ-ÖØ-öø-ÿ][a-zA-ZÀ-ÖØ-öø-ÿ]+)*)[\.,!?]?\s*$/m,
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match?.[1] && match[1].trim().length >= 2 && match[1].trim().length < 60) {
+      return match[1].trim();
+    }
+  }
+  return null;
+};
+
+const extractPhoneFromConversation = (text: string): string | null => {
+  const match = text.match(/(?:\+?[\d][\d\s\-\.\(\)]{5,20}\d)/);
+  return match?.[0]?.trim() ?? null;
+};
 
 const CHAT_MODEL = process.env.OPENAI_CHAT_MODEL || "gpt-4o-mini";
 const EMBEDDING_MODEL = "text-embedding-3-small"; // 1536 dims (matches vector(1536))
@@ -1399,7 +1447,7 @@ export async function POST(req: Request) {
     // 1) Validate widget key -> get businessId
     const { data: bizRows, error: bizErr, count } = await (admin as any)
       .from("businesses")
-      .select("id, business_name, industry, timezone, generated_starter_knowledge", { count: "exact" })
+      .select("id, business_name, industry, timezone, generated_starter_knowledge, onboarding_data", { count: "exact" })
       .eq("widget_key", body.key);
 
     if (bizErr) {
@@ -1419,12 +1467,21 @@ export async function POST(req: Request) {
     const businessId = biz.id as string;
     const chatbotAccess = await getBusinessEntitlementAccess(businessId, "chatbot");
     if (!chatbotAccess.allowed) {
-      return NextResponse.json({ error: "Chatbot is not available on the current plan" }, { status: 403 });
+      return NextResponse.json(buildUpgradeRequiredPayload("chatbot", chatbotAccess), { status: 403 });
     }
 
     const businessName = toText(biz.business_name) || "this business";
     const isSiroundChatDemo = isSiroundChatDemoBot({ widgetKey: body.key, businessName });
     const businessTimeZone = toText(biz.timezone) || "Europe/Belgrade";
+
+    // Load bot config (multi-industry configuration) – safe fallback to restaurant defaults
+    const { resolveBotConfig } = await import("@/lib/config/industry-presets");
+    const bizOnboardingData = (biz as { onboarding_data?: unknown }).onboarding_data;
+    const botConfig = resolveBotConfig(
+      bizOnboardingData && typeof bizOnboardingData === "object"
+        ? (bizOnboardingData as Record<string, unknown>).botConfig ?? null
+        : null
+    );
     const starterKnowledge = toText((biz as { generated_starter_knowledge?: string | null }).generated_starter_knowledge).trim();
     const starterKnowledgeContext =
       starterKnowledge.length > 4500 ? `${starterKnowledge.slice(0, 4500).trim()}\n…` : starterKnowledge;
@@ -2308,7 +2365,12 @@ export async function POST(req: Request) {
       };
     };
 
-    const inReservationFlow = !isSiroundChatDemo && isReservationIntent(body.message, reservationState);
+    // Reservation flow only runs when the business supports restaurant reservations
+    const reservationFlowAllowed =
+      !isSiroundChatDemo &&
+      botConfig.bookingsEnabled &&
+      botConfig.actionType === "restaurant_reservation";
+    const inReservationFlow = reservationFlowAllowed && isReservationIntent(body.message, reservationState);
     const reservationFlowStarting =
       inReservationFlow && (reservationState.mode === "none" || reservationState.mode === "submitted");
     if (inReservationFlow) {
@@ -3122,7 +3184,7 @@ export async function POST(req: Request) {
     // 6) Chat
     const systemPrompt = isSiroundChatDemo
       ? buildSiroundChatDemoSystemPrompt()
-      : SYSTEM_PROMPT(businessName, body.tonePreset ?? undefined);
+      : SYSTEM_PROMPT(businessName, body.tonePreset ?? undefined, botConfig);
 
     const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
       { role: "system", content: systemPrompt },
@@ -3267,6 +3329,73 @@ export async function POST(req: Request) {
     }
 
     const assistantMessageId = assistantMessage?.id ? String(assistantMessage.id) : null;
+
+    // Non-restaurant action flow: detect completion and persist the request record
+    const actionFlowAllowed =
+      !isSiroundChatDemo &&
+      botConfig.bookingsEnabled &&
+      botConfig.actionType !== "none" &&
+      botConfig.actionType !== "restaurant_reservation";
+
+    if (actionFlowAllowed) {
+      const existingActionState = (reservationState as any).action_request_state as
+        | { submitted: boolean; request_id: string | null }
+        | undefined;
+      const alreadySubmitted = existingActionState?.submitted === true;
+
+      if (!alreadySubmitted) {
+        const replyLower = reply.toLowerCase();
+        const isCompletion = ACTION_COMPLETION_PHRASES.some((phrase) => replyLower.includes(phrase));
+
+        if (isCompletion) {
+          const historyItems = (history ?? []) as Array<{ role: string; content: string }>;
+          const userMessages = [
+            ...historyItems.filter((m) => m.role === "user").map((m) => m.content),
+            body.message,
+          ].join("\n");
+
+          const extractedName = extractNameFromConversation(userMessages);
+          const extractedPhone = extractPhoneFromConversation(userMessages);
+
+          // Require at least name or phone before creating the record to avoid false positives
+          if (extractedName || extractedPhone) {
+            const conversationSummary = [
+              ...historyItems.slice(-12).map(
+                (m) => `${m.role === "user" ? "Customer" : "Bot"}: ${m.content}`
+              ),
+              `Customer: ${body.message}`,
+              `Bot: ${reply}`,
+            ].join("\n");
+
+            try {
+              const result = await createGenericRequestRecord({
+                adminClient: admin as any,
+                businessId,
+                actionType: botConfig.actionType,
+                customerName: extractedName ?? "Customer",
+                customerPhone: extractedPhone ?? null,
+                notes: conversationSummary.slice(0, 2000),
+                conversationId,
+                source: "website",
+                sendSmsAlert: true,
+              });
+
+              const requestId = (result.request as any)?.id as string | undefined;
+              (reservationState as any).action_request_state = { submitted: true, request_id: requestId ?? null };
+
+              await (admin as any)
+                .from("conversation_reservation_state")
+                .upsert(
+                  { conversation_id: conversationId, business_id: businessId, state: reservationState },
+                  { onConflict: "conversation_id" }
+                );
+            } catch (err) {
+              log("warn", "Failed to persist non-restaurant action request", { error: err, businessId });
+            }
+          }
+        }
+      }
+    }
 
     if (assistantUsage) {
       await recordAssistantUsage({

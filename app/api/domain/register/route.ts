@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { userHasLaunchAccess } from "@/lib/server/launch-access";
+import {
+  buildUpgradeRequiredResponse,
+  getBusinessEntitlementAccess
+} from "@/lib/server/billing-access";
 import { getTenantFromSession } from "@/lib/utils/tenant";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import { isAuthDisabled } from "@/lib/config/auth";
@@ -25,6 +29,10 @@ export async function POST(request: Request) {
   const tenant = userId ? await getTenantFromSession(userId) : { userId: "", businessId: "" };
   if (!tenant.businessId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const billingAccess = await getBusinessEntitlementAccess(tenant.businessId, "custom_domain");
+  if (!billingAccess.allowed) {
+    return buildUpgradeRequiredResponse("custom_domain", billingAccess);
   }
   const supabase = getSupabaseRouteClient();
   const payload = await request.json().catch(() => null);

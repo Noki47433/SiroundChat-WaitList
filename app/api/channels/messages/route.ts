@@ -5,7 +5,7 @@ import { log } from "@/lib/utils/log";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
-  const { context, response } = await requireBusinessUser();
+  const { context, response } = await requireBusinessUser({ entitlement: "unified_inbox" });
   if (response) return response;
 
   const { searchParams } = new URL(request.url);

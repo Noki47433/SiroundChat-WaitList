@@ -1,5 +1,15 @@
 import { NextResponse } from "next/server";
 import { userHasLaunchAccess } from "@/lib/server/launch-access";
+import {
+  buildUpgradeRequiredResponse,
+  getBusinessEntitlementAccess
+} from "@/lib/server/billing-access";
+import {
+  buildUnknownLegacyConversationChannelResponse,
+  ensureLegacyConversationBusinessAccess,
+  inferLegacyConversationChannels,
+  loadLegacyConversationContext
+} from "@/lib/server/legacy-chat-management";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import { getTenantFromSession } from "@/lib/utils/tenant";
 import { DashboardConversationQuerySchema } from "@/lib/validation/chat";
@@ -51,16 +61,30 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  if (conversationId) {
-    const { data: conversation } = await db
-      .from("chat_conversations")
-      .select("id")
-      .eq("id", conversationId)
-      .eq("business_id", tenant.businessId)
-      .maybeSingle();
+  const businessAccessResponse = await ensureLegacyConversationBusinessAccess(user.id, tenant.businessId);
+  if (businessAccessResponse) {
+    return businessAccessResponse;
+  }
 
-    if (!conversation?.id) {
+  if (conversationId) {
+    const conversation = await loadLegacyConversationContext(conversationId);
+    if (!conversation) {
       return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
+    }
+
+    const conversationAccessResponse = await ensureLegacyConversationBusinessAccess(user.id, conversation.businessId);
+    if (conversationAccessResponse) {
+      return conversationAccessResponse;
+    }
+
+    if (conversation.channel === "unknown") {
+      return buildUnknownLegacyConversationChannelResponse();
+    }
+
+    const requiredEntitlement = conversation.channel === "website" ? "chatbot" : "unified_inbox";
+    const billingAccess = await getBusinessEntitlementAccess(conversation.businessId, requiredEntitlement);
+    if (!billingAccess.allowed) {
+      return buildUpgradeRequiredResponse(requiredEntitlement, billingAccess);
     }
 
     const { data: messages } = await db
@@ -88,17 +112,63 @@ export async function GET(request: Request) {
   });
 
   const { limit, offset } = parsed.success ? parsed.data : { limit: 20, offset: 0 };
+  const [chatbotAccess, inboxAccess] = await Promise.all([
+    getBusinessEntitlementAccess(tenant.businessId, "chatbot"),
+    getBusinessEntitlementAccess(tenant.businessId, "unified_inbox")
+  ]);
 
   const { data: conversations } = await db
     .from("chat_conversations")
-    .select("id, user_name, created_at")
+    .select("id, user_name, created_at, site_id, business_id")
     .eq("business_id", tenant.businessId)
     .order("created_at", { ascending: false })
     .range(offset, offset + limit - 1);
 
-  const conversationRows = (conversations ?? []) as Database["public"]["Tables"]["chat_conversations"]["Row"][];
+  const conversationRows = (conversations ?? []) as Array<
+    Database["public"]["Tables"]["chat_conversations"]["Row"] & { site_id?: string | null; business_id?: string | null }
+  >;
+  const channelMap = await inferLegacyConversationChannels(
+    conversationRows
+      .filter(
+        (row): row is Database["public"]["Tables"]["chat_conversations"]["Row"] & {
+          site_id: string | null;
+          business_id: string;
+        } => typeof row.id === "string" && typeof row.business_id === "string"
+      )
+      .map((row) => ({
+        id: row.id,
+        business_id: row.business_id,
+        site_id: row.site_id ?? null
+      }))
+  );
+
+  const accessibleConversations = conversationRows.filter((conversation) => {
+    const channel = channelMap.get(conversation.id) ?? "unknown";
+    if (channel === "website") return chatbotAccess.allowed;
+    if (channel === "whatsapp" || channel === "instagram") return inboxAccess.allowed;
+    return false;
+  });
+
+  if (!accessibleConversations.length && conversationRows.length > 0) {
+    const hasWebsiteConversations = conversationRows.some((conversation) => (channelMap.get(conversation.id) ?? "unknown") === "website");
+    const hasSocialConversations = conversationRows.some((conversation) => {
+      const channel = channelMap.get(conversation.id) ?? "unknown";
+      return channel === "whatsapp" || channel === "instagram";
+    });
+
+    if (hasWebsiteConversations && !chatbotAccess.allowed) {
+      return buildUpgradeRequiredResponse("chatbot", chatbotAccess);
+    }
+
+    if (hasSocialConversations && !inboxAccess.allowed) {
+      return buildUpgradeRequiredResponse("unified_inbox", inboxAccess);
+    }
+
+    return buildUnknownLegacyConversationChannelResponse();
+  }
+
   return NextResponse.json({
-    conversations: conversationRows.map((conversation) => ({
+    conversations: accessibleConversations.map((conversation) => ({
       id: conversation.id,
       name: conversation.user_name ?? "Visitor",
       created_at: conversation.created_at,

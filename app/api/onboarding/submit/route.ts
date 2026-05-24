@@ -104,8 +104,8 @@ export async function POST(request: Request) {
       city: parsed.data.city,
       onboarding_submitted: true,
       onboarding_data: onboardingData,
-      access_approved: false,
-      launch_access: false,
+      access_approved: Boolean(business.access_approved),
+      launch_access: Boolean(business.launch_access),
       updated_at: now
     })
     .eq("id", business.id)

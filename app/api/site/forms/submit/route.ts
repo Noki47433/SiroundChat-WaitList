@@ -1,9 +1,15 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { sendReservationSmsAlert } from "@/lib/server/twilio";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { enforceRateLimit, RateLimitError } from "@/lib/utils/rate-limit";
+import { log } from "@/lib/utils/log";
 import { createNotificationIfNotExists } from "@/lib/notifications/engine";
 import { insertWebsiteAnalyticsEvent } from "@/lib/analytics/website-events";
+import {
+  buildUpgradeRequiredPayload,
+  getBusinessEntitlementAccess
+} from "@/lib/server/billing-access";
 import {
   computeUsedCapacityForInterval,
   ensureRestaurantBootstrap,
@@ -52,7 +58,8 @@ const ReservationPayloadSchema = z
     time: z.string().min(1),
     email: z.string().email().optional().nullable(),
     phone: z.string().min(2).optional().nullable(),
-    party_size: z.string().optional().nullable()
+    party_size: z.string().optional().nullable(),
+    notes: z.string().max(1000).optional().nullable()
   })
   .refine((value) => Boolean(value.email || value.phone), {
     message: "Email or phone required"
@@ -109,6 +116,7 @@ export async function POST(request: Request) {
       const date = String(formData.get("date") ?? "").trim();
       const time = String(formData.get("time") ?? "").trim();
       const partySize = String(formData.get("party_size") ?? "").trim();
+      const notes = String(formData.get("notes") ?? "").trim();
 
       const email = emailField || (contact.includes("@") ? contact : null);
       const phone = phoneField || (contact && !contact.includes("@") ? contact : null);
@@ -125,7 +133,8 @@ export async function POST(request: Request) {
                 time,
                 email,
                 phone,
-                party_size: partySize || null
+                party_size: partySize || null,
+                notes: notes || null
               }
             : {
                 name,
@@ -162,8 +171,14 @@ export async function POST(request: Request) {
       : await siteQuery.eq("slug", slug!).maybeSingle();
 
     const site = (siteRes?.data ?? null) as BuilderSiteRow | null;
-    if (!site || site.status !== "published") {
+    if (!site || (!hasSiteId && site.status !== "published")) {
       return NextResponse.json({ error: "Site not found" }, { status: 404 });
+    }
+
+    const requiredEntitlement = form_type === "reservation" ? "reservations" : "forms_lead_capture";
+    const billingAccess = await getBusinessEntitlementAccess(site.business_id, requiredEntitlement);
+    if (!billingAccess.allowed) {
+      return NextResponse.json(buildUpgradeRequiredPayload(requiredEntitlement, billingAccess), { status: 403 });
     }
 
     const payloadSchema = form_type === "reservation" ? ReservationPayloadSchema : ContactPayloadSchema;
@@ -254,7 +269,7 @@ export async function POST(request: Request) {
           customer_name: reservationPayload.name,
           customer_phone: reservationPayload.phone ?? reservationPayload.email ?? "website",
           customer_email: reservationPayload.email ?? null,
-          notes: "Website reservation form",
+          notes: reservationPayload.notes?.trim() || "Website reservation form",
           status: "pending",
           created_by: "widget"
         })
@@ -266,6 +281,24 @@ export async function POST(request: Request) {
       }
 
       reservationId = reservationRow.id as string;
+
+      try {
+        await sendReservationSmsAlert({
+          adminClient: admin,
+          businessId: site.business_id,
+          reservationId,
+          name: reservationPayload.name,
+          date: reservationPayload.date,
+          time: reservationPayload.time,
+          guests: partySize,
+          phone: reservationPayload.phone ?? null
+        });
+      } catch {
+        log("warn", "Reservation SMS alert threw unexpectedly", {
+          businessId: site.business_id,
+          reservationId
+        });
+      }
     }
 
     const { data: submission, error: insertError } = await admin

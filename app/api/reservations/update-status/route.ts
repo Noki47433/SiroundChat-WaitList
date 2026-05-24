@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { userHasLaunchAccess } from "@/lib/server/launch-access";
+import {
+  buildUpgradeRequiredResponse,
+  getBusinessEntitlementAccess
+} from "@/lib/server/billing-access";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import { getTenantFromSession } from "@/lib/utils/tenant";
 
@@ -34,6 +38,10 @@ export async function POST(request: Request) {
   const tenant = await getTenantFromSession(user.id);
   if (!tenant.businessId) {
     return NextResponse.json({ error: "Business not found" }, { status: 404 });
+  }
+  const billingAccess = await getBusinessEntitlementAccess(tenant.businessId, "reservation_management");
+  if (!billingAccess.allowed) {
+    return buildUpgradeRequiredResponse("reservation_management", billingAccess);
   }
 
   const { reservationId } = parsed.data;

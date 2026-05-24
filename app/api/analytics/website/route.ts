@@ -5,7 +5,10 @@ import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import { isAuthDisabled } from "@/lib/config/auth";
 import { getSupabaseAdminClientIfAvailable } from "@/lib/supabase/admin";
 import { listOwnedBusinessIds } from "@/lib/builder/site-access";
-import { getBusinessEntitlementAccess } from "@/lib/server/billing-access";
+import {
+  buildUpgradeRequiredResponse,
+  getBusinessEntitlementAccess
+} from "@/lib/server/billing-access";
 
 export const runtime = "nodejs";
 
@@ -537,7 +540,7 @@ export async function GET(request: Request) {
 
   const billingAccess = await getBusinessEntitlementAccess(selectedBusinessId, "advanced_analytics");
   if (!billingAccess.allowed) {
-    return NextResponse.json({ error: "Advanced analytics are not available on the current plan" }, { status: 403 });
+    return buildUpgradeRequiredResponse("advanced_analytics", billingAccess);
   }
 
   timeZone = (business?.timezone as string | null) ?? "UTC";

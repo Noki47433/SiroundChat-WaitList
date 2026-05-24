@@ -1,6 +1,6 @@
 import "server-only";
 import { redirect } from "next/navigation";
-import { getFullEntitlements } from "@/lib/billing/entitlements";
+import { getBusinessEntitlementAccess } from "@/lib/server/billing-access";
 import { getTenantFromSession } from "@/lib/utils/tenant";
 import {
   type EntitlementKey,
@@ -16,6 +16,8 @@ type EntitlementAccessResult = {
   workspaceId: string | null;
   entitlements: Entitlements | null;
   allowed: boolean;
+  accessActive: boolean;
+  subscriptionStatus: string | null;
 };
 
 export async function getEntitlementAccess(
@@ -26,13 +28,24 @@ export async function getEntitlementAccess(
   const targetWorkspaceId = workspaceId ?? tenant.businessId ?? null;
 
   if (!targetWorkspaceId) {
-    return { workspaceId: null, entitlements: null, allowed: false };
+    return {
+      workspaceId: null,
+      entitlements: null,
+      allowed: false,
+      accessActive: false,
+      subscriptionStatus: null
+    };
   }
 
-  const entitlements = getFullEntitlements();
-  const allowed = true;
+  const access = await getBusinessEntitlementAccess(targetWorkspaceId, entitlementKey);
 
-  return { workspaceId: targetWorkspaceId, entitlements, allowed };
+  return {
+    workspaceId: targetWorkspaceId,
+    entitlements: access.entitlements,
+    allowed: access.allowed,
+    accessActive: access.accessActive,
+    subscriptionStatus: access.subscription.status
+  };
 }
 
 export async function requireEntitlement(

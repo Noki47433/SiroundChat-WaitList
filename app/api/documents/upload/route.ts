@@ -7,6 +7,7 @@ import { processDocument } from "@/lib/ai/document-processing";
 import { log } from "@/lib/utils/log";
 import { isAuthDisabled } from "@/lib/config/auth";
 import {
+  buildUpgradeRequiredResponse,
   canAccessBillingWorkspace,
   getBusinessEntitlementAccess
 } from "@/lib/server/billing-access";
@@ -52,7 +53,7 @@ export async function POST(request: Request) {
 
     const billingAccess = await getBusinessEntitlementAccess(businessId, "chatbot_knowledge_base");
     if (!billingAccess.allowed) {
-      return NextResponse.json({ error: "Knowledge uploads are not available on the current plan" }, { status: 403 });
+      return buildUpgradeRequiredResponse("chatbot_knowledge_base", billingAccess);
     }
   }
 

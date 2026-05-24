@@ -1,5 +1,6 @@
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { runChatbotOrchestrator } from "@/lib/chatbot/orchestrator";
+import { getBusinessEntitlementAccess } from "@/lib/server/billing-access";
 import { checkWebhookRateLimit } from "@/lib/channels/webhook-rate-limit";
 import { log } from "@/lib/utils/log";
 
@@ -111,6 +112,20 @@ export async function handleInboundWebhook(channel: Channel, request: Request) {
       });
     }
 
+    const channelEntitlement = channel === "instagram" ? "instagram" : "whatsapp";
+    const [channelAccess, inboxAccess, automationAccess] = await Promise.all([
+      getBusinessEntitlementAccess(inbox.business_id as string, channelEntitlement),
+      getBusinessEntitlementAccess(inbox.business_id as string, "unified_inbox"),
+      getBusinessEntitlementAccess(inbox.business_id as string, "social_automation")
+    ]);
+
+    if (!channelAccess.allowed && !inboxAccess.allowed) {
+      return new Response(JSON.stringify({ ok: true, ignored: "billing_locked" }), {
+        status: 202,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+
     const { data: conversation, error: conversationError } = await admin
       .from("chat_conversations")
       .insert({
@@ -128,19 +143,21 @@ export async function handleInboundWebhook(channel: Channel, request: Request) {
     }
 
     const conversationId = conversation.id as string;
-
-    const orchestratorResult = await runChatbotOrchestrator(admin, {
-      businessId: inbox.business_id,
-      conversationId,
-      message: parsed.text,
-      customerSignals: {
-        name: parsed.name,
-        email: parsed.email,
-        phone: parsed.from,
-        channel,
-        externalId: parsed.from
-      }
-    });
+    const canRunAutomation = automationAccess.allowed;
+    const orchestratorResult = canRunAutomation
+      ? await runChatbotOrchestrator(admin, {
+          businessId: inbox.business_id,
+          conversationId,
+          message: parsed.text,
+          customerSignals: {
+            name: parsed.name,
+            email: parsed.email,
+            phone: parsed.from,
+            channel,
+            externalId: parsed.from
+          }
+        })
+      : { customer: null, assistantMessage: null, actions: [] as string[] };
 
     const customerId = orchestratorResult.customer?.id ?? null;
 
@@ -172,7 +189,7 @@ export async function handleInboundWebhook(channel: Channel, request: Request) {
       timestamp: new Date().toISOString()
     });
 
-    const autoReplyEnabled = (inbox.settings?.auto_reply ?? true) !== false;
+    const autoReplyEnabled = canRunAutomation && (inbox.settings?.auto_reply ?? true) !== false;
 
     if (autoReplyEnabled && orchestratorResult.assistantMessage) {
       await admin.from("channel_messages").insert({

@@ -1,0 +1,31 @@
+.root {
+  --essence-bg: var(--site-background, #f7f3ed);
+  --essence-foreground: var(--site-text, #161311);
+  --essence-muted: var(--site-muted, rgba(22, 19, 17, 0.64));
+  --essence-border: var(--site-border, rgba(22, 19, 17, 0.12));
+  --essence-primary: var(--site-secondary, #121212);
+  --essence-primary-foreground: var(--site-primary-foreground, #f8f4ee);
+  --essence-secondary: var(--site-surface, #ece5da);
+  --essence-accent: var(--site-secondary, #b7925c);
+  background: var(--essence-bg);
+  color: var(--essence-foreground);
+  font-family: var(--font-essence-sans), var(--font-inter), system-ui, sans-serif;
+}
+
+.root :global(*) {
+  box-sizing: border-box;
+}
+
+.root :global(input),
+.root :global(select),
+.root :global(textarea) {
+  color-scheme: light;
+}
+
+.serif {
+  font-family: var(--font-essence-serif), var(--font-cormorant), Georgia, serif;
+}
+
+.mono {
+  font-family: var(--font-essence-mono), ui-monospace, SFMono-Regular, monospace;
+}

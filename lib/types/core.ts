@@ -1,4 +1,5 @@
 import type { TonePreset } from "@/lib/types";
+import type { QuickButton } from "@/lib/config/industry-presets";
 
 export type PlanId = "free" | "local_basic" | "pro" | "enterprise";
 
@@ -25,13 +26,15 @@ export type WidgetConfig = {
   greeting?: string;
   tonePreset?: TonePreset;
   theme?: WidgetTheme;
-  businessType?: "restaurant" | "hotel" | "cafe" | "barber" | "real_estate" | "clinic" | "gym" | "taxi" | "ecommerce" | "custom"; // Business type for preview behavior
-  faqs?: WidgetFaqItem[]; // FAQ list to drive preview answers
+  businessType?: "restaurant" | "hotel" | "cafe" | "barber" | "real_estate" | "clinic" | "gym" | "taxi" | "ecommerce" | "custom";
+  faqs?: WidgetFaqItem[];
   launcherVariant?: "icon" | "iconWithLabel";
   launcherPosition?: "left" | "right";
   showLogo?: boolean;
   logoUrl?: string | null;
   iconId?: string | null;
+  /** Configurable quick buttons from bot config. When present, replaces the default 3-button set in the widget. */
+  quickButtons?: QuickButton[];
 };
 
 export type BlockType =

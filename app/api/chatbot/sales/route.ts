@@ -97,7 +97,7 @@ const serialize = async (supabase: any, businessId: string) => {
 };
 
 export async function GET() {
-  const { context, response } = await requireBusinessUser();
+  const { context, response } = await requireBusinessUser({ entitlement: "chatbot" });
   if (response) return response;
   const admin = getSupabaseServerAdminClientIfAvailable() as any;
   if (!admin) {
@@ -126,7 +126,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const { context, response } = await requireBusinessUser();
+  const { context, response } = await requireBusinessUser({ entitlement: "chatbot" });
   if (response) return response;
 
   const payload = await request.json().catch(() => null);

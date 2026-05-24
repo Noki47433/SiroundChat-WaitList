@@ -3,6 +3,7 @@ import { userHasLaunchAccess } from "@/lib/server/launch-access";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import { processDocument } from "@/lib/ai/document-processing";
 import {
+  buildUpgradeRequiredResponse,
   canAccessBillingWorkspace,
   getBusinessEntitlementAccess
 } from "@/lib/server/billing-access";
@@ -47,7 +48,7 @@ export async function POST(request: Request) {
 
   const billingAccess = await getBusinessEntitlementAccess(doc.business_id, "chatbot_knowledge_base");
   if (!billingAccess.allowed) {
-    return NextResponse.json({ error: "Knowledge retraining is not available on the current plan" }, { status: 403 });
+    return buildUpgradeRequiredResponse("chatbot_knowledge_base", billingAccess);
   }
 
   try {

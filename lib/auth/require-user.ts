@@ -31,7 +31,7 @@ export async function requireUser(redirectTo?: string) {
     redirect("/onboarding");
   }
 
-  if (!business.access_approved) {
+  if (!business.access_approved && !business.launch_access) {
     redirect(business.onboarding_submitted ? "/onboarding/pending" : "/onboarding");
   }
 

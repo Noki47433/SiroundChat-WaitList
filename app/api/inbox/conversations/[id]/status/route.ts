@@ -10,7 +10,7 @@ const BodySchema = z.object({
 });
 
 export async function PATCH(request: Request, { params }: { params: { id: string } }) {
-  const { context, response } = await requireBusinessUser();
+  const { context, response } = await requireBusinessUser({ entitlement: "unified_inbox" });
   if (response) return response;
 
   const payload = await request.json().catch(() => null);

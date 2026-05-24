@@ -3,7 +3,10 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { WidgetConfigSchema } from "@/lib/validation/widget";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
-import { getBusinessEntitlementAccess } from "@/lib/server/billing-access";
+import {
+  buildUpgradeRequiredPayload,
+  getBusinessEntitlementAccess
+} from "@/lib/server/billing-access";
 import { userHasLaunchAccess } from "@/lib/server/launch-access";
 import { getWidgetConfigFromOnboardingData, setWidgetConfigInOnboardingData } from "@/lib/server/widget-config-store";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
@@ -16,6 +19,7 @@ import {
   isSiroundChatDemoBot,
   SIROUNDCHAT_DEMO_WIDGET_KEY
 } from "@/lib/chatbot/siroundchat-demo";
+import { resolveBotConfig } from "@/lib/config/industry-presets";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -158,8 +162,9 @@ export async function GET(request: Request) {
       }
       const allowed = await hasWidgetAccess(business.id);
       if (!allowed && !isFirstPartyHomepageWidget(configKey)) {
+        const access = await getBusinessEntitlementAccess(business.id, "chatbot_embed");
         return NextResponse.json(
-          { error: "Chatbot embed is not available on the current plan" },
+          buildUpgradeRequiredPayload("chatbot_embed", access),
           { status: 403, headers: NO_STORE_HEADERS }
         );
       }
@@ -211,6 +216,16 @@ export async function GET(request: Request) {
       })
     ) {
       Object.assign(config, getSiroundChatDemoWidgetOverrides(config.iconId ?? null));
+    }
+
+    // Attach quick buttons from botConfig so the embed widget can render them dynamically
+    if (business?.onboarding_data) {
+      const rawBotConfig = (business.onboarding_data as Record<string, unknown>).botConfig ?? null;
+      const botConfig = resolveBotConfig(rawBotConfig);
+      const enabledButtons = botConfig.quickButtons.filter((btn) => btn.enabled);
+      if (enabledButtons.length > 0) {
+        config.quickButtons = botConfig.quickButtons;
+      }
     }
 
     const publicConfig = WidgetConfigSchema.parse(config);
@@ -285,7 +300,8 @@ export async function PUT(request: Request) {
 
     const allowed = await hasWidgetAccess(businessId);
     if (!allowed) {
-      return NextResponse.json({ error: "Chatbot embed is not available on the current plan" }, { status: 403 });
+      const access = await getBusinessEntitlementAccess(businessId, "chatbot_embed");
+      return NextResponse.json(buildUpgradeRequiredPayload("chatbot_embed", access), { status: 403 });
     }
 
     const widgetKey = await ensureWidgetKeyForBusiness(businessId);

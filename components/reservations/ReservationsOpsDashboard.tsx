@@ -17,6 +17,7 @@ import { Select } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
+import { ACTION_TYPE_META, type ActionType } from "@/lib/config/industry-presets";
 
 type ReservationStatus = "pending" | "confirmed" | "completed" | "canceled" | "seated" | "no_show";
 type ReservationSource = "website" | "whatsapp" | "instagram" | "manual";
@@ -117,7 +118,14 @@ function SettingsField({
   );
 }
 
-export function ReservationsOpsDashboard({ initialReservationId }: { initialReservationId?: string }) {
+export function ReservationsOpsDashboard({
+  initialReservationId,
+  actionType = "restaurant_reservation",
+}: {
+  initialReservationId?: string;
+  actionType?: ActionType;
+}) {
+  const meta = ACTION_TYPE_META[actionType] ?? ACTION_TYPE_META.restaurant_reservation;
   const router = useRouter();
   const { push } = useToast();
   const [loading, setLoading] = useState(true);
@@ -125,6 +133,17 @@ export function ReservationsOpsDashboard({ initialReservationId }: { initialRese
   const [savingSettings, setSavingSettings] = useState(false);
   const [addReservationOpen, setAddReservationOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [actionSettingsOpen, setActionSettingsOpen] = useState(false);
+  const [savingActionSettings, setSavingActionSettings] = useState(false);
+  const [actionSettingsForm, setActionSettingsForm] = useState({
+    capacity: "1",
+    slot_duration_min: "60",
+    slot_interval_min: "30",
+    avg_price_eur: "",
+    max_days_ahead: "30",
+    lead_time_min: "60",
+    notes: "",
+  });
   const [focusReservationId, setFocusReservationId] = useState<string | null>(initialReservationId ?? null);
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [selectedStatus, setSelectedStatus] = useState<"pending" | "confirmed" | "completed" | "canceled" | "all">(
@@ -147,6 +166,63 @@ export function ReservationsOpsDashboard({ initialReservationId }: { initialRese
     buffer_before_min: "",
     buffer_after_min: ""
   });
+
+  const loadActionSettings = async () => {
+    const response = await fetch(`/api/action-settings?actionType=${actionType}`, { cache: "no-store" });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload?.error ?? "Failed to load settings");
+    const s = payload.settings;
+    setActionSettingsForm({
+      capacity: String(s.capacity ?? 1),
+      slot_duration_min: String(s.slot_duration_min ?? 60),
+      slot_interval_min: String(s.slot_interval_min ?? 30),
+      avg_price_eur: s.avg_price_eur != null ? String(s.avg_price_eur) : "",
+      max_days_ahead: String(s.max_days_ahead ?? 30),
+      lead_time_min: String(s.lead_time_min ?? 60),
+      notes: s.notes ?? "",
+    });
+  };
+
+  const saveActionSettings = async () => {
+    setSavingActionSettings(true);
+    try {
+      const response = await fetch("/api/action-settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          actionType,
+          capacity: Number(actionSettingsForm.capacity),
+          slot_duration_min: Number(actionSettingsForm.slot_duration_min),
+          slot_interval_min: Number(actionSettingsForm.slot_interval_min),
+          avg_price_eur: actionSettingsForm.avg_price_eur ? Number(actionSettingsForm.avg_price_eur) : null,
+          max_days_ahead: Number(actionSettingsForm.max_days_ahead),
+          lead_time_min: Number(actionSettingsForm.lead_time_min),
+          notes: actionSettingsForm.notes || null,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload?.error ?? "Failed to save settings");
+      setActionSettingsOpen(false);
+      push({ title: "Settings saved", message: "Action settings updated.", variant: "success" });
+    } catch (error) {
+      push({
+        title: "Save failed",
+        message: error instanceof Error ? error.message : "Unknown error",
+        variant: "error",
+      });
+    } finally {
+      setSavingActionSettings(false);
+    }
+  };
+
+  const openActionSettings = async () => {
+    try {
+      await loadActionSettings();
+      setActionSettingsOpen(true);
+    } catch (error) {
+      push({ title: "Load failed", message: error instanceof Error ? error.message : "Unknown error", variant: "error" });
+    }
+  };
 
   const loadSettingsSnapshot = async () => {
     const response = await fetch("/api/reservations/settings", { cache: "no-store" });
@@ -172,6 +248,7 @@ export function ReservationsOpsDashboard({ initialReservationId }: { initialRese
       const params = new URLSearchParams();
       params.set("status", selectedStatus);
       params.set("source", source);
+      params.set("actionType", actionType);
       if (search.trim()) params.set("q", search.trim());
       if (dateFrom) params.set("dateFrom", dateFrom);
       if (dateTo) params.set("dateTo", dateTo);
@@ -355,11 +432,9 @@ export function ReservationsOpsDashboard({ initialReservationId }: { initialRese
     <div className="space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <p className="text-xs uppercase tracking-[0.2em] text-white/40">Reservations</p>
-          <h2 className="dashboard-heading mt-2 text-3xl font-semibold text-white">Reservation operations</h2>
-          <p className="mt-2 text-sm text-white/60">
-            Keep website, WhatsApp, and offline reservations in one calm control center.
-          </p>
+          <p className="text-xs uppercase tracking-[0.2em] text-white/40">{meta.navLabel}</p>
+          <h2 className="dashboard-heading mt-2 text-3xl font-semibold text-white">{meta.pageTitle}</h2>
+          <p className="mt-2 text-sm text-white/60">{meta.pageSubtitle}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button
@@ -367,11 +442,17 @@ export function ReservationsOpsDashboard({ initialReservationId }: { initialRese
             className="rounded-2xl bg-[#ffd24a] text-neutral-950 shadow-[0_18px_48px_rgba(255,210,74,0.18)] hover:bg-[#ffdc76]"
           >
             <Plus className="mr-2 h-4 w-4" />
-            Add Reservation
+            {meta.addButtonLabel}
           </Button>
-          <Button variant="secondary" onClick={() => void openSettings()}>
-            Reservation settings
-          </Button>
+          {actionType === "restaurant_reservation" ? (
+            <Button variant="secondary" onClick={() => void openSettings()}>
+              Reservation settings
+            </Button>
+          ) : (
+            <Button variant="secondary" onClick={() => void openActionSettings()}>
+              {meta.navLabel.replace(/s$/, "")} settings
+            </Button>
+          )}
         </div>
       </div>
 
@@ -447,12 +528,12 @@ export function ReservationsOpsDashboard({ initialReservationId }: { initialRese
         ) : reservations.length === 0 ? (
           <div className="rounded-3xl border border-dashed border-white/15 bg-white/[0.03] p-8 text-center">
             <p className="text-lg font-semibold text-white">
-              {hasActiveFilters ? "No reservations match these filters." : "No pending reservations right now."}
+              {hasActiveFilters ? `No ${meta.navLabel.toLowerCase()} match these filters.` : meta.emptyStateTitle}
             </p>
             <p className="mt-2 text-sm text-white/55">
               {hasActiveFilters
-                ? "Try another status or date range, or add a reservation manually."
-                : "Phone calls, walk-ins, and message bookings can all be added here in seconds."}
+                ? "Try another status or date range, or add a record manually."
+                : meta.emptyStateSub}
             </p>
             <div className="mt-5 flex justify-center">
               <Button
@@ -460,7 +541,7 @@ export function ReservationsOpsDashboard({ initialReservationId }: { initialRese
                 className="rounded-2xl bg-[#ffd24a] text-neutral-950 hover:bg-[#ffdc76]"
               >
                 <Plus className="mr-2 h-4 w-4" />
-                Add Reservation
+                {meta.addButtonLabel}
               </Button>
             </div>
           </div>
@@ -473,7 +554,8 @@ export function ReservationsOpsDashboard({ initialReservationId }: { initialRese
                   <th className="px-4 py-3">Date & time</th>
                   <th className="px-4 py-3">Customer</th>
                   <th className="px-4 py-3">Phone</th>
-                  <th className="px-4 py-3">Guests</th>
+                  {meta.showPartySize ? <th className="px-4 py-3">Guests</th> : null}
+                  <th className="px-4 py-3">Notes</th>
                   <th className="px-4 py-3">Source</th>
                   <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3">Created</th>
@@ -503,7 +585,12 @@ export function ReservationsOpsDashboard({ initialReservationId }: { initialRese
                       </button>
                     </td>
                     <td className="px-4 py-4 text-white/70">{reservation.customer_phone || "—"}</td>
-                    <td className="px-4 py-4 text-white/70">{reservation.party_size}</td>
+                    {meta.showPartySize ? (
+                      <td className="px-4 py-4 text-white/70">{reservation.party_size ?? "—"}</td>
+                    ) : null}
+                    <td className="max-w-[200px] truncate px-4 py-4 text-white/60 text-xs">
+                      {reservation.notes || reservation.special_request || "—"}
+                    </td>
                     <td className="px-4 py-4">
                       <Badge
                         variant={
@@ -593,7 +680,7 @@ export function ReservationsOpsDashboard({ initialReservationId }: { initialRese
             <div className="space-y-5">
               <SheetHeader>
                 <SheetTitle>{selectedReservation.customer_name}</SheetTitle>
-                <SheetDescription>Reservation details and restaurant actions.</SheetDescription>
+                <SheetDescription>{meta.navLabel.replace(/s$/, "")} details and actions.</SheetDescription>
               </SheetHeader>
 
               <div className="grid gap-3 rounded-3xl border border-white/10 bg-white/[0.03] p-4">
@@ -623,10 +710,12 @@ export function ReservationsOpsDashboard({ initialReservationId }: { initialRese
                   <span className="text-sm text-white/60">Date & time</span>
                   <span className="text-sm text-white">{formatDateTime(selectedReservation.start_at)}</span>
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-white/60">Guests</span>
-                  <span className="text-sm text-white">{selectedReservation.party_size}</span>
-                </div>
+                {meta.showPartySize ? (
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-white/60">Guests</span>
+                    <span className="text-sm text-white">{selectedReservation.party_size ?? "—"}</span>
+                  </div>
+                ) : null}
               </div>
 
               <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 text-sm text-white/75">
@@ -767,6 +856,106 @@ export function ReservationsOpsDashboard({ initialReservationId }: { initialRese
         slotIntervalMin={data?.settings.slotIntervalMin ?? 15}
         onCreated={handleReservationCreated}
       />
+
+      <Modal
+        open={actionSettingsOpen}
+        onClose={() => setActionSettingsOpen(false)}
+        title={`${meta.navLabel.replace(/s$/, "")} settings`}
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setActionSettingsOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={() => void saveActionSettings()} disabled={savingActionSettings}>
+              {savingActionSettings ? "Saving..." : "Save settings"}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="space-y-1">
+              <label className="text-xs uppercase tracking-[0.15em] text-white/50">Capacity (concurrent slots)</label>
+              <Input
+                type="number"
+                min="1"
+                max="500"
+                value={actionSettingsForm.capacity}
+                onChange={(e) => setActionSettingsForm((c) => ({ ...c, capacity: e.target.value }))}
+                placeholder="e.g. 2 (barber chairs)"
+              />
+              <p className="text-xs text-white/40">How many customers can be served simultaneously</p>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs uppercase tracking-[0.15em] text-white/50">Avg. service duration (min)</label>
+              <Input
+                type="number"
+                min="5"
+                max="480"
+                value={actionSettingsForm.slot_duration_min}
+                onChange={(e) => setActionSettingsForm((c) => ({ ...c, slot_duration_min: e.target.value }))}
+                placeholder="e.g. 45"
+              />
+              <p className="text-xs text-white/40">Typical time per appointment</p>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs uppercase tracking-[0.15em] text-white/50">Avg. price (€)</label>
+              <Input
+                type="number"
+                min="0"
+                value={actionSettingsForm.avg_price_eur}
+                onChange={(e) => setActionSettingsForm((c) => ({ ...c, avg_price_eur: e.target.value }))}
+                placeholder="e.g. 25"
+              />
+              <p className="text-xs text-white/40">Used to estimate monthly revenue in reports</p>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs uppercase tracking-[0.15em] text-white/50">Booking window (days)</label>
+              <Input
+                type="number"
+                min="1"
+                max="365"
+                value={actionSettingsForm.max_days_ahead}
+                onChange={(e) => setActionSettingsForm((c) => ({ ...c, max_days_ahead: e.target.value }))}
+                placeholder="e.g. 30"
+              />
+              <p className="text-xs text-white/40">How far ahead customers can book</p>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs uppercase tracking-[0.15em] text-white/50">Min. notice (minutes)</label>
+              <Input
+                type="number"
+                min="0"
+                value={actionSettingsForm.lead_time_min}
+                onChange={(e) => setActionSettingsForm((c) => ({ ...c, lead_time_min: e.target.value }))}
+                placeholder="e.g. 60"
+              />
+              <p className="text-xs text-white/40">Minimum notice before a booking</p>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs uppercase tracking-[0.15em] text-white/50">Slot interval (min)</label>
+              <Input
+                type="number"
+                min="5"
+                max="240"
+                value={actionSettingsForm.slot_interval_min}
+                onChange={(e) => setActionSettingsForm((c) => ({ ...c, slot_interval_min: e.target.value }))}
+                placeholder="e.g. 30"
+              />
+              <p className="text-xs text-white/40">Gap between available slots</p>
+            </div>
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs uppercase tracking-[0.15em] text-white/50">Notes for the AI (optional)</label>
+            <Input
+              value={actionSettingsForm.notes}
+              onChange={(e) => setActionSettingsForm((c) => ({ ...c, notes: e.target.value }))}
+              placeholder="e.g. We only do walk-in on Saturdays, no Sunday bookings"
+            />
+            <p className="text-xs text-white/40">Extra context the chatbot will use when guiding customers</p>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

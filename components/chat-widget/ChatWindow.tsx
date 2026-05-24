@@ -3,13 +3,14 @@
 import Image from "next/image";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { BadgeDollarSign, Clock3, PhoneCall } from "lucide-react";
 import { ICON_LIBRARY } from "@/app/components/chatbot/ChatbotIconLibrary";
+import { QUICK_BUTTON_ICON_MAP } from "@/lib/config/quick-button-icons";
 import { FormattedChatMessage } from "@/components/chat/FormattedChatMessage";
 import { PromptInputBox } from "@/components/ui/ai-prompt-box";
 import { TextShimmer } from "@/components/ui/text-shimmer";
 import type { TonePreset } from "@/lib/types";
 import type { ChatMessage, ChatMessageAction, WidgetTheme } from "@/lib/types/core";
+import type { QuickButton } from "@/lib/config/industry-presets";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { getOrCreateSessionId } from "@/lib/analytics/track";
 
@@ -24,6 +25,8 @@ export interface ChatWindowProps {
   iconId?: string;
   open?: boolean;
   onClose?: () => void;
+  /** Dynamic quick buttons from bot config. Falls back to default 3-button set if omitted. */
+  quickButtons?: QuickButton[] | null;
 }
 
 function hexToRgb(hex: string) {
@@ -181,6 +184,38 @@ function normalizeChatMessages(messages: unknown): ChatMessage[] {
     .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 }
 
+const DEFAULT_QUICK_BUTTONS: QuickButton[] = [
+  { id: "hours", label: "Hours", prompt: "What are your opening hours?", icon: "clock", enabled: true, order: 0 },
+  { id: "prices", label: "Prices", prompt: "What are your prices?", icon: "tag", enabled: true, order: 1 },
+  { id: "contact", label: "Contact", prompt: "How can I contact you?", icon: "phone", enabled: true, order: 2 },
+];
+
+function resolveQuickActions(
+  quickButtons: QuickButton[] | null | undefined,
+  primary: string,
+  accent: string,
+  lightBg: boolean,
+  textColor: string
+): Array<{ id: string; label: string; value: string; accent?: string; Icon?: import("lucide-react").LucideIcon }> {
+  const buttons = quickButtons && quickButtons.length > 0 ? quickButtons : DEFAULT_QUICK_BUTTONS;
+  const enabled = buttons
+    .filter((btn) => btn.enabled)
+    .sort((a, b) => a.order - b.order)
+    .slice(0, 6);
+
+  if (enabled.length === 0) return [];
+
+  const accentPalette = [primary, accent, lightBg ? mixColors(textColor, primary, 0.2) : "#ffffff"];
+
+  return enabled.map((btn, idx) => ({
+    id: btn.id,
+    label: btn.label,
+    value: btn.prompt,
+    accent: accentPalette[idx % accentPalette.length],
+    Icon: btn.icon ? QUICK_BUTTON_ICON_MAP[btn.icon] : undefined,
+  }));
+}
+
 export function ChatWindow({
   siteId,
   widgetKey,
@@ -191,7 +226,8 @@ export function ChatWindow({
   logoUrl,
   iconId,
   open = false,
-  onClose
+  onClose,
+  quickButtons
 }: ChatWindowProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [text, setText] = useState("");
@@ -1076,29 +1112,7 @@ export function ChatWindow({
                   isLoading={isTyping}
                   placeholder="Ask a question..."
                   variant="chat"
-                  quickActions={[
-                    {
-                      id: "hours",
-                      label: "Hours",
-                      value: "What are your opening hours?",
-                      accent: colors.primary,
-                      Icon: Clock3
-                    },
-                    {
-                      id: "prices",
-                      label: "Prices",
-                      value: "What are your prices?",
-                      accent: accentColor,
-                      Icon: BadgeDollarSign
-                    },
-                    {
-                      id: "contact",
-                      label: "Contact",
-                      value: "How can I contact you?",
-                      accent: lightBg ? mixColors(colors.text, colors.primary, 0.2) : "#ffffff",
-                      Icon: PhoneCall
-                    }
-                  ]}
+                  quickActions={resolveQuickActions(quickButtons, colors.primary, accentColor, lightBg, colors.text)}
                   showAttachments={false}
                   className="rounded-[26px]"
                   colors={{

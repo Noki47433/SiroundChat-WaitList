@@ -22,7 +22,7 @@ const sumNumeric = (values: Array<number | null | undefined>) =>
   );
 
 export async function GET(request: Request) {
-  const { context, response } = await requireBusinessUser();
+  const { context, response } = await requireBusinessUser({ entitlement: "advanced_analytics" });
   if (response) return response;
 
   const supabase = context.supabase as any;
