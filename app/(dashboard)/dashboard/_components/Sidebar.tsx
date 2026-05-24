@@ -7,6 +7,7 @@ import {
   BadgeCheck,
   Bot,
   CalendarCheck2,
+  CreditCard,
   FileText,
   Globe,
   LayoutDashboard,
@@ -24,6 +25,7 @@ import {
   type LucideIcon
 } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
+import { ACTION_TYPE_META, type ActionType } from "@/lib/config/industry-presets";
 
 type NavItem = {
   href: string;
@@ -57,22 +59,27 @@ const GROWTH_NAV: NavItem[] = [
 const TEAM_MEMBER_NAV: NavItem[] = [{ href: "/dashboard/account", label: "Account", icon: UserCircle2 }];
 
 const ORG_NAV: NavItem[] = [
+  { href: "/billing", label: "Billing", icon: CreditCard },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
   { href: "/dashboard/badges", label: "Badges", icon: BadgeCheck }
 ];
 
 export const DASHBOARD_NAV: NavItem[] = [...CORE_NAV, ...GROWTH_NAV, ...TEAM_MEMBER_NAV, ...ORG_NAV];
 
-const buildSections = (orgName: string): NavSection[] => [
-  { title: "Core", items: CORE_NAV },
+const buildSections = (orgName: string, coreNav: NavItem[]): NavSection[] => [
+  { title: "Core", items: coreNav },
   { title: "Growth", items: GROWTH_NAV },
   { title: "Team Member", items: TEAM_MEMBER_NAV },
   { title: `Org: ${orgName || "Your business"}`, items: ORG_NAV }
 ];
 
-export function Sidebar({ orgName }: { orgName: string }) {
+export function Sidebar({ orgName, actionType }: { orgName: string; actionType?: ActionType }) {
   const pathname = usePathname();
-  const sections = buildSections(orgName || "Your business");
+  const requestsNavLabel = actionType ? (ACTION_TYPE_META[actionType]?.navLabel ?? "Reservations") : "Reservations";
+  const coreNavWithActionLabel: NavItem[] = CORE_NAV.map((item) =>
+    item.href === "/dashboard/reservations" ? { ...item, label: requestsNavLabel } : item
+  );
+  const sections = buildSections(orgName || "Your business", coreNavWithActionLabel);
   const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {

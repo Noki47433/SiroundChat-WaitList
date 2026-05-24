@@ -18,7 +18,7 @@ export default async function OnboardingPendingPage() {
 
   const business = await getOwnedBusinessAccess(user.id);
 
-  if (business?.access_approved) {
+  if (business?.access_approved || business?.launch_access) {
     redirect("/dashboard");
   }
 

@@ -16,7 +16,7 @@ const toJson = (value: unknown) => {
 };
 
 export async function GET() {
-  const { context, response } = await requireBusinessUser();
+  const { context, response } = await requireBusinessUser({ entitlement: "chatbot_actions" });
   if (response) return response;
 
   const supabase = context.supabase as any;
@@ -49,7 +49,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const { context, response } = await requireBusinessUser();
+  const { context, response } = await requireBusinessUser({ entitlement: "chatbot_actions" });
   if (response) return response;
 
   const payload = await request.json().catch(() => null);

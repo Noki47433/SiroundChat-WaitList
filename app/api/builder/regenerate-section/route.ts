@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { userHasLaunchAccess } from "@/lib/server/launch-access";
+import {
+  buildUpgradeRequiredResponse,
+  getBusinessEntitlementAccess
+} from "@/lib/server/billing-access";
+import { getOwnedBuilderSite } from "@/lib/builder/site-access";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import { regenerateSection } from "@/lib/builder/ai";
 import { SectionKeys, SiteContentSchema } from "@/lib/builder/types";
-import { getBuilderPlanForRoute } from "@/lib/builder/plan";
 
 const PayloadSchema = z.object({
   siteId: z.string().uuid(),
@@ -31,21 +35,30 @@ export async function POST(request: Request) {
 
   const { siteId, sectionKey } = parsed.data;
 
-  const { data: site } = await (supabase as any)
-    .from("builder_sites")
-    .select(
-      "id,business_id,business_name,industry,description,primary_color,logo_url,contact_email,contact_phone,contact_address"
-    )
-    .eq("id", siteId)
-    .maybeSingle();
+  const site = await getOwnedBuilderSite<{
+    id: string;
+    business_id: string;
+    business_name: string | null;
+    industry: string | null;
+    description: string | null;
+    primary_color: string | null;
+    logo_url: string | null;
+    contact_email: string | null;
+    contact_phone: string | null;
+    contact_address: string | null;
+  }>(
+    siteId,
+    userData.user.id,
+    "id,business_id,business_name,industry,description,primary_color,logo_url,contact_email,contact_phone,contact_address"
+  );
 
   if (!site) {
     return NextResponse.json({ error: "Site not found" }, { status: 404 });
   }
 
-  const { flags } = await getBuilderPlanForRoute(site.business_id as string);
-  if (!flags.canRegenerate) {
-    return NextResponse.json({ error: "Plan does not allow regeneration" }, { status: 403 });
+  const billingAccess = await getBusinessEntitlementAccess(site.business_id as string, "website_builder");
+  if (!billingAccess.allowed) {
+    return buildUpgradeRequiredResponse("website_builder", billingAccess);
   }
 
   const { data: contentRow } = await (supabase as any)
@@ -65,9 +78,9 @@ export async function POST(request: Request) {
 
   const regenerated = await regenerateSection(
     {
-      businessName: site.business_name,
-      industry: site.industry,
-      description: site.description,
+      businessName: site.business_name ?? "Business",
+      industry: site.industry ?? "service",
+      description: site.description ?? "",
       primaryColor: site.primary_color,
       logoUrl: site.logo_url,
       contact: {

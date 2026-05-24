@@ -1,15 +1,23 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { userHasLaunchAccess } from "@/lib/server/launch-access";
+import {
+  buildUpgradeRequiredResponse,
+  getBusinessEntitlementAccess
+} from "@/lib/server/billing-access";
 import { getOwnedBuilderSite } from "@/lib/builder/site-access";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import { getSupabaseServerAdminClient } from "@/lib/supabase/serverAdmin";
+import {
+  IntegratedTemplateSiteDocumentSchema,
+  parseIntegratedTemplateSiteDocument
+} from "@/lib/builder/template-sites/schema";
 import { SiteDocumentSchema } from "@/lib/website-builder/schema";
 import { resolveLiveChat } from "@/lib/website-builder/live-chat";
 
 const PayloadSchema = z.object({
   siteId: z.string().uuid(),
-  siteDocument: SiteDocumentSchema
+  siteDocument: z.union([SiteDocumentSchema, IntegratedTemplateSiteDocumentSchema])
 });
 
 const BUILDER_TONE_VALUES = ["friendly", "premium", "corporate", "bold", "minimal"] as const;
@@ -137,18 +145,60 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Site not found" }, { status: 404 });
     }
 
+    const billingAccess = await getBusinessEntitlementAccess(site.business_id, "website_builder");
+    if (!billingAccess.allowed) {
+      return buildUpgradeRequiredResponse("website_builder", billingAccess);
+    }
+
     const admin = getSupabaseServerAdminClient() as any;
+    const integratedDocument = parseIntegratedTemplateSiteDocument(siteDocument);
+    if (integratedDocument) {
+      const integratedUpdate = {
+        template_id: integratedDocument.template,
+        template_key: integratedDocument.template,
+        site_document: integratedDocument,
+        seo_title: integratedDocument.meta.seo.title ?? null,
+        seo_description: integratedDocument.meta.seo.description ?? null
+      };
+
+      const integratedError = await updateBuilderSiteWithCompatibleColumns(admin, siteId, integratedUpdate);
+
+      if (integratedError) {
+        console.error("[BUILDER_SAVE_DRAFT_ERROR]", integratedError);
+        const integratedMessage =
+          integratedError instanceof Error
+            ? integratedError.message
+            : typeof integratedError === "object" &&
+                integratedError &&
+                "message" in integratedError &&
+                typeof (integratedError as any).message === "string"
+              ? (integratedError as any).message
+              : "Failed to save draft";
+        return NextResponse.json(
+          {
+            error:
+              process.env.NODE_ENV === "production" ? "Failed to save draft" : integratedMessage
+          },
+          { status: 500 }
+        );
+      }
+
+      return NextResponse.json({ ok: true });
+    }
+
+    const legacySiteDocument = SiteDocumentSchema.parse(siteDocument);
+
     const existingDocument = SiteDocumentSchema.safeParse(site.site_document).success
       ? SiteDocumentSchema.parse(site.site_document)
       : null;
 
     const mergedDocument = {
       ...(existingDocument ?? {}),
-      ...siteDocument,
-      apps: siteDocument.apps ?? existingDocument?.apps ?? [],
-      seo: siteDocument.seo ?? existingDocument?.seo,
-      customCode: siteDocument.customCode ?? existingDocument?.customCode,
-      mediaLibrary: siteDocument.mediaLibrary ?? existingDocument?.mediaLibrary
+      ...legacySiteDocument,
+      apps: legacySiteDocument.apps ?? existingDocument?.apps ?? [],
+      seo: legacySiteDocument.seo ?? existingDocument?.seo,
+      customCode: legacySiteDocument.customCode ?? existingDocument?.customCode,
+      mediaLibrary: legacySiteDocument.mediaLibrary ?? existingDocument?.mediaLibrary
     };
 
     const { data: business } = await admin

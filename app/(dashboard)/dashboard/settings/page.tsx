@@ -16,6 +16,8 @@ type BusinessRow = {
   id: string;
   business_name: string | null;
   widget_key: string | null;
+  sms_alert_phone: string | null;
+  sms_alerts_enabled: boolean | null;
 };
 
 const generateFallbackUuid = () =>
@@ -53,7 +55,7 @@ export default async function DashboardSettingsPage() {
 
   const { data, error } = await (supabase as any)
     .from("businesses")
-    .select("id, business_name, widget_key")
+    .select("id, business_name, widget_key, sms_alert_phone, sms_alerts_enabled")
     .or(`owner_id.eq.${user.id},owner_user_id.eq.${user.id}`)
     .eq("launch_access", true)
     .order("created_at", { ascending: false })
@@ -174,7 +176,14 @@ export default async function DashboardSettingsPage() {
 
       <section className="space-y-3">
         <p className="text-xs uppercase tracking-[0.2em] text-white/45">Notifications</p>
-        <NotificationSettingsPanel businessId={business.id} initial={notificationSettings} />
+        <NotificationSettingsPanel
+          businessId={business.id}
+          initial={notificationSettings}
+          smsInitial={{
+            sms_alert_phone: business.sms_alert_phone ?? null,
+            sms_alerts_enabled: business.sms_alerts_enabled ?? false
+          }}
+        />
       </section>
 
       <section className="space-y-3">

@@ -7,11 +7,20 @@ import { SiteDocumentSchema } from "@/lib/website-builder/schema";
 import type { SiteDocument, SiteSection } from "@/lib/website-builder/types";
 import { buildSitePath, slugify } from "@/lib/builder/utils";
 import { BUILDER_SITES_BUCKET } from "@/lib/builder/storage";
-import { buildPublishedSiteUrl } from "@/lib/utils/published-site-url";
+import {
+  buildPublishedSiteUrl,
+  getRequestHost,
+  getRequestProtocol
+} from "@/lib/utils/published-site-url";
 import { getBuilderPlanForRoute } from "@/lib/builder/plan";
+import {
+  buildUpgradeRequiredResponse,
+  getBusinessEntitlementAccess
+} from "@/lib/server/billing-access";
 import { themeToCssVars } from "@/lib/website-builder/theme/vars";
 import { logActivity } from "@/lib/activity/log";
 import { getOwnedBuilderSite } from "@/lib/builder/site-access";
+import { parseIntegratedTemplateSiteDocument } from "@/lib/builder/template-sites/schema";
 import { resolveLiveChat } from "@/lib/website-builder/live-chat";
 
 export const runtime = "nodejs";
@@ -63,6 +72,13 @@ const escapeHtml = (value: string) =>
     .replace(/'/g, "&#39;");
 
 const safeJson = (value: unknown) => JSON.stringify(value).replace(/</g, "\\u003c");
+
+const buildRuntimePublishedUrl = (request: Request, slug: string) => {
+  const protocol = getRequestProtocol(request.headers);
+  const host = getRequestHost(request.headers);
+  if (!host) return buildPublishedSiteUrl(slug);
+  return `${protocol}://${host}/s/${slug}`;
+};
 
 const toKebab = (value: string) =>
   value
@@ -796,19 +812,69 @@ export async function POST(request: Request) {
 
   const { flags } = await getBuilderPlanForRoute(site.business_id as string);
   if (!flags.canPublish) {
-    return NextResponse.json(
-      {
-        error: "Your current plan does not include website publishing.",
-        code: "PLAN_UPGRADE_REQUIRED",
-        blocked: "publish_website",
-        upgradeUrl: "/billing?blocked=publish_website"
-      },
-      { status: 403 }
-    );
+    const billingAccess = await getBusinessEntitlementAccess(site.business_id as string, "publish_website");
+    return buildUpgradeRequiredResponse("publish_website", billingAccess);
   }
 
   if (!site.site_document) {
     return NextResponse.json({ error: "Site document missing" }, { status: 400 });
+  }
+
+  const integratedDocument = parseIntegratedTemplateSiteDocument(site.site_document);
+  if (integratedDocument) {
+    let slug = site.slug as string | null;
+    if (!slug) {
+      try {
+        slug = await ensureSlug(supabase, siteId, site.business_name ?? "site");
+      } catch (error) {
+        console.error("[BUILDER_SLUG_ERROR]", error);
+        return NextResponse.json({ error: "Failed to reserve slug" }, { status: 500 });
+      }
+    }
+
+    const resolvedPath = site.path || buildSitePath(slug);
+    const publishedUrl = buildRuntimePublishedUrl(request, slug);
+    const integratedUpdate = {
+      status: "published",
+      slug,
+      path: resolvedPath,
+      published_url: publishedUrl,
+      site_document: integratedDocument,
+      seo_title: integratedDocument.meta.seo.title ?? null,
+      seo_description: integratedDocument.meta.seo.description ?? null
+    };
+
+    try {
+      const adminClient = getSupabaseAdminClientIfAvailable();
+      if (!adminClient) {
+        console.error("[BUILDER_PUBLISH_CONFIG_MISSING]", { siteId, userId: userData.user.id });
+        return NextResponse.json({ error: "Publishing is unavailable right now." }, { status: 500 });
+      }
+
+      const updateError = await updateBuilderSiteWithCompatibleColumns(
+        adminClient as any,
+        siteId,
+        integratedUpdate
+      );
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      await logActivity({
+        businessId: site.business_id as string,
+        userId: userData.user.id,
+        actorType: "business_user",
+        eventType: "website_publish",
+        summary: `Published site "${site.business_name}"`,
+        meta: { site_id: siteId, url: publishedUrl }
+      });
+
+      return NextResponse.json({ url: publishedUrl });
+    } catch (error) {
+      console.error("[BUILDER_PUBLISH_ERROR]", error);
+      return NextResponse.json({ error: "Failed to publish site" }, { status: 500 });
+    }
   }
 
   const parsedDoc = SiteDocumentSchema.safeParse(site.site_document);
@@ -856,13 +922,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: liveChat.error }, { status: 400 });
   }
 
-  const cssContent = buildCss(liveChat.document);
-  const publishedUrl = buildPublishedSiteUrl(slug);
+  const resolvedLiveChat = flags.canAttachChatbotToWebsite
+    ? liveChat
+    : { ...liveChat, enabled: false, scriptSrc: null, inlineScript: null };
+
+  const cssContent = buildCss(resolvedLiveChat.document);
+  const publishedUrl = buildRuntimePublishedUrl(request, slug);
   const htmlContent = buildHtml(
-    liveChat.document,
+    resolvedLiveChat.document,
     slug,
-    liveChat.scriptSrc,
-    liveChat.inlineScript,
+    resolvedLiveChat.scriptSrc,
+    resolvedLiveChat.inlineScript,
     site.business_id as string,
     site.id as string,
     publishedUrl

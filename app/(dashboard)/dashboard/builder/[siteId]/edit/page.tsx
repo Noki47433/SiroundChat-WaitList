@@ -4,6 +4,9 @@ import { SiteDocumentSchema } from "@/lib/website-builder/schema";
 import { getBuilderPlanForBusiness } from "@/lib/builder/plan";
 import { BuilderEditorClient } from "@/app/(dashboard)/dashboard/builder/[siteId]/edit/BuilderEditorClient";
 import { getOwnedBuilderSite } from "@/lib/builder/site-access";
+import { parseIntegratedTemplateSiteDocument } from "@/lib/builder/template-sites/schema";
+import { getEntitlementAccess } from "@/src/billing/requireEntitlement";
+import { UpgradeOverlay } from "@/src/components/billing/UpgradeOverlay";
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +40,32 @@ export default async function BuilderEditorPage({ params }: PageProps) {
 
   if (!site.site_document) {
     redirect(`/editor/${params.siteId}/generate`);
+  }
+
+  if (parseIntegratedTemplateSiteDocument(site.site_document)) {
+    redirect(`/editor/${params.siteId}/generate`);
+  }
+
+  const websiteBuilderAccess = await getEntitlementAccess("website_builder", site.business_id);
+  if (!websiteBuilderAccess.allowed) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <p className="text-xs uppercase tracking-[0.2em] text-white/40">Website Builder</p>
+          <h2 className="mt-2 text-3xl font-semibold text-white">Website editor locked</h2>
+          <p className="mt-2 text-sm text-white/60">
+            This site is preserved, but editing and publishing require a website-enabled SiroundChat plan.
+          </p>
+        </div>
+        <UpgradeOverlay
+          entitlementKey="website_builder"
+          title="Unlock website editing again"
+          description="Editing, generation, and publishing are available on Website Only, Website + AI, and Full Omni-Channel."
+        >
+          <div className="h-[28rem] rounded-[1.8rem] border border-white/10 bg-white/[0.03]" />
+        </UpgradeOverlay>
+      </div>
+    );
   }
 
   const parsedDoc = SiteDocumentSchema.safeParse(site.site_document);

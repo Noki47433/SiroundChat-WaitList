@@ -8,6 +8,7 @@ import { ensureBusinessRow, getTenantFromSession } from "@/lib/tenant";
 import { addEmbeddingsLocal } from "@/lib/utils/local-store";
 import { isAuthDisabled } from "@/lib/config/auth";
 import {
+  buildUpgradeRequiredResponse,
   canAccessBillingWorkspace,
   getBusinessEntitlementAccess
 } from "@/lib/server/billing-access";
@@ -58,7 +59,7 @@ export async function POST(req: Request) {
 
       const billingAccess = await getBusinessEntitlementAccess(businessId, "chatbot_knowledge_base");
       if (!billingAccess.allowed) {
-        return NextResponse.json({ error: "Knowledge ingestion is not available on the current plan" }, { status: 403 });
+        return buildUpgradeRequiredResponse("chatbot_knowledge_base", billingAccess);
       }
     }
 

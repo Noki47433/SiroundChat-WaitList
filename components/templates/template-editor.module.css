@@ -1,0 +1,56 @@
+.root {
+  background: var(--site-background);
+}
+
+.root[data-text-override="true"] :is(h1, h2, h3, h4, h5, h6, p, li, span, a, label, small, blockquote) {
+  color: var(--site-editor-text-color) !important;
+}
+
+.root[data-align="center"] :is(h1, h2, h3, h4, h5, h6, p, li, span, a, label, small, blockquote) {
+  text-align: center !important;
+}
+
+.root[data-align="left"] :is(h1, h2, h3, h4, h5, h6, p, li, span, a, label, small, blockquote) {
+  text-align: left !important;
+}
+
+.root :is(
+  [data-editor-hero="true"] h1,
+  [data-editor-hero="true"] h2,
+  [data-editor-hero="true"] p,
+  [data-editor-hero="true"] span,
+  [data-editor-hero="true"] a,
+  [data-editor-hero="true"] li,
+  [data-editor-hero="true"] [data-hero-title="true"]
+) {
+  color: var(--site-editor-hero-text-color, var(--site-editor-text-color, inherit)) !important;
+}
+
+.root :is([data-editor-hero="true"] h1, [data-editor-hero="true"] h2, [data-editor-hero="true"] [data-hero-title="true"]) {
+  font-size: var(--site-editor-hero-size, inherit) !important;
+  text-align: var(--site-editor-hero-align, inherit) !important;
+}
+
+.root :is(p, li, label, small, blockquote) {
+  font-size: var(--site-editor-body-size, inherit);
+}
+
+.root :is(button, [data-editor-button="true"]) {
+  background: var(--site-editor-button-bg, var(--site-secondary)) !important;
+  color: var(--site-editor-button-text, var(--site-primary-foreground)) !important;
+  border-color: var(--site-editor-button-border, var(--site-border)) !important;
+}
+
+.root :is(a[data-editor-button="true"]) {
+  background: var(--site-editor-button-bg, var(--site-secondary)) !important;
+  color: var(--site-editor-button-text, var(--site-primary-foreground)) !important;
+  border-color: var(--site-editor-button-border, var(--site-border)) !important;
+}
+
+.root[data-spacing="compact"] [data-editor-section="true"] {
+  padding-block: 1.5rem !important;
+}
+
+.root[data-spacing="relaxed"] [data-editor-section="true"] {
+  padding-block: 4rem !important;
+}

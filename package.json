@@ -44,6 +44,7 @@
     "three": "0.182.0",
     "three-stdlib": "2.36.1",
     "twilio": "^5.13.1",
+    "v0-sdk": "^0.16.4",
     "world-atlas": "^2.0.2",
     "zod": "4.1.12",
     "zustand": "5.0.8"

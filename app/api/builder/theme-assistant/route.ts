@@ -4,7 +4,10 @@ import { userHasLaunchAccess } from "@/lib/server/launch-access";
 import { getOpenAIClient } from "@/lib/ai/client";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import { getTenantFromSession } from "@/lib/utils/tenant";
-import { getBusinessEntitlementAccess } from "@/lib/server/billing-access";
+import {
+  buildUpgradeRequiredResponse,
+  getBusinessEntitlementAccess
+} from "@/lib/server/billing-access";
 import { DEFAULT_SITE_FONT, SITE_FONT_OPTIONS, getThemeFontValue } from "@/lib/website-builder/theme/fonts";
 
 export const runtime = "nodejs";
@@ -91,7 +94,7 @@ export async function POST(request: Request) {
 
   const billingAccess = await getBusinessEntitlementAccess(tenant.businessId, "website_builder");
   if (!billingAccess.allowed) {
-    return NextResponse.json({ error: "Website theme generation is not available on the current plan" }, { status: 403 });
+    return buildUpgradeRequiredResponse("website_builder", billingAccess);
   }
 
   const payload = await request.json().catch(() => null);

@@ -48,6 +48,8 @@ export interface Database {
           greeting: string | null;
           tone: string | null;
           timezone: string | null;
+          sms_alert_phone: string | null;
+          sms_alerts_enabled: boolean;
           access_approved: boolean;
           onboarding_submitted: boolean;
           onboarding_data: Json;
@@ -76,6 +78,8 @@ export interface Database {
           greeting?: string | null;
           tone?: string | null;
           timezone?: string | null;
+          sms_alert_phone?: string | null;
+          sms_alerts_enabled?: boolean;
           access_approved?: boolean;
           onboarding_submitted?: boolean;
           onboarding_data?: Json;

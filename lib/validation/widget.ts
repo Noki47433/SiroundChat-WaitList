@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { QuickButtonSchema } from "@/lib/validation/bot-config";
 
 const TonePresetSchema = z.enum(["professional", "friendly", "luxury", "short_direct", "energetic"]);
 
@@ -35,11 +36,12 @@ export const WidgetConfigSchema = z.object({
     "ecommerce", // E-commerce business type
     "custom" // Custom business type
   ]).optional(), // Business type is optional for the widget
-  faqs: z.array( // Persist FAQ list for embed conversation matching
-    z.object({ // FAQ schema for each item
-      id: z.string(), // FAQ item id
-      question: z.string(), // FAQ question text
-      answer: z.string() // FAQ answer text
-    }) // Single FAQ record shape
-  ).optional() // FAQ list is optional for the widget
+  faqs: z.array(
+    z.object({
+      id: z.string(),
+      question: z.string(),
+      answer: z.string()
+    })
+  ).optional(),
+  quickButtons: z.array(QuickButtonSchema).max(8).optional()
 });

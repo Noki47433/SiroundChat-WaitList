@@ -13,7 +13,7 @@ const BodySchema = z
   .strict();
 
 export async function PATCH(request: Request, { params }: { params: { id: string } }) {
-  const { context, response } = await requireBusinessUser();
+  const { context, response } = await requireBusinessUser({ entitlement: "channel_settings" });
   if (response) return response;
 
   const payload = await request.json().catch(() => null);

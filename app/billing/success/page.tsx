@@ -1,27 +1,28 @@
-import { redirect } from "next/navigation";
+import { BillingSuccessStatus } from "@/app/(dashboard)/dashboard/billing/BillingSuccessStatus";
+import { BillingShell } from "@/app/billing/_components/BillingShell";
 
-const toQueryString = (searchParams?: Record<string, string | string[] | undefined>) => {
-  const params = new URLSearchParams();
-  if (!searchParams) return "";
-
-  Object.entries(searchParams).forEach(([key, value]) => {
-    if (typeof value === "string") {
-      params.set(key, value);
-      return;
-    }
-    if (Array.isArray(value)) {
-      value.forEach((entry) => params.append(key, entry));
-    }
-  });
-
-  return params.toString();
-};
-
-export default function BillingSuccessRedirect({
+export default function BillingSuccessPage({
   searchParams
 }: {
   searchParams?: Record<string, string | string[] | undefined>;
 }) {
-  const query = toQueryString(searchParams);
-  redirect(query ? `/dashboard/billing/success?${query}` : "/dashboard/billing/success");
+  const demoMode = process.env.NODE_ENV !== "production" && searchParams?.demo === "1";
+  const workspaceId = typeof searchParams?.workspaceId === "string" ? searchParams.workspaceId : null;
+  const billingHref = workspaceId ? `/billing?workspaceId=${encodeURIComponent(workspaceId)}` : "/billing";
+
+  return (
+    <BillingShell
+      backHref={billingHref}
+      backLabel="Back to plans"
+      aside={
+        <div className="rounded-full border border-white/10 bg-white/[0.03] px-4 py-2 text-xs text-white/58">
+          Secure Paysera return
+        </div>
+      }
+    >
+      <div className="mx-auto flex w-full max-w-3xl flex-1 items-center justify-center py-8">
+        <BillingSuccessStatus workspaceId={workspaceId} demoMode={demoMode} />
+      </div>
+    </BillingShell>
+  );
 }

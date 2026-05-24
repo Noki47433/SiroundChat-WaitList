@@ -1,14 +1,26 @@
 import "server-only";
 
+import { NextResponse } from "next/server";
 import {
+  resolveBillingEntitlements,
   getFullEntitlements
 } from "@/lib/billing/entitlements";
-import { userOwnsLaunchedBusiness } from "@/lib/server/launch-access";
+import {
+  getPublicBillingPlanId
+} from "@/lib/billing/plans";
+import { userOwnsBusiness } from "@/lib/server/launch-access";
 import { getSupabaseServerAdminClientIfAvailable } from "@/lib/supabase/serverAdmin";
 import { getWorkspaceSubscription } from "@/src/billing/getSubscription";
 import {
+  hasEntitlement,
   type EntitlementKey
 } from "@/src/billing/entitlements";
+import {
+  getRecommendedUpgradePlan,
+  getRecommendedPlanName,
+  getUpgradeCopy,
+  getUpgradeHref
+} from "@/src/billing/upgrade";
 
 export type BillingWorkspaceSelectionError =
   | "workspace_required"
@@ -26,6 +38,8 @@ type ResolveBillingWorkspaceOptions = {
   allowAdmin?: boolean;
   userEmail?: string | null;
 };
+
+export type BusinessEntitlementAccess = Awaited<ReturnType<typeof getBusinessEntitlementAccess>>;
 
 const normalizeUuid = (value: string | null | undefined) => (value ?? "").trim().replace(/[<>]/g, "");
 
@@ -55,6 +69,7 @@ export const listOwnedBillingBusinesses = async (userId: string): Promise<Billin
     .from("businesses")
     .select("id, business_name, launch_access")
     .or(`owner_id.eq.${userId},owner_user_id.eq.${userId}`)
+    .order("launch_access", { ascending: false })
     .order("created_at", { ascending: false });
 
   if (error) {
@@ -73,7 +88,7 @@ export const canAccessBillingWorkspace = async (
   const normalizedWorkspaceId = normalizeUuid(workspaceId);
   if (!userId || !normalizedWorkspaceId) return false;
 
-  if (await userOwnsLaunchedBusiness(userId, normalizedWorkspaceId)) {
+  if (await userOwnsBusiness(userId, normalizedWorkspaceId)) {
     return true;
   }
 
@@ -95,7 +110,6 @@ export const resolveBillingWorkspaceSelection = async (
 }> => {
   const normalizedRequestedWorkspaceId = normalizeUuid(requestedWorkspaceId);
   const businesses = await listOwnedBillingBusinesses(userId);
-  const eligibleBusinesses = businesses.filter((business) => business.launch_access);
 
   if (normalizedRequestedWorkspaceId) {
     const canAccess = await canAccessBillingWorkspace(userId, normalizedRequestedWorkspaceId, options);
@@ -115,15 +129,15 @@ export const resolveBillingWorkspaceSelection = async (
     };
   }
 
-  if (eligibleBusinesses.length === 1) {
+  if (businesses.length === 1) {
     return {
-      businessId: eligibleBusinesses[0]?.id ?? null,
+      businessId: businesses[0]?.id ?? null,
       businesses,
       error: null
     };
   }
 
-  if (eligibleBusinesses.length > 1) {
+  if (businesses.length > 1) {
     return {
       businessId: null,
       businesses,
@@ -134,7 +148,7 @@ export const resolveBillingWorkspaceSelection = async (
   return {
     businessId: null,
     businesses,
-    error: businesses.length > 0 ? "workspace_forbidden" : "workspace_required"
+    error: "workspace_required"
   };
 };
 
@@ -142,16 +156,77 @@ export const getBusinessEntitlementAccess = async (
   businessId: string,
   entitlementKey: EntitlementKey
 ) => {
+  if (process.env.PAYSERA_ENABLED === "off") {
+    const subscription = await getWorkspaceSubscription(businessId);
+    const entitlements = getFullEntitlements();
+    const upgrade = getUpgradeCopy(entitlementKey);
+    return {
+      subscription,
+      entitlements,
+      accessActive: true,
+      allowed: true,
+      entitlementIncluded: true,
+      currentPlanId: subscription.plan_id,
+      currentBillingPlanId: getPublicBillingPlanId(subscription.raw_billing_plan_id),
+      recommendedPlanId: null,
+      recommendedPlanName: null,
+      upgradeHref: getUpgradeHref(entitlementKey),
+      upgrade
+    };
+  }
+
   const subscription = await getWorkspaceSubscription(businessId);
-  void entitlementKey;
-  const accessActive = true;
-  const entitlements = getFullEntitlements();
-  const allowed = true;
+  const accessActive = subscription.is_access_active;
+  const entitlements = resolveBillingEntitlements(subscription.raw_billing_plan_id, accessActive);
+  const entitlementIncluded = hasEntitlement(
+    resolveBillingEntitlements(subscription.raw_billing_plan_id, true),
+    entitlementKey
+  );
+  const allowed = accessActive && entitlementIncluded;
+  const upgrade = getUpgradeCopy(entitlementKey);
 
   return {
     subscription,
     entitlements,
     accessActive,
-    allowed
+    allowed,
+    entitlementIncluded,
+    currentPlanId: subscription.plan_id,
+    currentBillingPlanId: getPublicBillingPlanId(subscription.raw_billing_plan_id),
+    recommendedPlanId: getRecommendedUpgradePlan(entitlementKey),
+    recommendedPlanName: getRecommendedPlanName(entitlementKey),
+    upgradeHref: getUpgradeHref(entitlementKey),
+    upgrade
   };
 };
+
+export const buildUpgradeRequiredPayload = (
+  entitlementKey: EntitlementKey,
+  access: BusinessEntitlementAccess
+) => {
+  if (!access.accessActive) {
+    return {
+      error: "SUBSCRIPTION_INACTIVE",
+      requiredEntitlement: entitlementKey,
+      recommendedPlan: access.recommendedPlanId,
+      subscriptionStatus: access.subscription.status,
+      message:
+        "Your workspace billing is not active right now. Update billing to restore access to this feature.",
+      upgradeUrl: access.upgradeHref
+    };
+  }
+
+  return {
+    error: "UPGRADE_REQUIRED",
+    requiredEntitlement: entitlementKey,
+    recommendedPlan: access.recommendedPlanId,
+    subscriptionStatus: access.subscription.status,
+    message: access.upgrade.description,
+    upgradeUrl: access.upgradeHref
+  };
+};
+
+export const buildUpgradeRequiredResponse = (
+  entitlementKey: EntitlementKey,
+  access: BusinessEntitlementAccess
+) => NextResponse.json(buildUpgradeRequiredPayload(entitlementKey, access), { status: 403 });

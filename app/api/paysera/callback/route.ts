@@ -146,6 +146,27 @@ const handleCallback = async (request: Request) => {
     return new NextResponse("Retry", { status: 500 });
   }
 
+  if (
+    data &&
+    typeof data === "object" &&
+    (data as { mutated?: unknown }).mutated === true &&
+    typeof (data as { business_id?: unknown }).business_id === "string"
+  ) {
+    const businessId = (data as { business_id: string }).business_id;
+    const { error: accessError } = await admin
+      .from("businesses")
+      .update({ launch_access: true, updated_at: new Date().toISOString() })
+      .eq("id", businessId);
+
+    if (accessError) {
+      console.error("[BILLING_PAYSERA_CALLBACK_ACCESS_UPDATE_ERROR]", {
+        businessId,
+        accessError
+      });
+      return new NextResponse("Retry", { status: 500 });
+    }
+  }
+
   if (data && typeof data === "object") {
     return new NextResponse("OK");
   }

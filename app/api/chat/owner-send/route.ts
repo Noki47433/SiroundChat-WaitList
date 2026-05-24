@@ -1,9 +1,17 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { userHasLaunchAccess } from "@/lib/server/launch-access";
+import {
+  buildUpgradeRequiredResponse,
+  getBusinessEntitlementAccess
+} from "@/lib/server/billing-access";
+import {
+  buildUnknownLegacyConversationChannelResponse,
+  ensureLegacyConversationBusinessAccess,
+  loadLegacyConversationContext
+} from "@/lib/server/legacy-chat-management";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
-import { getTenantFromSession } from "@/lib/utils/tenant";
 import { insertAnalyticsEvent } from "@/lib/analytics/events";
 import { isHumanTakeoverEnabled } from "@/lib/chat/takeover";
 
@@ -36,26 +44,33 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const tenant = await getTenantFromSession(user.id);
-  if (!tenant.businessId) {
-    return NextResponse.json({ error: "Business not found" }, { status: 404 });
-  }
-
   const { conversationId, message } = parsed.data;
-
-  const { data: conversation, error: convoError } = await (supabase as any)
-    .from("chat_conversations")
-    .select("id")
-    .eq("id", conversationId)
-    .eq("business_id", tenant.businessId)
-    .maybeSingle();
-
-  if (convoError) {
-    return NextResponse.json({ error: convoError.message }, { status: 500 });
+  const conversation = await loadLegacyConversationContext(conversationId);
+  if (!conversation) {
+    return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
   }
 
-  if (!conversation?.id) {
-    return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
+  const conversationAccessResponse = await ensureLegacyConversationBusinessAccess(user.id, conversation.businessId);
+  if (conversationAccessResponse) {
+    return conversationAccessResponse;
+  }
+
+  if (conversation.channel === "unknown") {
+    return buildUnknownLegacyConversationChannelResponse();
+  }
+
+  const requiredEntitlements =
+    conversation.channel === "website"
+      ? (["chatbot"] as const)
+      : conversation.channel === "whatsapp"
+        ? (["whatsapp", "social_replies"] as const)
+        : (["instagram", "social_replies"] as const);
+
+  for (const entitlement of requiredEntitlements) {
+    const billingAccess = await getBusinessEntitlementAccess(conversation.businessId, entitlement);
+    if (!billingAccess.allowed) {
+      return buildUpgradeRequiredResponse(entitlement, billingAccess);
+    }
   }
 
   const { data: inserted, error: insertError } = await (supabase as any)
@@ -75,7 +90,7 @@ export async function POST(request: Request) {
   try {
     const admin = getSupabaseAdminClient();
     await insertAnalyticsEvent(admin as any, {
-      businessId: tenant.businessId,
+      businessId: conversation.businessId,
       siteId: null,
       type: "owner_message_sent",
       metadata: { conversation_id: conversationId, message_id: inserted.id }

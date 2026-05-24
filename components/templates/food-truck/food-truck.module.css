@@ -1,0 +1,70 @@
+.root {
+  --ft-bg: var(--site-background, #090909);
+  --ft-surface: var(--site-surface, #121212);
+  --ft-surface-strong: var(--site-surface-strong, #171717);
+  --ft-border: var(--site-border, #2b2b2b);
+  --ft-text: var(--site-text, #f7f2e9);
+  --ft-muted: var(--site-muted, #b9b09e);
+  --ft-primary: var(--site-secondary, #f4b938);
+  --ft-primary-strong: var(--site-accent-strong, #ffc444);
+  --ft-accent: var(--site-secondary, #d75b1b);
+  --ft-shadow: 0 30px 80px color-mix(in srgb, var(--site-primary, #090909) 28%, transparent);
+  background:
+    radial-gradient(circle at 15% 20%, color-mix(in srgb, var(--ft-primary) 18%, transparent), transparent 28%),
+    radial-gradient(circle at 82% 18%, color-mix(in srgb, var(--ft-accent) 18%, transparent), transparent 24%),
+    linear-gradient(180deg, var(--ft-bg) 0%, color-mix(in srgb, var(--ft-bg) 88%, #000) 100%);
+  color: var(--ft-text);
+}
+
+.display {
+  font-family: var(--font-food-truck-display), sans-serif;
+}
+
+.body {
+  font-family: var(--font-food-truck-body), sans-serif;
+}
+
+.muted {
+  color: var(--ft-muted);
+}
+
+.surface {
+  background: color-mix(in srgb, var(--ft-surface) 94%, transparent);
+  border: 1px solid var(--ft-border);
+  box-shadow: var(--ft-shadow);
+}
+
+.chip {
+  border: 1px solid color-mix(in srgb, var(--ft-primary) 32%, transparent);
+  background: color-mix(in srgb, var(--ft-primary) 12%, transparent);
+}
+
+.softGlow {
+  filter: blur(80px);
+  pointer-events: none;
+}
+
+.floaty {
+  animation: floaty 6s ease-in-out infinite;
+}
+
+.clampTwo {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.scrollTarget {
+  scroll-margin-top: 7rem;
+}
+
+@keyframes floaty {
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-18px);
+  }
+}

@@ -1,8 +1,16 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { userHasLaunchAccess } from "@/lib/server/launch-access";
+import {
+  buildUpgradeRequiredResponse,
+  getBusinessEntitlementAccess
+} from "@/lib/server/billing-access";
+import {
+  buildUnknownLegacyConversationChannelResponse,
+  ensureLegacyConversationBusinessAccess,
+  loadLegacyConversationContext
+} from "@/lib/server/legacy-chat-management";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
-import { getTenantFromSession } from "@/lib/utils/tenant";
 import { isHumanTakeoverEnabled } from "@/lib/chat/takeover";
 
 const BodySchema = z.object({
@@ -34,12 +42,33 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const tenant = await getTenantFromSession(user.id);
-  if (!tenant.businessId) {
-    return NextResponse.json({ error: "Business not found" }, { status: 404 });
+  const { conversationId, enabled } = parsed.data;
+  const conversation = await loadLegacyConversationContext(conversationId);
+  if (!conversation) {
+    return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
   }
 
-  const { conversationId, enabled } = parsed.data;
+  const conversationAccessResponse = await ensureLegacyConversationBusinessAccess(user.id, conversation.businessId);
+  if (conversationAccessResponse) {
+    return conversationAccessResponse;
+  }
+
+  if (conversation.channel === "unknown") {
+    return buildUnknownLegacyConversationChannelResponse();
+  }
+
+  const requiredEntitlements =
+    conversation.channel === "website"
+      ? (["chatbot", "human_takeover"] as const)
+      : (["unified_inbox", "human_takeover"] as const);
+
+  for (const entitlement of requiredEntitlements) {
+    const billingAccess = await getBusinessEntitlementAccess(conversation.businessId, entitlement);
+    if (!billingAccess.allowed) {
+      return buildUpgradeRequiredResponse(entitlement, billingAccess);
+    }
+  }
+
   const now = new Date().toISOString();
 
   const updatePayload: Record<string, unknown> = {
@@ -56,7 +85,7 @@ export async function POST(request: Request) {
     .from("chat_conversations")
     .update(updatePayload)
     .eq("id", conversationId)
-    .eq("business_id", tenant.businessId)
+    .eq("business_id", conversation.businessId)
     .select("id, takeover_enabled, takeover_by, takeover_at, takeover_ended_at")
     .single();
 

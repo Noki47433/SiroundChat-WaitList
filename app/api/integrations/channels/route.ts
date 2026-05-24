@@ -5,7 +5,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const { context, response } = await requireBusinessUser();
+  const { context, response } = await requireBusinessUser({ entitlement: "channel_settings" });
   if (response) return response;
 
   const [{ data: channels, error: channelError }, { data: business, error: businessError }] = await Promise.all([

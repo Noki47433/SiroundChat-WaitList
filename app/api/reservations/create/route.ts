@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { getBusinessEntitlementAccess } from "@/lib/server/billing-access";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createReservationRecord, ReservationOperationError } from "@/lib/reservations/operations";
 
@@ -74,6 +75,21 @@ export async function POST(request: Request) {
 
   const admin = getSupabaseAdminClient();
   try {
+    const billingAccess = await getBusinessEntitlementAccess(restaurantId, "reservations");
+    if (!billingAccess.allowed) {
+      return NextResponse.json(
+        {
+          error: "UPGRADE_REQUIRED",
+          requiredEntitlement: "reservations",
+          recommendedPlan: billingAccess.recommendedPlanId,
+          message: billingAccess.accessActive
+            ? billingAccess.upgrade.description
+            : "This business does not have active billing for reservations right now."
+        },
+        { status: 403 }
+      );
+    }
+
     const createdBy = source === "widget" ? "widget" : "chatbot";
     const result = await createReservationRecord({
       adminClient: admin as any,

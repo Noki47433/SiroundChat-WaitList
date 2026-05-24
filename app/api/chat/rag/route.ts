@@ -6,6 +6,7 @@ import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import { retrieveRelevantChunks } from "@/lib/ai/retrieve";
 import { log } from "@/lib/utils/log";
 import {
+  buildUpgradeRequiredResponse,
   canAccessBillingWorkspace,
   getBusinessEntitlementAccess
 } from "@/lib/server/billing-access";
@@ -43,7 +44,7 @@ export async function POST(req: Request) {
 
   const billingAccess = await getBusinessEntitlementAccess(businessId, "chatbot_knowledge_base");
   if (!billingAccess.allowed) {
-    return NextResponse.json({ error: "Knowledge-assisted chat is not available on the current plan" }, { status: 403 });
+    return buildUpgradeRequiredResponse("chatbot_knowledge_base", billingAccess);
   }
 
   const last = messages[messages.length - 1];

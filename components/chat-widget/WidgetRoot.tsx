@@ -5,11 +5,12 @@ import { ChatWindow } from "./ChatWindow";
 import { WidgetLauncher } from "./WidgetLauncher";
 import type { TonePreset } from "@/lib/types";
 import type { WidgetTheme } from "@/lib/types/core";
+import type { QuickButton } from "@/lib/config/industry-presets";
 import { analytics } from "@/lib/analytics/client";
 
 interface WidgetRootProps {
   siteId: string;
-  widgetKey?: string | null; // ✅ real widget key (business widget_key)
+  widgetKey?: string | null;
   greeting: string;
   tonePreset?: TonePreset;
   theme: WidgetTheme;
@@ -19,6 +20,7 @@ interface WidgetRootProps {
   businessName?: string;
   defaultOpen?: boolean;
   disableAnalytics?: boolean;
+  quickButtons?: QuickButton[] | null;
 }
 
 export function WidgetRoot({
@@ -32,7 +34,8 @@ export function WidgetRoot({
   iconId,
   businessName,
   defaultOpen = false,
-  disableAnalytics = false
+  disableAnalytics = false,
+  quickButtons
 }: WidgetRootProps) {
   const [open, setOpen] = useState(defaultOpen);
 
@@ -76,7 +79,7 @@ export function WidgetRoot({
     <div className="relative h-screen w-screen">
       <ChatWindow
         siteId={siteId}
-        widgetKey={widgetKey ?? siteId} // ✅ no duplicate props, no hardcode nonsense
+        widgetKey={widgetKey ?? siteId}
         greeting={greeting}
         tonePreset={tonePreset}
         theme={theme}
@@ -85,6 +88,7 @@ export function WidgetRoot({
         iconId={iconId ?? undefined}
         open={open}
         onClose={() => setOpen(() => false)}
+        quickButtons={quickButtons}
       />
 
       {!open ? (

@@ -1,0 +1,40 @@
+.root {
+  --evasion-bg: var(--site-background, #f5f4ee);
+  --evasion-surface: var(--site-surface, #ffffff);
+  --evasion-surface-2: var(--site-surface-strong, #efeee6);
+  --evasion-text: var(--site-text, #111111);
+  --evasion-muted: var(--site-muted, rgba(17, 17, 17, 0.66));
+  --evasion-border: var(--site-border, rgba(17, 17, 17, 0.12));
+  --evasion-accent: var(--site-secondary, #bfa06a);
+  --evasion-accent-soft: var(--site-accent-soft, rgba(191, 160, 106, 0.16));
+  --evasion-shadow: 0 28px 90px color-mix(in srgb, var(--site-primary, #111315) 18%, transparent);
+  background: var(--evasion-bg);
+  color: var(--evasion-text);
+}
+
+.heroLetter {
+  display: inline-block;
+  opacity: 0;
+  animation: evasion-slide-up 0.8s ease-out forwards;
+}
+
+.hideScrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.hideScrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+@keyframes evasion-slide-up {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 100%, 0);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}

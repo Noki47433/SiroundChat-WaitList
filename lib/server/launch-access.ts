@@ -86,6 +86,30 @@ export async function userHasLaunchAccess(userId: string): Promise<boolean> {
   );
 }
 
+export async function userOwnsBusiness(userId: string, businessId: string): Promise<boolean> {
+  if (!userId || !businessId) return false;
+
+  const admin = getSupabaseServerAdminClientIfAvailable() as any;
+  if (!admin) {
+    logMissingAdmin("userOwnsBusiness", userId, businessId);
+    return false;
+  }
+
+  const { data, error } = await admin
+    .from("businesses")
+    .select("id")
+    .eq("id", businessId)
+    .or(`owner_id.eq.${userId},owner_user_id.eq.${userId}`)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[BUSINESS_OWNERSHIP_LOOKUP_ERROR]", { userId, businessId, error });
+    return false;
+  }
+
+  return Boolean(data?.id);
+}
+
 export async function userOwnsLaunchedBusiness(userId: string, businessId: string): Promise<boolean> {
   if (!userId || !businessId) return false;
 

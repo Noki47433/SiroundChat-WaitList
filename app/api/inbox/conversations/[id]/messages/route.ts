@@ -5,7 +5,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(_: Request, { params }: { params: { id: string } }) {
-  const { context, response } = await requireBusinessUser();
+  const { context, response } = await requireBusinessUser({ entitlement: "unified_inbox" });
   if (response) return response;
 
   const conversationId = params.id;

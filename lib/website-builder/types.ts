@@ -1,3 +1,5 @@
+import type { StudioSiteBriefMetadata } from "@/lib/website-studio/schema";
+
 export type TextStyleToken = {
   size: string;
   weight: number;
@@ -127,11 +129,12 @@ export type SiteBrief = {
     background?: string;
     fontFamily?: string;
   };
-    designDNA?: {
-      variationSeed?: string;
-      layoutStyle?: string;
-      palette?: {
-        primary?: string;
+  studio?: StudioSiteBriefMetadata;
+  designDNA?: {
+    variationSeed?: string;
+    layoutStyle?: string;
+    palette?: {
+      primary?: string;
       secondary?: string;
       background?: string;
       accent?: string;
@@ -139,17 +142,17 @@ export type SiteBrief = {
     fontPair?: {
       heading?: string;
       body?: string;
-      };
-      variantBias?: Record<string, string>;
-      sectionOrder?: string[];
-      imageryStyle?: string;
-      industryKey?: string;
-      archetypeKey?: string;
-      layoutDNA?: string;
-      sectionBlueprints?: string[];
-      conversionGoal?: string;
     };
+    variantBias?: Record<string, string>;
+    sectionOrder?: string[];
+    imageryStyle?: string;
+    industryKey?: string;
+    archetypeKey?: string;
+    layoutDNA?: string;
+    sectionBlueprints?: string[];
+    conversionGoal?: string;
   };
+};
 
 export type SiteElement =
   | {

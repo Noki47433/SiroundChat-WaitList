@@ -2,7 +2,12 @@ import { NextResponse } from "next/server";
 import { userHasLaunchAccess } from "@/lib/server/launch-access";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import { isAuthDisabled } from "@/lib/config/auth";
-import { listAllOwnedBuilderSites } from "@/lib/builder/site-access";
+import { listOwnedBuilderSites } from "@/lib/builder/site-access";
+import {
+  buildUpgradeRequiredResponse,
+  getBusinessEntitlementAccess
+} from "@/lib/server/billing-access";
+import { getTenantFromSession } from "@/lib/utils/tenant";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,7 +28,18 @@ export async function GET() {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const sites = await listAllOwnedBuilderSites<any>(
+  const tenant = await getTenantFromSession(userData.user.id);
+  if (!tenant.businessId) {
+    return NextResponse.json({ error: "Business not found" }, { status: 404 });
+  }
+
+  const billingAccess = await getBusinessEntitlementAccess(tenant.businessId, "website_builder");
+  if (!billingAccess.allowed) {
+    return buildUpgradeRequiredResponse("website_builder", billingAccess);
+  }
+
+  const sites = await listOwnedBuilderSites<any>(
+    tenant.businessId,
     userData.user.id,
     "id,business_name,slug,status,published_url,updated_at"
   );

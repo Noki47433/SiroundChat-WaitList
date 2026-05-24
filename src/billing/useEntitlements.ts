@@ -1,21 +1,27 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import type {
+  BillingPaymentKind,
+  BillingSubscriptionStatus,
+  PublicBillingPlanId
+} from "@/lib/billing/plans";
 import type { Entitlements, PlanDefinition, PlanId } from "@/src/billing/plans";
 
 type SubscriptionRecord = {
   id: string;
   business_id: string;
-  billing_plan_id: "website_19" | "chatbot_19" | "bundle_29";
+  raw_billing_plan_id: string;
+  billing_plan_id: PublicBillingPlanId;
   plan_id: PlanId;
-  status: "pending_setup" | "active" | "trialing" | "past_due" | "canceled";
+  status: BillingSubscriptionStatus;
   trial_end: string | null;
   current_period_end: string | null;
   created_at: string;
   updated_at: string;
   is_access_active: boolean;
-  pending_payment_kind?: "setup" | "renewal" | null;
-  pending_payment_plan_id?: PlanId | null;
+  pending_payment_kind?: BillingPaymentKind | null;
+  pending_payment_plan_id?: string | null;
   pending_payment_created_at?: string | null;
   pending_payment_is_stale?: boolean;
 };

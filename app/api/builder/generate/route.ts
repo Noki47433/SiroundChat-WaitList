@@ -4,6 +4,11 @@ import Ajv, { type ValidateFunction } from "ajv";
 import { userHasLaunchAccess } from "@/lib/server/launch-access";
 import { getOpenAIClient } from "@/lib/ai/client";
 import { selectTemplateKey } from "@/lib/builder/utils";
+import {
+  inferBuilderImageSlot,
+  isMissingBuilderAssetSlotColumnError,
+  normalizeBuilderImageSlot
+} from "@/lib/builder/site-assets";
 import { emitGenerationEvent } from "@/lib/builder/generation/analytics";
 import { applyDeterministicImages } from "@/lib/builder/generation/images";
 import { toLegacySiteDocument } from "@/lib/builder/generation/legacy";
@@ -16,6 +21,24 @@ import type { GenerationIntake, GenerationPlan } from "@/lib/builder/generation/
 import { validateSiteDocument } from "@/lib/builder/generation/validate";
 import { fillSkeletonSections } from "@/lib/builder/generation/fill";
 import { getBuilderPlanForRoute } from "@/lib/builder/plan";
+import {
+  buildUpgradeRequiredResponse,
+  getBusinessEntitlementAccess
+} from "@/lib/server/billing-access";
+import { generateRestaurantTemplateContent } from "@/lib/builder/template-sites/content";
+import { resolveTemplateImages } from "@/lib/builder/template-sites/images";
+import { mapIntegratedTemplateData } from "@/lib/builder/template-sites/mappers";
+import { buildIntegratedTemplateTheme } from "@/lib/builder/template-sites/palette";
+import {
+  IntegratedTemplateIdSchema,
+  ThemeStyleIdSchema,
+  type IntegratedTemplateId,
+  type IntegratedTemplateSiteDocument
+} from "@/lib/builder/template-sites/schema";
+import {
+  resolveRestaurantIntent,
+  selectRestaurantTemplate
+} from "@/lib/builder/template-sites/selection";
 import {
   CTA_GOALS,
   CONTENT_LANGUAGES,
@@ -41,6 +64,20 @@ import {
   type DeterministicTemplateId
 } from "@/lib/deterministic-templates";
 import { runV0LikeGenerationPipeline } from "@/src/generation/v0_like";
+import {
+  attachStudioMetadataToSiteDocument,
+  resolveStudioGenerationSpec
+} from "@/lib/website-studio/normalize";
+import {
+  createStudioGenerationProvider,
+  getCurrentStudioProviderMetadata,
+  type StudioProviderResult
+} from "@/lib/website-studio/providers";
+import {
+  StudioGenerationSpecSchema,
+  type StudioGenerationSpec,
+  type StudioProviderMetadata
+} from "@/lib/website-studio/schema";
 
 export const runtime = "nodejs";
 
@@ -71,6 +108,7 @@ const PayloadSchema = z
     businessId: z.string().uuid(),
     businessName: z.string().min(1),
     industry: z.string().min(1),
+    themeStyle: ThemeStyleIdSchema.optional().nullable(),
     subtype: z.string().optional().nullable(),
     description: z.string().min(1),
     targetCustomer: z.string().optional().nullable(),
@@ -80,6 +118,7 @@ const PayloadSchema = z
     proofAssets: z.array(z.string()).optional(),
     pagesMode: z.enum(["one", "multi"]).default("one"),
     templateId: z.string().min(1).optional(),
+    selectedTemplate: z.string().min(1).optional().nullable(),
     primaryColor: ColorSchema,
     secondaryColor: ColorSchema,
     fontFamily: z.string().min(2).optional().nullable(),
@@ -99,6 +138,7 @@ const PayloadSchema = z
         z.object({
           src: z.string().url(),
           alt: z.string().optional(),
+          slot: z.string().optional(),
           width: z.number().int().positive().optional(),
           height: z.number().int().positive().optional()
         })
@@ -111,6 +151,7 @@ const PayloadSchema = z
         includePricing: z.boolean().optional(),
         includeFaq: z.boolean().optional(),
         includeContact: z.boolean().optional(),
+        includeReservation: z.boolean().optional(),
         includeGallery: z.boolean().optional()
       })
       .optional()
@@ -119,7 +160,11 @@ const PayloadSchema = z
     language: ContentLanguageSchema,
     qualityMode: QualityModeSchema,
     brief: GenerationBriefSchema,
-    chatbotEmbedSnippet: z.string().trim().optional().nullable()
+    chatbotEmbedSnippet: z.string().trim().optional().nullable(),
+    rawPrompt: z.string().trim().min(1).optional().nullable(),
+    enhancedPrompt: z.string().trim().min(1).optional().nullable(),
+    studioSource: z.enum(["prompt_studio", "guided_setup", "legacy_generation", "api"]).optional(),
+    studioSpec: StudioGenerationSpecSchema.optional()
   })
   .strict();
 
@@ -283,6 +328,7 @@ const buildRawPromptFromInput = (input: z.infer<typeof PayloadSchema>) => {
     input.subtype ? `Subtype: ${input.subtype}` : null,
     input.targetCustomer ? `Audience: ${input.targetCustomer}` : null,
     `Tone: ${input.tone}`,
+    input.themeStyle ? `Theme style: ${input.themeStyle}` : null,
     `Language: ${input.language}`,
     `Quality mode: ${input.qualityMode}`,
     `Primary audience: ${brief.audience}`,
@@ -366,6 +412,20 @@ const withBundleChatbot = (
   };
 };
 
+const withStudioMetadataInSiteBrief = (
+  document: Record<string, any>,
+  studioSpec: StudioGenerationSpec,
+  providerMetadata: StudioProviderMetadata
+) => attachStudioMetadataToSiteDocument(document as SiteDocument, studioSpec, providerMetadata) as Record<string, any>;
+
+const withStudioPipeline = (
+  providerMetadata: StudioProviderMetadata,
+  pipeline: string
+): StudioProviderMetadata => ({
+  ...providerMetadata,
+  pipeline
+});
+
 const extractChatbotEmbedSrc = (snippet?: string | null) => {
   const trimmed = snippet?.trim();
   if (!trimmed) return null;
@@ -415,8 +475,32 @@ const withEmbeddedChatbotSnippet = (
   };
 };
 
+const resolveIntegratedTemplateId = (value: unknown): IntegratedTemplateId | null => {
+  const parsed = IntegratedTemplateIdSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+};
+
+const normalizeSocialLinks = (value: unknown): Record<string, string | null> => {
+  if (!value || typeof value !== "object") return {};
+  const entries = Object.entries(value as Record<string, unknown>)
+    .map(([key, raw]) => [key, typeof raw === "string" && raw.trim().length > 0 ? raw.trim() : null] as const)
+    .filter(([, raw]) => raw !== null);
+  return Object.fromEntries(entries);
+};
+
+const buildIntegratedTemplateSeo = (
+  businessName: string,
+  content: Awaited<ReturnType<typeof generateRestaurantTemplateContent>>,
+  heroImageUrl?: string | null
+) => ({
+  title: `${businessName} | ${content.business.cuisine}`,
+  description: content.hero.subheadline,
+  ogImage: heroImageUrl ?? undefined
+});
+
 const DETERMINISTIC_PIPELINE = "deterministic_rails";
 const DETERMINISTIC_MODEL = "gpt-4o-mini";
+const STUDIO_DUPLICATE_WINDOW_MS = 60_000;
 const deterministicAjv = new Ajv({ allErrors: true });
 const schemaValidators = new Map<string, ValidateFunction>();
 
@@ -428,6 +512,23 @@ type DeterministicValidationIssue = {
 };
 
 const isEnvTrue = (value: string | undefined): boolean => value?.trim().toLowerCase() === "true";
+
+const isRecentStudioTimestamp = (value?: string | null, windowMs = STUDIO_DUPLICATE_WINDOW_MS) => {
+  if (!value) return false;
+  const timestamp = Date.parse(value);
+  if (Number.isNaN(timestamp)) return false;
+  return Date.now() - timestamp <= windowMs;
+};
+
+const hasRecentMatchingStudioGeneration = (
+  document: SiteDocument,
+  spec: StudioGenerationSpec
+) => {
+  const studio = document.siteBrief?.studio;
+  if (!studio || studio.provider?.provider !== "v0") return false;
+  if (!isRecentStudioTimestamp(studio.storedAt)) return false;
+  return JSON.stringify(studio.generationSpec) === JSON.stringify(spec);
+};
 
 const DEFAULT_THEME_COLORS = {
   primary: "#111827",
@@ -920,6 +1021,16 @@ export async function POST(request: Request) {
     const contentLanguage = normalizeContentLanguage(input.language);
     const qualityMode = normalizeQualityMode(input.qualityMode);
     const generationBrief = sanitizeGenerationBrief(input.brief, input.tone);
+    const studioSpec = resolveStudioGenerationSpec({
+      ...input,
+      language: contentLanguage,
+      qualityMode,
+      brief: generationBrief,
+      studioSource: input.studioSpec?.source ?? input.studioSource ?? "api"
+    });
+    const requestedStudioProvider = createStudioGenerationProvider();
+    let requestedStudioProviderResult: StudioProviderResult | null = null;
+    let studioProviderMetadata = requestedStudioProvider.metadata;
     analyticsContext = {
       businessId: input.businessId,
       siteId: input.siteId
@@ -927,34 +1038,516 @@ export async function POST(request: Request) {
     const site = await getOwnedBuilderSite<{
       id: string;
       business_id: string;
+      business_name?: string | null;
+      industry?: string | null;
+      description?: string | null;
+      template_id?: string | null;
+      template_key?: string | null;
       site_document: unknown;
+      contact_email?: string | null;
+      contact_phone?: string | null;
+      contact_address?: string | null;
+      opening_hours?: string | null;
+      socials?: Record<string, string | null> | null;
+      has_own_photos?: boolean | null;
+      include_reservation?: boolean | null;
+      include_gallery?: boolean | null;
+      generation_brief?: Record<string, unknown> | null;
+      primary_color?: string | null;
+      secondary_color?: string | null;
+      logo_url?: string | null;
       owner_user_id?: string | null;
-    }>(input.siteId, userData.user.id, "id,business_id,site_document,owner_user_id");
+    }>(
+      input.siteId,
+      userData.user.id,
+      "id,business_id,business_name,industry,description,template_id,template_key,site_document,contact_email,contact_phone,contact_address,opening_hours,socials,has_own_photos,include_reservation,include_gallery,generation_brief,primary_color,secondary_color,logo_url,owner_user_id"
+    );
 
     if (!site || site.business_id !== input.businessId) {
       return NextResponse.json({ error: "Site not found" }, { status: 404 });
     }
 
+    const existingSiteDocument = SiteDocumentSchema.safeParse(site.site_document);
+    let { data: uploadedAssetRows, error: uploadedAssetError } = await (admin as any)
+      .from("builder_site_assets")
+      .select("kind,target_slot,url,created_at")
+      .eq("site_id", input.siteId)
+      .order("created_at", { ascending: false });
+    if (isMissingBuilderAssetSlotColumnError(uploadedAssetError)) {
+      const fallbackAssets = await (admin as any)
+        .from("builder_site_assets")
+        .select("kind,url,created_at")
+        .eq("site_id", input.siteId)
+        .order("created_at", { ascending: false });
+      uploadedAssetRows = (fallbackAssets.data ?? []).map(
+        (image: { kind?: string | null; url?: string | null; created_at?: string | null }) => ({
+          ...image,
+          target_slot: inferBuilderImageSlot({
+            kind: image.kind,
+            url: image.url
+          })
+        })
+      );
+      uploadedAssetError = fallbackAssets.error;
+    }
+    if (uploadedAssetError) {
+      console.error("[BUILDER_GENERATE_ASSET_LOAD_ERROR]", uploadedAssetError);
+      return NextResponse.json({ error: "Unable to load uploaded site images." }, { status: 500 });
+    }
+    const uploadedImages = [
+      ...((uploadedAssetRows ?? []) as Array<{
+        kind?: string | null;
+        target_slot?: string | null;
+        url?: string | null;
+      }>),
+      ...(input.uploadedImages ?? []).map((image, index) => ({
+        kind: index === 0 ? "hero" : "gallery",
+        target_slot: image.slot,
+        url: image.src,
+        alt: image.alt
+      }))
+    ]
+      .filter(
+        (image): image is {
+          kind?: string | null;
+          target_slot?: string | null;
+          url: string;
+          alt?: string;
+        } => typeof image?.url === "string" && image.url.length > 0
+      )
+      .map((image, index) => ({
+        url: image.url,
+        kind:
+          image.kind === "hero" || image.kind === "gallery" || image.kind === "other"
+            ? (image.kind as "hero" | "gallery" | "other")
+            : index === 0
+              ? ("hero" as const)
+              : ("gallery" as const),
+        targetSlot: normalizeBuilderImageSlot(
+          image.target_slot,
+          image.kind === "hero" ? "hero" : index === 0 ? "hero" : "auto"
+        ),
+        alt:
+          image.alt ??
+          (image.kind === "hero"
+            ? `${input.businessName} hero image`
+            : `${input.businessName} restaurant photo ${index + 1}`)
+      }));
+
     const { plan: builderPlan, flags } = await getBuilderPlanForRoute(input.businessId);
     if (!flags.canRegenerate) {
-      return NextResponse.json(
-        {
-          error: "Your current plan does not include website generation.",
-          code: "PLAN_UPGRADE_REQUIRED",
-          blocked: "website_builder",
-          upgradeUrl: "/billing?blocked=website_builder"
-        },
-        { status: 403 }
-      );
+      const billingAccess = await getBusinessEntitlementAccess(input.businessId, "website_builder");
+      return buildUpgradeRequiredResponse("website_builder", billingAccess);
     }
-    const isBundlePlan = builderPlan === "bundle";
+    const isBundlePlan = hasEntitlement(resolveEntitlements(builderPlan), "chatbot_website_injection");
     const canAttachChatbotEmbed = hasEntitlement(
       resolveEntitlements(builderPlan),
-      "chatbot_embed"
+      "chatbot_website_injection"
     );
     const chatbotEmbedSrc = canAttachChatbotEmbed
       ? extractChatbotEmbedSrc(input.chatbotEmbedSnippet)
       : null;
+    const sourcePrompt = input.enhancedPrompt?.trim() || input.description;
+    const rawPrompt = input.rawPrompt?.trim() || input.description;
+    const persistedTemplateId = resolveIntegratedTemplateId(
+      input.selectedTemplate ?? input.templateId ?? site.template_id ?? site.template_key
+    );
+    const restaurantIntent = resolveRestaurantIntent({
+      prompt: sourcePrompt,
+      rawPrompt,
+      enhancedPrompt: input.enhancedPrompt?.trim() ?? null,
+      industry: input.industry || site.industry || null,
+      businessName: input.businessName || site.business_name || null,
+      services: input.services ?? generationBrief.topServices,
+      templateId: input.selectedTemplate ?? input.templateId ?? site.template_id ?? null,
+      templateKey: site.template_key ?? null,
+      generationBrief: {
+        primaryCtaGoal: generationBrief.primaryCtaGoal,
+        coreOffer: generationBrief.coreOffer,
+        topServices: generationBrief.topServices
+      },
+      features: {
+        includeReservation: input.features?.includeReservation ?? site.include_reservation ?? null,
+        includeGallery: input.features?.includeGallery ?? site.include_gallery ?? null
+      }
+    });
+    const useIntegratedRestaurantTemplates =
+      persistedTemplateId !== null || restaurantIntent.isRestaurant;
+
+    console.info("[BUILDER_GENERATE_PIPELINE_DECISION]", {
+      businessId: input.businessId,
+      siteId: input.siteId,
+      industry: input.industry,
+      pipeline: useIntegratedRestaurantTemplates ? "integrated_template" : "legacy",
+      persistedTemplateId,
+      restaurantIntent: restaurantIntent.isRestaurant,
+      restaurantSignals: restaurantIntent.matchedSignals,
+      promptPreview: sourcePrompt.slice(0, 120)
+    });
+
+    if (useIntegratedRestaurantTemplates) {
+      const heuristicSelection = selectRestaurantTemplate(
+        sourcePrompt,
+        input.industry,
+        input.themeStyle ?? null,
+        {
+          primaryColor: input.primaryColor ?? site.primary_color ?? null,
+          secondaryColor: input.secondaryColor ?? site.secondary_color ?? null
+        }
+      );
+      const selectedTemplate = persistedTemplateId ?? heuristicSelection.template;
+      const selection =
+        persistedTemplateId === null
+          ? heuristicSelection
+          : {
+              ...heuristicSelection,
+              template: persistedTemplateId,
+              reason:
+                heuristicSelection.template === persistedTemplateId
+                  ? heuristicSelection.reason
+                  : `Preserved ${persistedTemplateId} from builder selection. ${heuristicSelection.reason}`
+            };
+      const openai = getOpenAIClient();
+
+      console.info("[BUILDER_GENERATE_RESTAURANT_PIPELINE]", {
+        businessId: input.businessId,
+        siteId: input.siteId,
+        template: selectedTemplate,
+        reason: selection.reason,
+        restaurantSignals: restaurantIntent.matchedSignals
+      });
+
+      analyticsContext = {
+        ...analyticsContext,
+        niche: input.industry,
+        templateId: selectedTemplate,
+        policy: {
+          pipeline: "integrated_template",
+          template: selectedTemplate,
+          imageMode: "pexels_first"
+        }
+      };
+
+      await emitGenerationEvent(supabase, {
+        businessId: input.businessId,
+        siteId: input.siteId,
+        type: "site_generation_started",
+        metadata: {
+          niche: input.industry,
+          pipeline: "integrated_template",
+          template: selectedTemplate,
+          selection
+        }
+      });
+
+      if (!openai) {
+        return NextResponse.json(
+          {
+            error: "Template generation unavailable",
+            code: "OPENAI_UNAVAILABLE"
+          },
+          { status: 503 }
+        );
+      }
+
+      const contact = {
+        email: input.contact?.email ?? site.contact_email ?? null,
+        phone: input.contact?.phone ?? site.contact_phone ?? null,
+        address: input.contact?.address ?? site.contact_address ?? null
+      };
+      const socials = Object.keys(input.socials ?? {}).length
+        ? normalizeSocialLinks(input.socials)
+        : normalizeSocialLinks(site.socials);
+      const content = await generateRestaurantTemplateContent(openai, {
+        prompt: sourcePrompt,
+        rawPrompt,
+        businessName: input.businessName,
+        industry: input.industry,
+        template: selectedTemplate,
+        themeStyle: input.themeStyle ?? null,
+        primaryColor: input.primaryColor ?? site.primary_color ?? null,
+        secondaryColor: input.secondaryColor ?? site.secondary_color ?? null,
+        contact,
+        openingHours: input.openingHours ?? site.opening_hours ?? null,
+        socials
+      });
+      const { images, policy } = await resolveTemplateImages({
+        template: selectedTemplate,
+        prompt: sourcePrompt,
+        themeStyle: input.themeStyle ?? null,
+        primaryColor: input.primaryColor ?? site.primary_color ?? null,
+        secondaryColor: input.secondaryColor ?? site.secondary_color ?? null,
+        content,
+        uploadedImages
+      });
+      const data = mapIntegratedTemplateData(selectedTemplate, content, images, {
+        logoUrl: input.logoUrl ?? site.logo_url ?? null
+      });
+      const documentTheme = buildIntegratedTemplateTheme(
+        selectedTemplate,
+        input.primaryColor ?? site.primary_color ?? null,
+        input.secondaryColor ?? site.secondary_color ?? null
+      );
+      const nowIso = new Date().toISOString();
+      const integratedDocument: IntegratedTemplateSiteDocument = {
+        kind: "integrated_template",
+        version: 1,
+        template: selectedTemplate,
+        theme: documentTheme,
+        editorSettings: {
+          colors: {
+            primaryColor: documentTheme.primaryColor,
+            secondaryColor: documentTheme.secondaryColor
+          }
+        },
+        meta: {
+          businessName: input.businessName,
+          industry: input.industry,
+          themeStyle: input.themeStyle ?? undefined,
+          sourcePrompt,
+          rawPrompt,
+          enhancedPrompt: input.enhancedPrompt?.trim() || undefined,
+          selection,
+          imagePolicy: policy,
+          seo: buildIntegratedTemplateSeo(input.businessName, content, images.hero?.url ?? null),
+          generatedAt: nowIso,
+          updatedAt: nowIso
+        },
+        content,
+        images,
+        data
+      };
+
+      const templateFeatureFlags = {
+        includeServices: true,
+        includeTestimonials: selectedTemplate === "evasion",
+        includePricing: false,
+        includeFaq: selectedTemplate === "hously",
+        includeContact: selectedTemplate === "essence" || selectedTemplate === "food-truck",
+        includeReservation: true,
+        includeGallery: selectedTemplate === "evasion"
+      };
+
+      const { error: updateError } = await (admin as any)
+        .from("builder_sites")
+        .update({
+          business_name: input.businessName,
+          industry: input.industry,
+          description: input.description,
+          primary_color: input.primaryColor ?? null,
+          secondary_color: input.secondaryColor ?? null,
+          font_family: input.fontFamily ?? null,
+          logo_url: input.logoUrl ?? site.logo_url ?? null,
+          contact_email: contact.email,
+          contact_phone: contact.phone,
+          contact_address: contact.address,
+          template_id: selectedTemplate,
+          tone: input.tone,
+          pages_mode: input.pagesMode,
+          has_own_photos: Boolean(input.hasOwnPhotos ?? site.has_own_photos ?? uploadedImages.length > 0),
+          opening_hours: input.openingHours ?? site.opening_hours ?? null,
+          socials,
+          content_language: contentLanguage,
+          generation_brief: generationBrief,
+          include_services: templateFeatureFlags.includeServices,
+          include_testimonials: templateFeatureFlags.includeTestimonials,
+          include_pricing: templateFeatureFlags.includePricing,
+          include_faq: templateFeatureFlags.includeFaq,
+          include_contact: templateFeatureFlags.includeContact,
+          include_reservation: templateFeatureFlags.includeReservation,
+          include_gallery: templateFeatureFlags.includeGallery,
+          site_document: integratedDocument,
+          template_key: selectedTemplate
+        })
+        .eq("id", input.siteId);
+
+      if (updateError) {
+        await emitGenerationEvent(supabase, {
+          businessId: input.businessId,
+          siteId: input.siteId,
+          type: "site_generation_failed",
+          metadata: {
+            niche: input.industry,
+            pipeline: "integrated_template",
+            template: selectedTemplate,
+            message: updateError.message
+          }
+        });
+        return NextResponse.json(
+          { error: "Failed to update site", message: updateError.message },
+          { status: 500 }
+        );
+      }
+
+      await emitGenerationEvent(supabase, {
+        businessId: input.businessId,
+        siteId: input.siteId,
+        type: "site_generation_completed",
+        metadata: {
+          niche: input.industry,
+          pipeline: "integrated_template",
+          template: selectedTemplate,
+          selection,
+          imagePolicy: policy
+        }
+      });
+
+      return NextResponse.json({
+        siteDocument: integratedDocument,
+        meta: {
+          pipeline: "integrated_template",
+          template: selectedTemplate,
+          selection,
+          imagePolicy: policy,
+          durationMs: Date.now() - startedAt
+        }
+      });
+    }
+
+    if (restaurantIntent.isRestaurant) {
+      console.error("[BUILDER_GENERATE_RESTAURANT_LEGACY_BLOCKED]", {
+        businessId: input.businessId,
+        siteId: input.siteId,
+        industry: input.industry,
+        restaurantSignals: restaurantIntent.matchedSignals,
+        persistedTemplateId
+      });
+      return NextResponse.json(
+        {
+          error: "Restaurant websites must use the integrated template generator.",
+          code: "RESTAURANT_PIPELINE_BLOCKED"
+        },
+        { status: 500 }
+      );
+    }
+
+    if (
+      requestedStudioProvider.metadata.provider === "v0" &&
+      existingSiteDocument.success &&
+      hasRecentMatchingStudioGeneration(existingSiteDocument.data, studioSpec)
+    ) {
+      return NextResponse.json({
+        siteDocument: existingSiteDocument.data,
+        meta: {
+          pipeline: existingSiteDocument.data.siteBrief?.studio?.provider.pipeline ?? "v0-sdk",
+          provider: existingSiteDocument.data.siteBrief?.studio?.provider ?? null,
+          reused: true,
+          durationMs: Date.now() - startedAt
+        }
+      });
+    }
+
+    requestedStudioProviderResult = await requestedStudioProvider.generateInitialSite({
+      spec: studioSpec,
+      legacyPayload: input
+    });
+    studioProviderMetadata = requestedStudioProviderResult.ok
+      ? requestedStudioProviderResult.metadata
+      : {
+          ...getCurrentStudioProviderMetadata(),
+          reason: `Fell back to the current SiroundChat generator because ${requestedStudioProviderResult.metadata.provider} is not active. ${requestedStudioProviderResult.metadata.reason ?? ""}`.trim()
+        };
+
+    if (requestedStudioProviderResult.ok && requestedStudioProviderResult.siteDocument) {
+      const providerGeneratedWithBranding = withEmbeddedChatbotSnippet(
+        withStudioMetadataInSiteBrief(
+          withBundleChatbot(
+            withLogoInSiteBrief(
+              requestedStudioProviderResult.siteDocument as Record<string, any>,
+              input
+            ),
+            isBundlePlan
+          ),
+          studioSpec,
+          requestedStudioProviderResult.metadata
+        ),
+        chatbotEmbedSrc
+      );
+
+      const providerLegacyValidation = SiteDocumentSchema.safeParse(providerGeneratedWithBranding);
+      if (!providerLegacyValidation.success) {
+        studioProviderMetadata = {
+          ...getCurrentStudioProviderMetadata(),
+          reason: "Fell back to the current SiroundChat generator because the live v0 provider returned an invalid site document."
+        };
+      } else {
+        const providerSectionTypes = new Set(
+          providerLegacyValidation.data.pages.flatMap((page) =>
+            page.sections.filter((section) => section.enabled).map((section) => section.type)
+          )
+        );
+
+        const admin = getSupabaseServerAdminClientIfAvailable() ?? supabase;
+        const { error: updateError } = await (admin as any)
+          .from("builder_sites")
+          .update({
+            business_name: input.businessName,
+            industry: input.industry,
+            description: input.description,
+            primary_color: input.primaryColor ?? providerLegacyValidation.data.theme.primary,
+            secondary_color: input.secondaryColor ?? providerLegacyValidation.data.theme.bg,
+            font_family: input.fontFamily ?? providerLegacyValidation.data.theme.fontBody ?? null,
+            logo_url: input.logoUrl ?? null,
+            contact_email: input.contact?.email ?? null,
+            contact_phone: input.contact?.phone ?? null,
+            contact_address: input.contact?.address ?? null,
+            template_id: providerLegacyValidation.data.templateId,
+            tone: input.tone,
+            pages_mode: input.pagesMode,
+            has_own_photos: Boolean(input.hasOwnPhotos),
+            opening_hours: input.openingHours ?? null,
+            socials: input.socials ?? {},
+            content_language: contentLanguage,
+            generation_brief: generationBrief,
+            include_services: providerSectionTypes.has("services"),
+            include_testimonials: providerSectionTypes.has("testimonials"),
+            include_pricing: providerSectionTypes.has("pricing"),
+            include_faq: providerSectionTypes.has("faq"),
+            include_contact: providerSectionTypes.has("contact"),
+            include_reservation: providerSectionTypes.has("reservation"),
+            include_gallery: providerSectionTypes.has("gallery"),
+            site_document: providerLegacyValidation.data,
+            template_key: selectTemplateKey(input.industry, providerLegacyValidation.data.templateId)
+          })
+          .eq("id", input.siteId);
+
+        if (updateError) {
+          await emitGenerationEvent(supabase, {
+            businessId: input.businessId,
+            siteId: input.siteId,
+            type: "site_generation_failed",
+            metadata: {
+              niche: input.industry,
+              pipeline: "v0-sdk",
+              message: updateError.message
+            }
+          });
+          return NextResponse.json({ error: "Failed to update site", message: updateError.message }, { status: 500 });
+        }
+
+        await emitGenerationEvent(supabase, {
+          businessId: input.businessId,
+          siteId: input.siteId,
+          type: "site_generation_completed",
+          metadata: {
+            niche: input.industry,
+            pipeline: "v0-sdk",
+            provider: requestedStudioProviderResult.metadata,
+            warnings: requestedStudioProviderResult.warnings ?? []
+          }
+        });
+
+        return NextResponse.json({
+          siteDocument: providerLegacyValidation.data,
+          meta: {
+            pipeline: "v0-sdk",
+            provider: requestedStudioProviderResult.metadata,
+            warnings: requestedStudioProviderResult.warnings ?? [],
+            durationMs: Date.now() - startedAt
+          }
+        });
+      }
+    }
     const openai = getOpenAIClient();
     const deterministicEnabled =
       isEnvTrue(process.env.SIROUNDCHAT_DETERMINISTIC_GENERATOR) &&
@@ -999,13 +1592,17 @@ export async function POST(request: Request) {
       }
 
       const generatedWithBranding = withEmbeddedChatbotSnippet(
-        withBundleChatbot(
-          withLogoInSiteBrief(industryV2Result.siteDocument as Record<string, any>, {
-            ...input,
-            language: contentLanguage,
-            brief: generationBrief
-          }),
-          isBundlePlan
+        withStudioMetadataInSiteBrief(
+          withBundleChatbot(
+            withLogoInSiteBrief(industryV2Result.siteDocument as Record<string, any>, {
+              ...input,
+              language: contentLanguage,
+              brief: generationBrief
+            }),
+            isBundlePlan
+          ),
+          studioSpec,
+          withStudioPipeline(studioProviderMetadata, "industry_v2")
         ),
         chatbotEmbedSrc
       );
@@ -1205,13 +1802,17 @@ export async function POST(request: Request) {
       });
 
       const deterministicGeneratedWithBranding = withEmbeddedChatbotSnippet(
-        withBundleChatbot(
-          withLogoInSiteBrief(deterministicLegacyDocument as Record<string, any>, {
-            ...input,
-            language: contentLanguage,
-            brief: generationBrief
-          }),
-          isBundlePlan
+        withStudioMetadataInSiteBrief(
+          withBundleChatbot(
+            withLogoInSiteBrief(deterministicLegacyDocument as Record<string, any>, {
+              ...input,
+              language: contentLanguage,
+              brief: generationBrief
+            }),
+            isBundlePlan
+          ),
+          studioSpec,
+          withStudioPipeline(studioProviderMetadata, DETERMINISTIC_PIPELINE)
         ),
         chatbotEmbedSrc
       );
@@ -1407,13 +2008,17 @@ export async function POST(request: Request) {
       }
 
       const generatedWithBranding = withEmbeddedChatbotSnippet(
-        withBundleChatbot(
-          withLogoInSiteBrief(v0LikeResult.rendered.siteDocument as Record<string, any>, {
-            ...input,
-            language: contentLanguage,
-            brief: generationBrief
-          }),
-          isBundlePlan
+        withStudioMetadataInSiteBrief(
+          withBundleChatbot(
+            withLogoInSiteBrief(v0LikeResult.rendered.siteDocument as Record<string, any>, {
+              ...input,
+              language: contentLanguage,
+              brief: generationBrief
+            }),
+            isBundlePlan
+          ),
+          studioSpec,
+          withStudioPipeline(studioProviderMetadata, "v0_like")
         ),
         chatbotEmbedSrc
       );
@@ -1636,13 +2241,17 @@ export async function POST(request: Request) {
     }
     const finalLegacyDocument = toLegacySiteDocument(generated, intake.businessName);
     const generatedWithBranding = withEmbeddedChatbotSnippet(
-      withBundleChatbot(
-        withLogoInSiteBrief(finalLegacyDocument as Record<string, any>, {
-          ...input,
-          language: contentLanguage,
-          brief: generationBrief
-        }),
-        isBundlePlan
+      withStudioMetadataInSiteBrief(
+        withBundleChatbot(
+          withLogoInSiteBrief(finalLegacyDocument as Record<string, any>, {
+            ...input,
+            language: contentLanguage,
+            brief: generationBrief
+          }),
+          isBundlePlan
+        ),
+        studioSpec,
+        withStudioPipeline(studioProviderMetadata, "legacy_candidate")
       ),
       chatbotEmbedSrc
     );

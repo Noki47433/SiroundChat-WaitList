@@ -52,7 +52,7 @@ export async function searchPexels(query: string, perPage = 8): Promise<Normaliz
 
   const data = (await response.json()) as PexelsResponse;
   return (data.photos ?? []).map((photo) => ({
-    url: photo.src.large2x || photo.src.large || photo.src.original,
+    url: photo.src.original || photo.src.large2x || photo.src.large,
     width: photo.width,
     height: photo.height,
     alt: photo.alt || "Stock photo",

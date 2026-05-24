@@ -9,7 +9,15 @@ import { ensureBusinessRow } from "@/lib/utils/tenant";
 import { isAuthDisabled } from "@/lib/config/auth";
 import type { WidgetTheme } from "@/lib/types/core";
 import { logActivity } from "@/lib/activity/log";
-import { getBusinessEntitlementAccess } from "@/lib/server/billing-access";
+import {
+  buildUpgradeRequiredResponse,
+  getBusinessEntitlementAccess
+} from "@/lib/server/billing-access";
+import { BotConfigSchema } from "@/lib/validation/bot-config";
+import { resolveBotConfig } from "@/lib/config/industry-presets";
+import type { BotConfig } from "@/lib/config/industry-presets";
+
+const BOT_CONFIG_ONBOARDING_KEY = "botConfig";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -29,7 +37,8 @@ const UpdateBotSettingsSchema = z.object({
   businessName: z.string().min(1).max(80).optional(),
   greeting: z.string().min(1).max(240).optional(),
   tonePreset: TonePresetSchema.optional(),
-  theme: ThemeConfigSchema.optional()
+  theme: ThemeConfigSchema.optional(),
+  botConfig: BotConfigSchema.optional()
 });
 
 type TonePreset = z.infer<typeof TonePresetSchema>;
@@ -219,7 +228,7 @@ export async function GET() {
 
     const billingAccess = await getBusinessEntitlementAccess(tenant.businessId, "chatbot");
     if (!billingAccess.allowed) {
-      return jsonNoStore({ error: "Chatbot settings are not available on the current plan" }, { status: 403 });
+      return buildUpgradeRequiredResponse("chatbot", billingAccess);
     }
 
     const admin = getSupabaseAdminClientIfAvailable();
@@ -238,6 +247,9 @@ export async function GET() {
 
     const safeTheme = normalizeStoredTheme(stored?.theme ?? DEFAULT_STORED_THEME);
 
+    const rawBotConfig = row.onboarding_data?.[BOT_CONFIG_ONBOARDING_KEY] ?? null;
+    const botConfig: BotConfig = resolveBotConfig(rawBotConfig);
+
     return jsonNoStore({
       businessId: row.id,
       widgetKey,
@@ -245,7 +257,8 @@ export async function GET() {
       greeting: normalizeGreeting(row.greeting),
       tonePreset: resolveTonePreset(row.tone),
       logoUrl: row.logo_url ? withCacheBust(row.logo_url) : null,
-      theme: toThemeConfig(safeTheme)
+      theme: toThemeConfig(safeTheme),
+      botConfig
     });
   } catch (err) {
     console.error(err);
@@ -278,7 +291,7 @@ export async function PATCH(req: Request) {
 
     const billingAccess = await getBusinessEntitlementAccess(tenant.businessId, "chatbot");
     if (!billingAccess.allowed) {
-      return jsonNoStore({ error: "Chatbot settings are not available on the current plan" }, { status: 403 });
+      return buildUpgradeRequiredResponse("chatbot", billingAccess);
     }
 
     const admin = getSupabaseAdminClientIfAvailable();
@@ -312,32 +325,76 @@ export async function PATCH(req: Request) {
 
     let safeTheme = normalizeStoredTheme(stored?.theme ?? DEFAULT_STORED_THEME);
 
-    if (parsed.theme) {
-      safeTheme = toStoredThemeFromConfig(parsed.theme, stored?.theme);
+    const needsOnboardingUpdate = parsed.theme || parsed.botConfig;
 
-      const nextOnboardingData = setWidgetConfigInOnboardingData(row.onboarding_data, {
-        ...(stored ?? {}),
-        siteId: widgetKey,
-        greeting: normalizeGreeting(row.greeting),
-        businessName: normalizeBusinessName(row.business_name),
-        tonePreset: resolveTonePreset(row.tone),
-        theme: safeTheme as WidgetTheme,
-        logoUrl: row.logo_url ?? stored?.logoUrl ?? null,
-        iconId: stored?.iconId ?? null
-      });
+    if (needsOnboardingUpdate) {
+      if (parsed.theme) {
+        safeTheme = toStoredThemeFromConfig(parsed.theme, stored?.theme);
+      }
+
+      let currentOnboardingData = row.onboarding_data ?? {};
+
+      if (parsed.theme) {
+        currentOnboardingData = setWidgetConfigInOnboardingData(currentOnboardingData, {
+          ...(stored ?? {}),
+          siteId: widgetKey,
+          greeting: normalizeGreeting(row.greeting),
+          businessName: normalizeBusinessName(row.business_name),
+          tonePreset: resolveTonePreset(row.tone),
+          theme: safeTheme as WidgetTheme,
+          logoUrl: row.logo_url ?? stored?.logoUrl ?? null,
+          iconId: stored?.iconId ?? null
+        });
+      }
+
+      if (parsed.botConfig) {
+        currentOnboardingData = {
+          ...currentOnboardingData,
+          [BOT_CONFIG_ONBOARDING_KEY]: parsed.botConfig
+        };
+      }
 
       const { error: widgetConfigError } = await (admin as any)
         .from("businesses")
         .update({
-          onboarding_data: nextOnboardingData,
+          onboarding_data: currentOnboardingData,
           updated_at: new Date().toISOString()
         })
         .eq("id", tenant.businessId);
 
       if (widgetConfigError) {
-        console.error("[BOT_SETTINGS_WIDGET_CONFIG_SAVE_ERROR]", widgetConfigError);
+        console.error("[BOT_SETTINGS_SAVE_ERROR]", widgetConfigError);
         return jsonNoStore({ error: "Failed to save bot settings" }, { status: 500 });
       }
+
+      // Re-fetch to get the freshly saved data
+      const refreshedRow = await fetchBusinessRow(admin, tenant.businessId);
+      if (!refreshedRow) {
+        return jsonNoStore({ error: "Business not found" }, { status: 404 });
+      }
+
+      const rawBotConfigRefreshed = refreshedRow.onboarding_data?.[BOT_CONFIG_ONBOARDING_KEY] ?? null;
+      const botConfigRefreshed: BotConfig = resolveBotConfig(rawBotConfigRefreshed);
+
+      await logActivity({
+        businessId: tenant.businessId,
+        userId: user?.id ?? null,
+        actorType: "business_user",
+        eventType: "chatbot_edit",
+        summary: "Updated chatbot settings",
+        meta: { updated_fields: Object.keys(parsed) }
+      });
+
+      return jsonNoStore({
+        businessId: refreshedRow.id,
+        widgetKey,
+        businessName: normalizeBusinessName(refreshedRow.business_name),
+        greeting: normalizeGreeting(refreshedRow.greeting),
+        tonePreset: resolveTonePreset(refreshedRow.tone),
+        logoUrl: refreshedRow.logo_url ? withCacheBust(refreshedRow.logo_url) : null,
+        theme: toThemeConfig(safeTheme),
+        botConfig: botConfigRefreshed
+      });
     }
 
     await logActivity({
@@ -351,6 +408,9 @@ export async function PATCH(req: Request) {
       }
     });
 
+    const rawBotConfig = row.onboarding_data?.[BOT_CONFIG_ONBOARDING_KEY] ?? null;
+    const botConfig: BotConfig = resolveBotConfig(rawBotConfig);
+
     return jsonNoStore({
       businessId: row.id,
       widgetKey,
@@ -358,7 +418,8 @@ export async function PATCH(req: Request) {
       greeting: normalizeGreeting(row.greeting),
       tonePreset: resolveTonePreset(row.tone),
       logoUrl: row.logo_url ? withCacheBust(row.logo_url) : null,
-      theme: toThemeConfig(safeTheme)
+      theme: toThemeConfig(safeTheme),
+      botConfig
     });
   } catch (err) {
     console.error(err);

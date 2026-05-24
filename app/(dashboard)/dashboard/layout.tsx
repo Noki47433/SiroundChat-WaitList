@@ -8,6 +8,7 @@ import { ToastProvider } from "@/components/ui/toast";
 import { requireUser } from "@/lib/auth/require-user";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { ensureBusinessRow } from "@/lib/tenant";
+import { resolveBotConfig, type ActionType } from "@/lib/config/industry-presets";
 
 const dashboardBodyFont = Manrope({
   subsets: ["latin"],
@@ -39,11 +40,12 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   const supabase = getSupabaseServerClient();
   let resolvedBusinessId: string | undefined;
   let resolvedOrgName = fallbackOrgName;
+  let resolvedActionType: ActionType = "restaurant_reservation";
 
   if (authUser?.id) {
     const { data: businessRow, error: businessError } = await (supabase as any)
       .from("businesses")
-      .select("id, business_name")
+      .select("id, business_name, onboarding_data")
       .or(`owner_id.eq.${authUser.id},owner_user_id.eq.${authUser.id}`)
       .order("created_at", { ascending: false })
       .limit(1)
@@ -56,6 +58,8 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     if (businessRow?.id) {
       resolvedBusinessId = businessRow.id;
       resolvedOrgName = businessRow.business_name?.trim() || fallbackOrgName;
+      const botConfig = resolveBotConfig(businessRow.onboarding_data?.botConfig);
+      resolvedActionType = botConfig.actionType;
     } else {
       try {
         const ensured = await ensureBusinessRow({
@@ -75,7 +79,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
         className={`${dashboardBodyFont.variable} ${dashboardHeadingFont.variable} dashboard-theme min-h-dvh text-white`}
       >
         <div className="flex min-h-dvh">
-          <Sidebar orgName={resolvedOrgName} />
+          <Sidebar orgName={resolvedOrgName} actionType={resolvedActionType} />
           <div className="flex min-h-dvh min-w-0 flex-1 flex-col">
             <Topbar
               orgName={resolvedOrgName}

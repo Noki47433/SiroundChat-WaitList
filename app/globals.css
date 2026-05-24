@@ -420,3 +420,53 @@ body {
   background: linear-gradient(160deg, rgba(48, 34, 11, 0.58), rgba(15, 22, 35, 0.88));
   color: #fff2c6;
 }
+
+.builder-studio {
+  --builder-studio-bg: #fffdf6;
+  --builder-studio-surface: rgba(255, 255, 255, 0.88);
+  --builder-studio-surface-muted: #fff7d1;
+  --builder-studio-panel: rgba(255, 255, 255, 0.96);
+  --builder-studio-row: rgba(255, 253, 246, 0.74);
+  --builder-studio-chip: rgba(255, 255, 255, 0.76);
+  --builder-studio-border: rgba(31, 41, 51, 0.12);
+  --builder-studio-border-strong: rgba(245, 158, 11, 0.32);
+  --builder-studio-text: #161616;
+  --builder-studio-inverse-text: #fffdf6;
+  --builder-studio-muted: #6b6252;
+  --builder-studio-placeholder: rgba(107, 98, 82, 0.58);
+  --builder-studio-accent: var(--sc-yellow, #ffd400);
+  --builder-studio-accent-text: #2d1c00;
+  --builder-studio-danger: #b42318;
+  --builder-studio-shadow: 0 26px 70px rgba(15, 23, 42, 0.14);
+  --builder-studio-card-shadow: 0 18px 42px rgba(15, 23, 42, 0.08);
+  color-scheme: light;
+  background: linear-gradient(180deg, #fffdf6 0%, #f7f4ec 50%, #f4f6fb 100%);
+}
+
+.dashboard-theme .builder-studio,
+.dark .builder-studio {
+  --builder-studio-bg: #050b13;
+  --builder-studio-surface: rgba(12, 23, 39, 0.78);
+  --builder-studio-surface-muted: rgba(255, 216, 74, 0.1);
+  --builder-studio-panel: rgba(9, 18, 31, 0.94);
+  --builder-studio-row: rgba(8, 17, 30, 0.72);
+  --builder-studio-chip: rgba(255, 255, 255, 0.04);
+  --builder-studio-border: rgba(255, 207, 92, 0.18);
+  --builder-studio-border-strong: rgba(255, 222, 129, 0.38);
+  --builder-studio-text: #fff6dc;
+  --builder-studio-inverse-text: #07101d;
+  --builder-studio-muted: #c8b98e;
+  --builder-studio-placeholder: rgba(232, 216, 170, 0.46);
+  --builder-studio-accent: var(--dash-accent, #ffd84a);
+  --builder-studio-accent-text: #2d1c00;
+  --builder-studio-danger: #fca5a5;
+  --builder-studio-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 26px 70px rgba(0, 0, 0, 0.44),
+    0 0 0 1px rgba(255, 198, 76, 0.12);
+  --builder-studio-card-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 18px 42px rgba(0, 0, 0, 0.34);
+  color-scheme: dark;
+  background: linear-gradient(180deg, rgba(4, 9, 15, 0.2) 0%, rgba(6, 17, 30, 0.34) 100%);
+}

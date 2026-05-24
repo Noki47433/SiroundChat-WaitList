@@ -22,6 +22,7 @@ import {
   markChecklistTaskComplete,
   readDashboardOnboardingState
 } from "@/app/(dashboard)/dashboard/_components/onboarding/state";
+import { useBotSettingsSave } from "@/app/(dashboard)/dashboard/bot-settings/BotSettingsLayout";
 import { cn } from "@/lib/utils/cn";
 import type { BotSettings, ToneExamples, TonePreset } from "@/lib/types";
 
@@ -194,6 +195,7 @@ export function BotSettingsPanel({
   examples: ToneExamples;
 }) {
   const { push } = useToast();
+  const { registerSave, unregisterSave } = useBotSettingsSave();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const saveBotSettingsRef = useRef<((options?: { silent?: boolean }) => Promise<BotSettingsResponse | null>) | null>(null);
   const initialFormState: BotSettingsForm = {
@@ -382,6 +384,14 @@ export function BotSettingsPanel({
     }
   };
   saveBotSettingsRef.current = saveBotSettings;
+
+  // Register with unified save layout
+  useEffect(() => {
+    registerSave("botSettings", async () => {
+      await saveBotSettingsRef.current?.({ silent: true });
+    });
+    return () => unregisterSave("botSettings");
+  }, [registerSave, unregisterSave]);
 
   useEffect(() => {
     if (!deployComplete || loading || saving || !isDirty) return;
@@ -612,74 +622,23 @@ export function BotSettingsPanel({
             </div>
           </Card>
 
-          <div>
-            <Button variant="primary" onClick={() => void saveBotSettings()} disabled={!isDirty || saving}>
-              {saving ? "Saving..." : "Save changes"}
-            </Button>
-            <p className="mt-2 text-xs text-white/60">Live widget changes save automatically a moment after you edit them.</p>
-            {loading ? <p className="mt-2 text-xs text-white/60">Loading settings...</p> : null}
-            {loadError ? <p className="mt-2 text-xs text-rose-200">{loadError}</p> : null}
-          </div>
+          {loadError ? <p className="mt-2 text-xs text-rose-200">{loadError}</p> : null}
         </div>
 
         <Card className="space-y-4 border-white/10 bg-neutral-950/70">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-semibold">Live tone preview</p>
-              <p className="text-xs text-white/60">A realistic chat experience with your tone.</p>
+              <p className="text-sm font-semibold">Live preview</p>
+              <p className="text-xs text-white/60">Matches the real chatbot your visitors see.</p>
             </div>
             <Badge variant="info">{toneLabels[form.tone]}</Badge>
           </div>
-          <div
-            className="rounded-3xl border border-white/10 p-5"
-            style={{ backgroundColor: previewTheme.backgroundColor, color: previewTheme.textColor }}
-          >
-            <div className="flex items-center justify-between">
-              <div className="space-y-1">
-                <p className="text-sm font-semibold" style={{ color: previewTheme.textColor }}>
-                  {form.businessName}
-                </p>
-                <p className="text-xs" style={{ color: previewTheme.textColor, opacity: 0.6 }}>
-                  SiroundChat assistant
-                </p>
-              </div>
-              <span className="rounded-full bg-emerald-500/20 px-2 py-1 text-[10px] uppercase text-emerald-200">
-                Online
-              </span>
-            </div>
-            <div className="mt-5 space-y-5">
-              <div className="flex">
-                <div
-                  className="max-w-[80%] rounded-2xl bg-white/10 px-4 py-3 text-sm shadow"
-                  style={{ color: previewTheme.textColor }}
-                >
-                  {previewGreeting}
-                </div>
-              </div>
-              {previewExamples.map((example) => (
-                <div key={example.question} className="space-y-3">
-                  <div className="flex justify-end">
-                    <div
-                      className="max-w-[80%] rounded-2xl px-4 py-3 text-sm text-white shadow"
-                      style={{
-                        backgroundImage: `linear-gradient(135deg, ${previewTheme.primaryColor}, ${previewTheme.accentColor})`
-                      }}
-                    >
-                      {example.question}
-                    </div>
-                  </div>
-                  <div className="flex">
-                    <div
-                      className="max-w-[80%] rounded-2xl bg-white/10 px-4 py-3 text-sm shadow"
-                      style={{ color: previewTheme.textColor }}
-                    >
-                      {example.answer}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          <ChatbotPreview
+            businessName={form.businessName}
+            greeting={previewGreeting}
+            theme={previewTheme}
+            toneExample={previewExamples[0] ?? null}
+          />
         </Card>
       </div>
     );
@@ -1083,6 +1042,158 @@ export function BotSettingsPanel({
             </div>
           </div>
         </Card>
+      </div>
+    </div>
+  );
+}
+
+/* ── Chatbot Preview ─────────────────────────────────────────────────────── */
+
+function hexToRgbPreview(hex: string) {
+  const clean = hex.replace("#", "").trim();
+  const full = clean.length === 3 ? clean.split("").map((c) => c + c).join("") : clean;
+  const num = parseInt(full, 16);
+  return { r: (num >> 16) & 255, g: (num >> 8) & 255, b: num & 255 };
+}
+
+function isLightPreview(hex: string) {
+  try {
+    const { r, g, b } = hexToRgbPreview(hex);
+    return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 > 0.7;
+  } catch {
+    return false;
+  }
+}
+
+function mixPreview(baseHex: string, mixHex: string, weight: number) {
+  try {
+    const b = hexToRgbPreview(baseHex);
+    const m = hexToRgbPreview(mixHex);
+    const r = Math.round(b.r + (m.r - b.r) * weight);
+    const g = Math.round(b.g + (m.g - b.g) * weight);
+    const bv = Math.round(b.b + (m.b - b.b) * weight);
+    return `rgb(${r},${g},${bv})`;
+  } catch {
+    return baseHex;
+  }
+}
+
+function ChatbotPreview({
+  businessName,
+  greeting,
+  theme,
+  toneExample,
+}: {
+  businessName: string;
+  greeting: string;
+  theme: ThemeConfig;
+  toneExample: { question: string; answer: string } | null;
+}) {
+  const lightBg = isLightPreview(theme.backgroundColor);
+  const panelBg = mixPreview(theme.backgroundColor, lightBg ? "#0f172a" : "#020617", lightBg ? 0.03 : 0.14);
+  const botBubbleBg = mixPreview(theme.backgroundColor, lightBg ? "#ffffff" : "#020617", lightBg ? 0.22 : 0.36);
+  const composerBg = lightBg
+    ? mixPreview(theme.backgroundColor, "#ffffff", 0.22)
+    : mixPreview(theme.backgroundColor, "#020617", 0.24);
+  const dividerColor = lightBg ? "rgba(15,23,42,0.12)" : "rgba(148,163,184,0.18)";
+  const borderColor = lightBg ? "rgba(15,23,42,0.16)" : "rgba(148,163,184,0.24)";
+  const placeholderColor = lightBg ? "rgba(15,23,42,0.34)" : "rgba(226,232,240,0.42)";
+  const watermarkColor = lightBg ? "rgba(15,23,42,0.4)" : "rgba(226,232,240,0.62)";
+  const composerTextColor = lightBg ? theme.textColor : "#ffffff";
+
+  return (
+    <div
+      className="overflow-hidden rounded-[24px] shadow-[0_20px_60px_rgba(0,0,0,0.3)]"
+      style={{ background: panelBg, color: theme.textColor, border: `1px solid ${borderColor}` }}
+    >
+      {/* Header — gradient with business name */}
+      <div
+        className="mx-3 mt-3 rounded-[18px] border border-white/10 px-4 py-3"
+        style={{ background: `linear-gradient(135deg, ${theme.primaryColor}, ${theme.accentColor})`, color: "#fff" }}
+      >
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] border border-white/20 bg-white/10">
+            <span className="text-base font-bold text-white">{businessName?.[0] ?? "S"}</span>
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="truncate text-sm font-semibold text-white">{businessName || "Your Business"}</p>
+            <div className="flex items-center gap-1.5 text-xs text-white/85">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+              Online
+            </div>
+          </div>
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/15 text-white text-lg leading-none">
+            ×
+          </div>
+        </div>
+      </div>
+
+      {/* Messages */}
+      <div
+        className="mx-3 mt-3 rounded-[18px] p-3 space-y-3"
+        style={{ background: panelBg, border: `1px solid ${borderColor}` }}
+      >
+        {/* Bot greeting */}
+        <div className="flex justify-start">
+          <div
+            className="max-w-[82%] rounded-2xl px-3.5 py-2.5 text-[13px] leading-relaxed"
+            style={{ background: botBubbleBg, color: theme.textColor, border: `1px solid ${borderColor}` }}
+          >
+            {greeting}
+          </div>
+        </div>
+
+        {/* User message */}
+        {toneExample && (
+          <div className="flex justify-end">
+            <div
+              className="max-w-[82%] rounded-2xl px-3.5 py-2.5 text-[13px] text-white leading-relaxed"
+              style={{ backgroundImage: `linear-gradient(135deg, ${theme.primaryColor}, ${theme.accentColor})` }}
+            >
+              {toneExample.question}
+            </div>
+          </div>
+        )}
+
+        {/* Bot response */}
+        {toneExample && (
+          <div className="flex justify-start">
+            <div
+              className="max-w-[82%] rounded-2xl px-3.5 py-2.5 text-[13px] leading-relaxed"
+              style={{ background: botBubbleBg, color: theme.textColor, border: `1px solid ${borderColor}` }}
+            >
+              {toneExample.answer}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Input area */}
+      <div className="px-3 py-3" style={{ borderTop: `1px solid ${dividerColor}`, background: panelBg }}>
+        {/* Fake input bar */}
+        <div
+          className="flex items-center gap-2 rounded-[20px] px-3.5 py-2"
+          style={{ background: composerBg, border: `1px solid ${borderColor}` }}
+        >
+          <span className="flex-1 text-[13px]" style={{ color: placeholderColor }}>
+            Ask a question...
+          </span>
+          <div
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white"
+            style={{ backgroundImage: `linear-gradient(135deg, ${theme.primaryColor}, ${theme.accentColor})` }}
+          >
+            ↑
+          </div>
+        </div>
+
+        {/* Watermark */}
+        <div
+          className="mt-2 flex items-center justify-center gap-1 text-[11px]"
+          style={{ color: watermarkColor }}
+        >
+          <span className="opacity-70">Powered by</span>
+          <span className="font-semibold opacity-80">SiroundChat</span>
+        </div>
       </div>
     </div>
   );

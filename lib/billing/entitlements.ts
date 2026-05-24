@@ -30,8 +30,7 @@ const isDevBillingBypassEnabled = () => {
   if (explicitFlag === "0" || explicitFlag === "false") return false;
   if (explicitFlag === "1" || explicitFlag === "true") return true;
 
-  // Default-on in local development so teams can iterate on gated UI before live payment callbacks.
-  return true;
+  return false;
 };
 
 export const hasActiveBillingAccess = (
@@ -39,6 +38,10 @@ export const hasActiveBillingAccess = (
   now: Date = new Date()
 ): boolean => {
   if (!subscription) return false;
+
+  if (subscription.status === "free_internal") {
+    return true;
+  }
 
   if (isDevBillingBypassEnabled()) {
     return subscription.status !== "canceled";
