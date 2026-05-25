@@ -143,6 +143,31 @@ function normalizeChatAction(action: unknown): ChatMessageAction | null {
     };
   }
 
+  if (
+    raw.type === "request_pending_confirm" &&
+    typeof raw.actionType === "string" &&
+    typeof raw.businessId === "string" &&
+    typeof raw.conversationId === "string" &&
+    typeof raw.widgetKey === "string" &&
+    raw.fields && typeof raw.fields === "object"
+  ) {
+    const f = raw.fields as Record<string, unknown>;
+    return {
+      type: "request_pending_confirm",
+      actionType: raw.actionType,
+      businessId: raw.businessId,
+      conversationId: raw.conversationId,
+      widgetKey: raw.widgetKey,
+      fields: {
+        name: typeof f.name === "string" ? f.name : null,
+        phone: typeof f.phone === "string" ? f.phone : null,
+        date: typeof f.date === "string" ? f.date : null,
+        time: typeof f.time === "string" ? f.time : null,
+        notes: typeof f.notes === "string" ? f.notes : null,
+      }
+    };
+  }
+
   return null;
 }
 
@@ -238,6 +263,8 @@ export function ChatWindow({
   const [feedbackPrompt, setFeedbackPrompt] = useState<{ conversationId: string; messageId: string } | null>(null);
   const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
   const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
+  // Tracks per-card confirm state: key = "${messageId}-${actionIndex}"
+  const [confirmCardState, setConfirmCardState] = useState<Record<string, "idle" | "submitting" | "done" | "error">>({});
   const [feedbackDownOpen, setFeedbackDownOpen] = useState(false);
   const [feedbackTags, setFeedbackTags] = useState<string[]>([]);
   const [feedbackComment, setFeedbackComment] = useState("");
@@ -600,6 +627,32 @@ export function ChatWindow({
     }
   };
 
+  const confirmRequest = async (
+    cardKey: string,
+    action: Extract<import("@/lib/types/core").ChatMessageAction, { type: "request_pending_confirm" }>
+  ) => {
+    setConfirmCardState((prev) => ({ ...prev, [cardKey]: "submitting" }));
+    try {
+      const res = await fetch("/api/requests/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          businessId: action.businessId,
+          actionType: action.actionType,
+          customerName: action.fields.name ?? "Customer",
+          customerPhone: action.fields.phone ?? null,
+          notes: action.fields.notes ?? null,
+          conversationId: action.conversationId,
+          source: "website",
+        }),
+      });
+      if (!res.ok) throw new Error("submit failed");
+      setConfirmCardState((prev) => ({ ...prev, [cardKey]: "done" }));
+    } catch {
+      setConfirmCardState((prev) => ({ ...prev, [cardKey]: "error" }));
+    }
+  };
+
   const sendMessage = async (overrideText?: string, options?: { displayText?: string }) => {
     const outgoing = (overrideText ?? text).trim();
     if (!outgoing) return;
@@ -736,6 +789,17 @@ export function ChatWindow({
 	      void sendMessage(action.items[0].name, { displayText: action.items[0].name });
 	    }
 	  };
+
+  const formatConfirmDate = (iso: string | null) => {
+    if (!iso) return null;
+    try {
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return iso;
+      return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+    } catch {
+      return iso;
+    }
+  };
 
   return (
     <div className="pointer-events-none fixed bottom-0 right-0 z-50" style={{ width: PANEL_W, height: PANEL_H }} aria-hidden={!open}>
@@ -902,6 +966,99 @@ export function ChatWindow({
 	                                if (action.type === "ask_qualification_question") {
 	                                  return null;
 	                                }
+
+                                if (action.type === "request_pending_confirm") {
+                                  const cardKey = `${m.id}-action-${index}`;
+                                  const cardStatus = confirmCardState[cardKey] ?? "idle";
+                                  const labelMap: Record<string, string> = {
+                                    name: "Name", phone: "Phone", date: "Date", time: "Time",
+                                  };
+                                  const fieldRows = (Object.entries(action.fields) as [string, string | null][])
+                                    .filter(([k, v]) => k !== "notes" && v);
+
+                                  return (
+                                    <div
+                                      key={cardKey}
+                                      className="w-full rounded-2xl border overflow-hidden"
+                                      style={{
+                                        background: inputBackground,
+                                        borderColor: lightBg ? "rgba(15,23,42,0.12)" : "rgba(148,163,184,0.24)"
+                                      }}
+                                    >
+                                      {/* Card header */}
+                                      <div
+                                        className="px-4 py-2.5"
+                                        style={{ backgroundImage: `linear-gradient(135deg, ${colors.primary}, ${accentColor})` }}
+                                      >
+                                        <p className="text-xs font-semibold text-white uppercase tracking-wide">
+                                          {action.actionType.replace(/_/g, " ")} · Review & Confirm
+                                        </p>
+                                      </div>
+
+                                      {/* Field table */}
+                                      <div className="px-4 py-3 space-y-1.5">
+                                        {fieldRows.map(([key, val]) => (
+                                          <div key={key} className="flex items-start justify-between gap-2">
+                                            <span className="text-xs font-medium opacity-55 shrink-0" style={{ color: colors.text }}>
+                                              {labelMap[key] ?? key.replace(/_/g, " ")}
+                                            </span>
+                                            <span className="text-xs font-semibold text-right" style={{ color: colors.text }}>
+                                              {key === "date" ? (formatConfirmDate(val) ?? val) : val}
+                                            </span>
+                                          </div>
+                                        ))}
+                                      </div>
+
+                                      {/* Action buttons */}
+                                      <div
+                                        className="px-4 pb-3"
+                                        style={{ borderTop: dividerBorder }}
+                                      >
+                                        {cardStatus === "done" ? (
+                                          <div className="pt-3 flex items-center gap-2">
+                                            <span className="text-base">✅</span>
+                                            <span className="text-xs font-semibold" style={{ color: colors.primary }}>
+                                              Request sent! We'll confirm shortly.
+                                            </span>
+                                          </div>
+                                        ) : cardStatus === "error" ? (
+                                          <div className="pt-3 flex items-center gap-2">
+                                            <span className="text-base">⚠️</span>
+                                            <span className="text-xs font-semibold text-red-500">
+                                              Could not send. Please try again.
+                                            </span>
+                                          </div>
+                                        ) : (
+                                          <div className="pt-3 flex gap-2">
+                                            <button
+                                              type="button"
+                                              disabled={cardStatus === "submitting"}
+                                              onClick={() => void confirmRequest(cardKey, action)}
+                                              className="flex flex-1 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold text-white transition disabled:opacity-60"
+                                              style={{ backgroundImage: `linear-gradient(135deg, ${colors.primary}, ${accentColor})` }}
+                                            >
+                                              <span aria-hidden>👍</span>
+                                              {cardStatus === "submitting" ? "Sending…" : "Confirm"}
+                                            </button>
+                                            <button
+                                              type="button"
+                                              disabled={cardStatus === "submitting"}
+                                              onClick={() => void sendMessage("I'd like to change something in my request")}
+                                              className="flex flex-1 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition disabled:opacity-60"
+                                              style={{
+                                                background: lightBg ? "rgba(15,23,42,0.08)" : "rgba(148,163,184,0.2)",
+                                                color: colors.text
+                                              }}
+                                            >
+                                              <span aria-hidden>👎</span>
+                                              Change
+                                            </button>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                }
 
 	                                if (action.type !== "show_recommendations" || !Array.isArray(action.items) || action.items.length === 0) {
 	                                  return null;

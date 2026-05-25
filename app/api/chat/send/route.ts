@@ -1165,6 +1165,30 @@ const extractTime = (message: string) => {
   return null;
 };
 
+const extractDateFromConversation = (text: string): string | null => {
+  const lines = text.split("\n");
+  for (const line of lines) {
+    const d = extractDate(line.trim());
+    if (d) return d;
+  }
+  return null;
+};
+
+const extractTimeFromConversation = (text: string): string | null => {
+  const lines = text.split("\n");
+  for (const line of lines) {
+    // Also handle bare hour like "13" → "13:00"
+    const bare = line.trim().match(/^(\d{1,2})$/);
+    if (bare) {
+      const h = Number(bare[1]);
+      if (h >= 0 && h <= 23) return `${String(h).padStart(2, "0")}:00`;
+    }
+    const t = extractTime(line.trim());
+    if (t) return t;
+  }
+  return null;
+};
+
 const buildReservationDateTime = (date: string, time: string, timeZone: string) => {
   const [year, month, day] = date.split("-").map(Number);
   const [hour, minute] = time.split(":").map(Number);
@@ -2193,6 +2217,13 @@ export async function POST(req: Request) {
     const chatLocale = detectChatLocale(body.message, reservationState.locale);
     const hasDietaryIntent = isDietaryOrAllergyIntent(normalizedMessage, messageTokens);
     const salesOpportunityKind = isSiroundChatDemo ? null : detectSalesOpportunityKind(body.message, normalizedMessage, messageTokens);
+
+    // Whether this business uses a non-restaurant action flow (appointment, test drive, etc.)
+    const actionFlowAllowed =
+      !isSiroundChatDemo &&
+      botConfig.bookingsEnabled &&
+      botConfig.actionType !== "none" &&
+      botConfig.actionType !== "restaurant_reservation";
 
     const directDemoReply = isSiroundChatDemo ? getSiroundChatDemoReply(body.message, chatLocale) : null;
     if (directDemoReply) {
@@ -3306,7 +3337,7 @@ export async function POST(req: Request) {
     const shouldSuppressFollowup =
       Boolean(followupCandidate) &&
       ((followupCandidate?.intent === "menu_pricing" && directPriceIntent) ||
-        (followupCandidate?.intent === "reservation" && inReservationFlow));
+        (followupCandidate?.intent === "reservation" && (inReservationFlow || actionFlowAllowed)));
     let appendedFollowup = false;
     if (followupCandidate && !shouldSuppressFollowup) {
       reply = `${reply}\n\n${followupCandidate.question}`;
@@ -3330,20 +3361,14 @@ export async function POST(req: Request) {
 
     const assistantMessageId = assistantMessage?.id ? String(assistantMessage.id) : null;
 
-    // Non-restaurant action flow: detect completion and persist the request record
-    const actionFlowAllowed =
-      !isSiroundChatDemo &&
-      botConfig.bookingsEnabled &&
-      botConfig.actionType !== "none" &&
-      botConfig.actionType !== "restaurant_reservation";
-
+    // Non-restaurant action flow: detect completion and show confirmation card to the user
     if (actionFlowAllowed) {
       const existingActionState = (reservationState as any).action_request_state as
-        | { submitted: boolean; request_id: string | null }
+        | { pending?: boolean; submitted?: boolean; request_id?: string | null }
         | undefined;
-      const alreadySubmitted = existingActionState?.submitted === true;
+      const alreadyHandled = existingActionState?.submitted === true || existingActionState?.pending === true;
 
-      if (!alreadySubmitted) {
+      if (!alreadyHandled) {
         const replyLower = reply.toLowerCase();
         const isCompletion = ACTION_COMPLETION_PHRASES.some((phrase) => replyLower.includes(phrase));
 
@@ -3357,8 +3382,11 @@ export async function POST(req: Request) {
           const extractedName = extractNameFromConversation(userMessages);
           const extractedPhone = extractPhoneFromConversation(userMessages);
 
-          // Require at least name or phone before creating the record to avoid false positives
+          // Require at least name or phone to avoid false positives
           if (extractedName || extractedPhone) {
+            const extractedDate = extractDateFromConversation(userMessages);
+            const extractedTime = extractTimeFromConversation(userMessages);
+
             const conversationSummary = [
               ...historyItems.slice(-12).map(
                 (m) => `${m.role === "user" ? "Customer" : "Bot"}: ${m.content}`
@@ -3367,22 +3395,25 @@ export async function POST(req: Request) {
               `Bot: ${reply}`,
             ].join("\n");
 
-            try {
-              const result = await createGenericRequestRecord({
-                adminClient: admin as any,
-                businessId,
-                actionType: botConfig.actionType,
-                customerName: extractedName ?? "Customer",
-                customerPhone: extractedPhone ?? null,
+            // Push a confirmation action — the widget will show a table with 👍/👎
+            orchestratorActions.push({
+              type: "request_pending_confirm",
+              actionType: botConfig.actionType,
+              businessId,
+              conversationId,
+              widgetKey: body.key,
+              fields: {
+                name: extractedName ?? null,
+                phone: extractedPhone ?? null,
+                date: extractedDate ?? null,
+                time: extractedTime ?? null,
                 notes: conversationSummary.slice(0, 2000),
-                conversationId,
-                source: "website",
-                sendSmsAlert: true,
-              });
+              },
+            });
 
-              const requestId = (result.request as any)?.id as string | undefined;
-              (reservationState as any).action_request_state = { submitted: true, request_id: requestId ?? null };
-
+            // Mark state as pending to avoid duplicate cards on retries
+            (reservationState as any).action_request_state = { pending: true };
+            try {
               await (admin as any)
                 .from("conversation_reservation_state")
                 .upsert(
@@ -3390,7 +3421,7 @@ export async function POST(req: Request) {
                   { onConflict: "conversation_id" }
                 );
             } catch (err) {
-              log("warn", "Failed to persist non-restaurant action request", { error: err, businessId });
+              log("warn", "Failed to persist pending action state", { error: err, businessId });
             }
           }
         }

@@ -93,7 +93,7 @@ type ActivityPatchCard = {
 
 type ActivityEntry = {
   id: string;
-  kind: "user" | "assistant" | "error";
+  kind: "user" | "assistant" | "error" | "clarification";
   title: string;
   detail?: string;
   createdAt: string;
@@ -563,6 +563,7 @@ export function GenerationScreen({ siteId }: GenerationScreenProps) {
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [previewRevision, setPreviewRevision] = useState(0);
+  const [previewPage, setPreviewPage] = useState<string>("home");
   const [previewLoading, setPreviewLoading] = useState(true);
   const [liveStatus, setLiveStatus] = useState<string | null>(null);
   const [previewDevice, setPreviewDevice] = useState<PreviewDevice>("desktop");
@@ -756,8 +757,8 @@ export function GenerationScreen({ siteId }: GenerationScreenProps) {
 
   const previewUrl = useMemo(() => {
     const slug = siteSnapshot?.slug || "preview";
-    return `/s/${slug}?preview=true&siteId=${siteId}&page=home&v=${previewRevision}`;
-  }, [previewRevision, siteId, siteSnapshot?.slug]);
+    return `/s/${slug}?preview=true&siteId=${siteId}&page=${previewPage}&v=${previewRevision}`;
+  }, [previewPage, previewRevision, siteId, siteSnapshot?.slug]);
 
   const refreshSiteSnapshot = useCallback(async () => {
     const snapshot = await loadSiteSnapshot();
@@ -979,6 +980,55 @@ export function GenerationScreen({ siteId }: GenerationScreenProps) {
         }
 
         const data = await response.json();
+
+        // Handle clarification / advisory responses (not errors, but no document update)
+        if (data?.type === "clarification_needed" || data?.type === "advisory") {
+          clearStageTimers();
+          setLiveStatus(null);
+          const message =
+            data.type === "clarification_needed"
+              ? (data.clarification?.message ?? "Please provide more information to complete this edit.")
+              : (data.advisory ?? "");
+          appendEntries([
+            createEntry(
+              "clarification",
+              data.type === "clarification_needed" ? "More information needed" : "Template note",
+              message
+            )
+          ]);
+          return false;
+        }
+
+        // Handle page_added — update document and switch preview to new page
+        if (data?.type === "page_added") {
+          clearStageTimers();
+          setLiveStatus(null);
+          const resolvedDoc = parseRenderDocument(data.siteDocument);
+          if (resolvedDoc) {
+            setSiteSnapshot((current) =>
+              current ? { ...current, renderDocument: resolvedDoc, updatedAt: new Date().toISOString() } : current
+            );
+            setPreviewRevision((v) => v + 1);
+          }
+          if (typeof data.pageSlug === "string") {
+            setPreviewPage(data.pageSlug);
+          }
+          assistantVersionRef.current += 1;
+          appendEntries([
+            createEntry(
+              "assistant",
+              `Page added: ${data.pageTitle ?? data.pageSlug ?? "New page"}`,
+              [
+                `Slug: /${data.pageSlug ?? ""}`,
+                data.knowledgeUsed ? "Content generated from your business documents." : null
+              ]
+                .filter(Boolean)
+                .join(" · ")
+            )
+          ]);
+          return true;
+        }
+
         const resolvedDocument = parseRenderDocument(data?.siteDocument);
         if (!resolvedDocument) {
           throw new Error("The edit completed without a valid preview document.");
@@ -1630,6 +1680,21 @@ export function GenerationScreen({ siteId }: GenerationScreenProps) {
                           </div>
                         </div>
                       ) : null}
+                    </div>
+                  </div>
+                ) : entry.kind === "clarification" ? (
+                  <div
+                    key={entry.id}
+                    className="rounded-[22px] border border-amber-500/30 bg-amber-950/30 px-4 py-4"
+                  >
+                    <div className="flex items-start gap-3">
+                      <AlertCircle className="mt-1 h-4.5 w-4.5 text-amber-400" />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-white">{entry.title}</p>
+                        {entry.detail ? (
+                          <p className="mt-1 text-sm leading-6 text-amber-200/80">{entry.detail}</p>
+                        ) : null}
+                      </div>
                     </div>
                   </div>
                 ) : (

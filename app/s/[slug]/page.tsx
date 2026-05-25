@@ -21,6 +21,7 @@ import {
 } from "@/lib/utils/published-site-url";
 import { getBusinessEntitlementAccess } from "@/lib/server/billing-access";
 import { resolveLiveChat } from "@/lib/website-builder/live-chat";
+import { IntegratedAdditionalPageRenderer } from "@/components/templates/IntegratedAdditionalPageRenderer";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -349,6 +350,23 @@ export default async function PublicSitePage({ params, searchParams }: PageProps
     description: seo?.description ?? undefined,
     url: data.preview ? undefined : canonicalUrl
   };
+
+  // Render additional page if ?page= param matches a known page slug
+  const requestedPage = searchParams?.page && searchParams.page !== "home"
+    ? searchParams.page
+    : null;
+  if (requestedPage && integratedDoc?.additionalPages?.length) {
+    const addlPage = integratedDoc.additionalPages.find((p) => p.slug === requestedPage);
+    if (addlPage) {
+      return (
+        <IntegratedAdditionalPageRenderer
+          document={integratedDoc}
+          page={addlPage}
+          siteId={data.site.id as string}
+        />
+      );
+    }
+  }
 
   return (
     <>

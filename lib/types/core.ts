@@ -112,6 +112,21 @@ export type ChatMessageAction =
       type: "ask_qualification_question";
       field: "budget_range" | "urgency" | "decision_maker";
       question: string;
+    }
+  | {
+      /** Non-restaurant action request collected — awaiting user confirmation */
+      type: "request_pending_confirm";
+      actionType: string;
+      businessId: string;
+      conversationId: string;
+      widgetKey: string;
+      fields: {
+        name: string | null;
+        phone: string | null;
+        date: string | null;
+        time: string | null;
+        notes: string | null;
+      };
     };
 
 export interface ChatMessage {
