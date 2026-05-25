@@ -1018,7 +1018,7 @@ export function ChatWindow({
                                           <div className="pt-3 flex items-center gap-2">
                                             <span className="text-base">✅</span>
                                             <span className="text-xs font-semibold" style={{ color: colors.primary }}>
-                                              Request sent! We'll confirm shortly.
+                                              Request sent! We&apos;ll confirm shortly.
                                             </span>
                                           </div>
                                         ) : cardStatus === "error" ? (

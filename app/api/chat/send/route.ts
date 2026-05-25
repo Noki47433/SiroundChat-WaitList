@@ -42,46 +42,92 @@ import { createGenericRequestRecord } from "@/lib/reservations/request-operation
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const ACTION_COMPLETION_PHRASES = [
+  // Passing phrases
   "i'll pass your",
   "i will pass your",
+  "i've passed your",
+  "i have passed your",
   "pass your request",
   "pass this request",
+  "passing your",
+  "forwarded your",
+  "forwarding your",
+  "have forwarded",
+  // Submission/receipt phrases
   "submitted your request",
+  "your request has been",
+  "we have your",
+  "we've received your",
+  "received your request",
+  "request has been sent",
+  "request has been noted",
+  "i've noted your",
+  "noted your request",
+  "noted all your",
+  // Follow-up phrases
   "request to the team",
+  "details to the team",
   "they will confirm",
   "team will be in touch",
   "team will confirm",
   "will be in touch shortly",
   "will reach out to confirm",
-  "forwarded your",
-  "have forwarded",
-  "i've noted your",
-  "noted your request",
-  "we have your",
-  "we've received your",
-  "received your request",
-  "your request has been",
   "will contact you shortly",
   "will get back to you",
+  "will follow up",
   "soon as possible",
+  "confirm with you shortly",
 ];
 
+const PHONE_LIKE = /(?:\+?[\d][\d\s\-\.\(\)]{5,20}\d)/;
+
 const extractNameFromConversation = (text: string): string | null => {
-  const patterns = [
-    /(?:my name is|i am|i'm|this is|call me|emri im është|emri im eshte)\s+([A-Za-zÀ-ÖØ-öø-ÿ][a-zA-ZÀ-ÖØ-öø-ÿ]+(?: [A-Za-zÀ-ÖØ-öø-ÿ][a-zA-ZÀ-ÖØ-öø-ÿ]+)*)/i,
-    /^([A-Za-zÀ-ÖØ-öø-ÿ][a-zA-ZÀ-ÖØ-öø-ÿ]+(?: [A-Za-zÀ-ÖØ-öø-ÿ][a-zA-ZÀ-ÖØ-öø-ÿ]+)*)[\.,!?]?\s*$/m,
-  ];
-  for (const pattern of patterns) {
-    const match = text.match(pattern);
-    if (match?.[1] && match[1].trim().length >= 2 && match[1].trim().length < 60) {
-      return match[1].trim();
+  // 1) Explicit prefix: "my name is X", "I am X", Albanian variants, etc.
+  const prefixPattern = /(?:my name is|i am|i'm|this is|call me|emri im është|emri im eshte|emri:)\s+([A-Za-zÀ-ÖØ-öø-ÿ][a-zA-ZÀ-ÖØ-öø-ÿ]+(?: [A-Za-zÀ-ÖØ-öø-ÿ][a-zA-ZÀ-ÖØ-öø-ÿ]+)*)/i;
+  const prefixMatch = text.match(prefixPattern);
+  if (prefixMatch?.[1] && prefixMatch[1].trim().length >= 2 && prefixMatch[1].trim().length < 60) {
+    return prefixMatch[1].trim();
+  }
+
+  // 2) AI summary lines like "Name: Noar" or "- Name: Noar"
+  const summaryPattern = /(?:^|\n)\s*[-•]?\s*name\s*:\s*([A-Za-zÀ-ÖØ-öø-ÿ][a-zA-ZÀ-ÖØ-öø-ÿ]+(?: [A-Za-zÀ-ÖØ-öø-ÿ][a-zA-ZÀ-ÖØ-öø-ÿ]+)*)/im;
+  const summaryMatch = text.match(summaryPattern);
+  if (summaryMatch?.[1] && summaryMatch[1].trim().length >= 2) {
+    return summaryMatch[1].trim();
+  }
+
+  // 3) Comma-separated "ask all at once" format: first token before comma/newline that
+  //    looks like a name (only letters, no digits, no phone-like pattern in same token)
+  const lines = text.split("\n");
+  for (const line of lines) {
+    const trimmed = line.trim();
+    // Must contain a comma (multi-field response) and not be a bot line
+    if (!trimmed.includes(",")) continue;
+    const tokens = trimmed.split(/\s*,\s*/);
+    const first = tokens[0]?.trim() ?? "";
+    // First token must be pure alphabetic (name), 2-40 chars, no digits
+    if (
+      first.length >= 2 &&
+      first.length <= 40 &&
+      /^[A-Za-zÀ-ÖØ-öø-ÿ]+(?: [A-Za-zÀ-ÖØ-öø-ÿ]+)*$/.test(first) &&
+      !PHONE_LIKE.test(first)
+    ) {
+      return first;
     }
   }
+
+  // 4) Standalone single-word/two-word name on its own line
+  const standalonePattern = /^([A-Za-zÀ-ÖØ-öø-ÿ][a-zA-ZÀ-ÖØ-öø-ÿ]+(?: [A-Za-zÀ-ÖØ-öø-ÿ][a-zA-ZÀ-ÖØ-öø-ÿ]+)*)[\.,!?]?\s*$/m;
+  const standaloneMatch = text.match(standalonePattern);
+  if (standaloneMatch?.[1] && standaloneMatch[1].trim().length >= 2 && standaloneMatch[1].trim().length < 40) {
+    return standaloneMatch[1].trim();
+  }
+
   return null;
 };
 
 const extractPhoneFromConversation = (text: string): string | null => {
-  const match = text.match(/(?:\+?[\d][\d\s\-\.\(\)]{5,20}\d)/);
+  const match = text.match(PHONE_LIKE);
   return match?.[0]?.trim() ?? null;
 };
 
@@ -3379,13 +3425,19 @@ export async function POST(req: Request) {
             body.message,
           ].join("\n");
 
-          const extractedName = extractNameFromConversation(userMessages);
-          const extractedPhone = extractPhoneFromConversation(userMessages);
+          // Scan user messages first, then fall back to the AI's own structured summary
+          // (the AI writes "Name: X\nPhone: Y\n..." in its confirmation message)
+          const extractedName =
+            extractNameFromConversation(userMessages) ?? extractNameFromConversation(reply);
+          const extractedPhone =
+            extractPhoneFromConversation(userMessages) ?? extractPhoneFromConversation(reply);
 
           // Require at least name or phone to avoid false positives
           if (extractedName || extractedPhone) {
-            const extractedDate = extractDateFromConversation(userMessages);
-            const extractedTime = extractTimeFromConversation(userMessages);
+            const extractedDate =
+              extractDateFromConversation(userMessages) ?? extractDateFromConversation(reply);
+            const extractedTime =
+              extractTimeFromConversation(userMessages) ?? extractTimeFromConversation(reply);
 
             const conversationSummary = [
               ...historyItems.slice(-12).map(
