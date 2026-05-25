@@ -121,12 +121,14 @@ export function AddReservationDialog({
   onOpenChange,
   timeZone,
   slotIntervalMin,
+  actionType = "restaurant_reservation",
   onCreated
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   timeZone: string;
   slotIntervalMin: number;
+  actionType?: string;
   onCreated: (reservation: ManualReservationRecord, values: ManualReservationValues) => void;
 }) {
   const { push } = useToast();
@@ -205,7 +207,8 @@ export function AddReservationDialog({
         partySize: normalizePartySize(values.partySize),
         date: values.date,
         time: values.time,
-        notes: values.notes.trim() || null
+        notes: values.notes.trim() || null,
+        actionType
       })
     });
 

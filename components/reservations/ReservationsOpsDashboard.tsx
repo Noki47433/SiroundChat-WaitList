@@ -416,15 +416,24 @@ export function ReservationsOpsDashboard({
     }
   };
 
-  const handleReservationCreated = (reservation: ManualReservationRecord, values: ManualReservationValues) => {
-    setFocusReservationId(reservation.id);
-    setSelectedReservation(null);
-    setSelectedStatus("confirmed");
-    setSource("manual");
-    setSearch("");
-    setDateFrom(values.date);
-    setDateTo(values.date);
-    setPartySize("");
+  const handleReservationCreated = (reservation: ManualReservationRecord, _values: ManualReservationValues) => {
+    // Optimistically prepend the new reservation so it appears instantly without
+    // altering any current filters. A background refresh syncs the server state.
+    setData((prev) => {
+      if (!prev) return prev;
+      const statusKey = reservation.status as keyof typeof prev.summary;
+      return {
+        ...prev,
+        reservations: [reservation, ...prev.reservations],
+        summary: {
+          ...prev.summary,
+          [statusKey]: (prev.summary[statusKey] ?? 0) + 1,
+        },
+      };
+    });
+    setSelectedReservation(reservation);
+    setDetailOpen(true);
+    // Background sync — keeps current filters intact, just updates counts/order
     setRefreshNonce((current) => current + 1);
   };
 
@@ -854,6 +863,7 @@ export function ReservationsOpsDashboard({
         onOpenChange={setAddReservationOpen}
         timeZone={data?.settings.timezone ?? "Europe/Belgrade"}
         slotIntervalMin={data?.settings.slotIntervalMin ?? 15}
+        actionType={actionType}
         onCreated={handleReservationCreated}
       />
 
