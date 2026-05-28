@@ -9,10 +9,10 @@ const buildNoopScript = () => "(function(){return;})();";
 const buildRuntimeScript = (key: string) =>
   `(function(){var key="${key}";var current=document.currentScript;var origin=(current&&current.src)?new URL(current.src).origin:window.location.origin;var runtime=document.createElement("script");runtime.src=origin+"/widget-runtime/widget.js";runtime.async=true;runtime.dataset.key=key;runtime.dataset.siteId=key;runtime.dataset.baseUrl=origin;document.head.appendChild(runtime);})();`;
 
-const withEtag = (request: Request, script: string) => {
+const withEtag = (request: Request, script: string, noStore = false) => {
   const etag = createHash("sha1").update(script).digest("hex");
 
-  if (request.headers.get("if-none-match") === etag) {
+  if (!noStore && request.headers.get("if-none-match") === etag) {
     return new NextResponse(null, { status: 304 });
   }
 
@@ -20,8 +20,8 @@ const withEtag = (request: Request, script: string) => {
     status: 200,
     headers: {
       "Content-Type": "application/javascript",
-      "Cache-Control": "public, max-age=3600",
-      ETag: etag
+      "Cache-Control": noStore ? "no-store" : "public, max-age=3600",
+      ...(noStore ? {} : { ETag: etag })
     }
   });
 };
@@ -45,13 +45,16 @@ export async function GET(request: Request) {
   }
 
   // The first-party homepage demo widget always gets the runtime script regardless
-  // of subscription state, same as the config route bypass.
+  // of subscription state, same as the config route bypass. Never cache it so
+  // entitlement changes propagate immediately to siroundchat.com.
   const isDemo = key === SIROUNDCHAT_DEMO_WIDGET_KEY;
-  if (!isDemo) {
-    const access = await getBusinessEntitlementAccess(business.id as string, "chatbot_embed");
-    if (!access.allowed) {
-      return withEtag(request, buildNoopScript());
-    }
+  if (isDemo) {
+    return withEtag(request, buildRuntimeScript(key), true);
+  }
+
+  const access = await getBusinessEntitlementAccess(business.id as string, "chatbot_embed");
+  if (!access.allowed) {
+    return withEtag(request, buildNoopScript());
   }
 
   return withEtag(request, buildRuntimeScript(key));
