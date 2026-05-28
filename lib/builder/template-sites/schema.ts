@@ -296,6 +296,74 @@ export type IntegratedTemplateEditorSettings = z.infer<
   typeof IntegratedTemplateEditorSettingsSchema
 >;
 
+// ─── Multi-page support ───────────────────────────────────────────────────────
+
+export const NavigationItemSchema = z.object({
+  id: z.string().trim().min(1),
+  label: z.string().trim().min(1),
+  href: z.string().trim().min(1),
+  kind: z.enum(["home", "anchor", "page", "external"]),
+  pageId: z.string().optional(),
+  order: z.number().int().min(0),
+  enabled: z.boolean()
+});
+export type NavigationItem = z.infer<typeof NavigationItemSchema>;
+
+export const INTEGRATED_PAGE_BLOCK_KINDS = [
+  "hero",
+  "text",
+  "menu_grid",
+  "service_cards",
+  "gallery_grid",
+  "faq_list",
+  "cta",
+  "contact",
+  "property_cards",
+  "car_cards",
+  "room_cards"
+] as const;
+export type IntegratedPageBlockKind = (typeof INTEGRATED_PAGE_BLOCK_KINDS)[number];
+
+export const IntegratedPageBlockSchema = z.object({
+  id: z.string().trim().min(1),
+  kind: z.enum([
+    "hero", "text", "menu_grid", "service_cards", "gallery_grid",
+    "faq_list", "cta", "contact", "property_cards", "car_cards", "room_cards"
+  ]),
+  content: z.record(z.string(), z.unknown()),
+  enabled: z.boolean().default(true)
+});
+export type IntegratedPageBlock = z.infer<typeof IntegratedPageBlockSchema>;
+
+export const INTEGRATED_PAGE_KINDS = [
+  "menu",
+  "services",
+  "pricing",
+  "gallery",
+  "faq",
+  "property_listings",
+  "car_inventory",
+  "rooms",
+  "custom"
+] as const;
+export type IntegratedPageKind = (typeof INTEGRATED_PAGE_KINDS)[number];
+
+export const IntegratedTemplatePageSchema = z.object({
+  id: z.string().trim().min(1),
+  slug: z.string().trim().min(1).regex(/^[a-z0-9-]+$/, "Slug must be lowercase with hyphens only"),
+  title: z.string().trim().min(1),
+  kind: z.enum(["menu", "services", "pricing", "gallery", "faq", "property_listings", "car_inventory", "rooms", "custom"]),
+  metaDescription: z.string().trim().optional(),
+  status: z.enum(["draft", "published"]).default("draft"),
+  blocks: z.array(IntegratedPageBlockSchema).max(12),
+  source: z.enum(["ai_generated", "manual"]).default("ai_generated"),
+  createdAt: z.string().trim().min(1),
+  updatedAt: z.string().trim().min(1)
+});
+export type IntegratedTemplatePage = z.infer<typeof IntegratedTemplatePageSchema>;
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export const IntegratedTemplateSiteDocumentSchema = z.object({
   kind: z.literal("integrated_template"),
   version: z.literal(1),
@@ -321,7 +389,9 @@ export const IntegratedTemplateSiteDocumentSchema = z.object({
   }),
   content: RestaurantTemplateContentSchema,
   images: TemplateImageSetSchema,
-  data: z.unknown()
+  data: z.unknown(),
+  additionalPages: z.array(IntegratedTemplatePageSchema).optional().default([]),
+  navigationItems: z.array(NavigationItemSchema).optional()
 });
 
 export type IntegratedTemplateSiteDocument = z.infer<typeof IntegratedTemplateSiteDocumentSchema>;

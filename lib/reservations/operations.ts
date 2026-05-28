@@ -133,6 +133,7 @@ export async function createReservationRecord({
   const insertPayload: Record<string, unknown> = {
     restaurant_id: restaurantId,
     business_id: restaurantId,
+    action_type: "restaurant_reservation",
     conversation_id: conversationId,
     source_conversation_id: sourceConversationId,
     start_at: startAt.toISOString(),

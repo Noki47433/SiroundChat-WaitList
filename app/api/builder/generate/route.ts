@@ -1315,7 +1315,8 @@ export async function POST(request: Request) {
         },
         content,
         images,
-        data
+        data,
+        additionalPages: []
       };
 
       const templateFeatureFlags = {

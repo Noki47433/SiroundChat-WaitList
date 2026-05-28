@@ -50,62 +50,70 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     return NextResponse.json({ error: "Reservation not found" }, { status: 404 });
   }
 
-  const restaurantId = (current.restaurant_id as string) || context.businessId;
-  const admin = getSupabaseAdminClientIfAvailable();
-  if (!admin) {
-    console.error("[RESERVATION_UPDATE_CONFIG_MISSING]", { reservationId, userId: context.userId });
-    return NextResponse.json({ error: "Reservations are unavailable right now." }, { status: 500 });
-  }
-  const restaurant = await ensureRestaurantBootstrap(admin as any, restaurantId, context.userId);
-  if (!restaurant) {
-    return NextResponse.json({ error: "Restaurant not found" }, { status: 404 });
-  }
+  // Non-restaurant appointments have restaurant_id = NULL. For those we skip the restaurant
+  // bootstrap, settings lookup, and capacity checks — just do a simple status update.
+  const isRestaurantFlow = Boolean(current.restaurant_id);
+  const restaurantId = (current.restaurant_id as string) || null;
 
-  const settings = await getOrCreateReservationSettings(context.supabase as any, restaurantId);
-
+  // Compute next time/size values (needed for updatePayload regardless of flow type).
   const currentStart = new Date(current.start_at as string);
   const currentEnd = new Date(current.end_at as string);
-  if (Number.isNaN(currentStart.getTime()) || Number.isNaN(currentEnd.getTime())) {
-    return NextResponse.json({ error: "Reservation has invalid time range" }, { status: 400 });
-  }
-
-  const existingDuration = Math.max(15, Math.round((currentEnd.getTime() - currentStart.getTime()) / 60_000));
+  const validCurrentTimes = !Number.isNaN(currentStart.getTime()) && !Number.isNaN(currentEnd.getTime());
+  const existingDuration = validCurrentTimes
+    ? Math.max(15, Math.round((currentEnd.getTime() - currentStart.getTime()) / 60_000))
+    : 60;
   const nextDuration = parsed.data.duration_min ?? existingDuration;
-
   const nextStart = parsed.data.start_at ? new Date(parsed.data.start_at) : currentStart;
-  if (Number.isNaN(nextStart.getTime())) {
-    return NextResponse.json({ error: "Invalid start_at" }, { status: 400 });
-  }
-
   const nextEnd = new Date(nextStart.getTime() + nextDuration * 60_000);
   const nextPartySize = parsed.data.party_size ?? Number(current.party_size ?? 1);
-
   const changesTimeOrParty =
     parsed.data.party_size !== undefined || parsed.data.start_at !== undefined || parsed.data.duration_min !== undefined;
 
-  if (changesTimeOrParty) {
-    const leadMaxValidation = validateLeadAndMaxDays(nextStart, settings);
-    if (!leadMaxValidation.ok) {
-      return NextResponse.json({ error: leadMaxValidation.message, code: leadMaxValidation.code }, { status: 400 });
+  if (isRestaurantFlow) {
+    const admin = getSupabaseAdminClientIfAvailable();
+    if (!admin) {
+      console.error("[RESERVATION_UPDATE_CONFIG_MISSING]", { reservationId, userId: context.userId });
+      return NextResponse.json({ error: "Reservations are unavailable right now." }, { status: 500 });
+    }
+    const restaurant = await ensureRestaurantBootstrap(admin as any, restaurantId as string, context.userId);
+    if (!restaurant) {
+      return NextResponse.json({ error: "Restaurant not found" }, { status: 404 });
     }
 
-    const overlaps = await loadCapacityRelevantReservations(context.supabase as any, {
-      restaurantId,
-      intervalStart: nextStart,
-      intervalEnd: nextEnd,
-      settings
-    });
+    const settings = await getOrCreateReservationSettings(context.supabase as any, restaurantId as string);
 
-    const usedCapacity = computeUsedCapacityForInterval(overlaps, nextStart, nextEnd, settings, reservationId);
-    if (usedCapacity + nextPartySize > restaurant.total_capacity) {
-      return NextResponse.json(
-        {
-          error: "Not enough capacity at that time.",
-          code: "capacity_conflict",
-          remainingCapacity: Math.max(restaurant.total_capacity - usedCapacity, 0)
-        },
-        { status: 409 }
-      );
+    if (!validCurrentTimes) {
+      return NextResponse.json({ error: "Reservation has invalid time range" }, { status: 400 });
+    }
+
+    if (parsed.data.start_at && Number.isNaN(nextStart.getTime())) {
+      return NextResponse.json({ error: "Invalid start_at" }, { status: 400 });
+    }
+
+    if (changesTimeOrParty) {
+      const leadMaxValidation = validateLeadAndMaxDays(nextStart, settings);
+      if (!leadMaxValidation.ok) {
+        return NextResponse.json({ error: leadMaxValidation.message, code: leadMaxValidation.code }, { status: 400 });
+      }
+
+      const overlaps = await loadCapacityRelevantReservations(context.supabase as any, {
+        restaurantId: restaurantId as string,
+        intervalStart: nextStart,
+        intervalEnd: nextEnd,
+        settings
+      });
+
+      const usedCapacity = computeUsedCapacityForInterval(overlaps, nextStart, nextEnd, settings, reservationId);
+      if (usedCapacity + nextPartySize > restaurant.total_capacity) {
+        return NextResponse.json(
+          {
+            error: "Not enough capacity at that time.",
+            code: "capacity_conflict",
+            remainingCapacity: Math.max(restaurant.total_capacity - usedCapacity, 0)
+          },
+          { status: 409 }
+        );
+      }
     }
   }
 
@@ -151,13 +159,19 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     return NextResponse.json({ reservation: current });
   }
 
-  const { data: updated, error: updateError } = await (context.supabase as any)
+  // Build the update query. For restaurant rows we also filter by restaurant_id to be precise.
+  // For non-restaurant rows (restaurant_id IS NULL) we only filter by id — the RLS policy
+  // already ensures the calling user owns this business.
+  let updateQuery = (context.supabase as any)
     .from("reservations")
     .update(updatePayload)
-    .eq("id", reservationId)
-    .eq("restaurant_id", restaurantId)
-    .select("*")
-    .single();
+    .eq("id", reservationId);
+
+  if (isRestaurantFlow && restaurantId) {
+    updateQuery = updateQuery.eq("restaurant_id", restaurantId);
+  }
+
+  const { data: updated, error: updateError } = await updateQuery.select("*").single();
 
   if (updateError || !updated) {
     return NextResponse.json({ error: updateError?.message ?? "Failed to update reservation" }, { status: 500 });

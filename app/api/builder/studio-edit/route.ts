@@ -47,6 +47,10 @@ import {
 } from "@/lib/website-studio/providers";
 import { classifyStudioRefinementRequest } from "@/lib/website-studio/refinement";
 import type { StudioRefinementPlan } from "@/lib/website-studio/schema";
+import { routeWebsiteEditRequest } from "@/lib/website-builder/ai/website-edit-router";
+import { generateIntegratedPage } from "@/lib/website-builder/ai/page-generator";
+import { injectNavigationItemsIntoTemplateData, normalizePageSlug } from "@/lib/builder/template-sites/nav-inject";
+import type { IntegratedTemplatePage, NavigationItem } from "@/lib/builder/template-sites/schema";
 
 export const runtime = "nodejs";
 
@@ -1129,6 +1133,156 @@ export async function POST(request: Request) {
   const admin = getSupabaseServerAdminClient() as any;
   const integratedDocument = parseIntegratedTemplateSiteDocument(site.site_document);
   if (integratedDocument) {
+    // Intent classification + KB retrieval — non-fatal if it fails
+    let routingKnowledgeContext: string | null = null;
+    let routingIntentType: string | null = null;
+    try {
+      const routing = await routeWebsiteEditRequest({
+        prompt,
+        businessId: site.business_id as string,
+        businessType: site.industry ?? integratedDocument.meta.industry ?? "restaurant",
+        businessName: site.business_name ?? integratedDocument.meta.businessName,
+        documentKind: "integrated_template"
+      });
+
+      routingIntentType = routing.intent.intent;
+
+      if (routing.action === "clarify") {
+        return NextResponse.json({
+          type: "clarification_needed",
+          clarification: routing.clarification
+        });
+      }
+
+      if (routing.action === "advisory") {
+        return NextResponse.json({
+          type: "advisory",
+          advisory: routing.advisory
+        });
+      }
+
+      if (routing.action === "proceed") {
+        routingKnowledgeContext = routing.knowledgeContext;
+      }
+    } catch (routingError) {
+      console.warn("[BUILDER_STUDIO_EDIT_ROUTING_WARN]", routingError);
+    }
+
+    // ── Page addition ────────────────────────────────────────────────────────
+    const isPageAddition =
+      routingIntentType === "page_addition" ||
+      routingIntentType === "knowledge_based_page_generation";
+
+    if (isPageAddition) {
+      const businessName = site.business_name ?? integratedDocument.meta.businessName;
+      const businessType = site.industry ?? integratedDocument.meta.industry ?? "restaurant";
+      const existingSlugs = (integratedDocument.additionalPages ?? []).map((p) => p.slug);
+
+      const generated = await generateIntegratedPage({
+        prompt,
+        businessName,
+        businessType,
+        template: integratedDocument.template,
+        knowledgeContext: routingKnowledgeContext,
+        existingSlugs
+      });
+
+      if (!generated) {
+        return NextResponse.json(
+          {
+            error: "Could not generate the requested page. Try again or be more specific.",
+            code: "PAGE_GENERATION_FAILED"
+          },
+          { status: 500 }
+        );
+      }
+
+      const now = new Date().toISOString();
+      const newPage: IntegratedTemplatePage = {
+        id: `page-${Date.now()}`,
+        slug: generated.slug,
+        title: generated.title,
+        kind: generated.kind,
+        metaDescription: generated.metaDescription,
+        status: "draft",
+        blocks: generated.blocks,
+        source: "ai_generated",
+        createdAt: now,
+        updatedAt: now
+      };
+
+      // Deduplicate by slug — replace existing page with same slug
+      const existingPages = (integratedDocument.additionalPages ?? []).filter(
+        (p) => p.slug !== newPage.slug
+      );
+      const updatedPages = [...existingPages, newPage];
+
+      // Build or update the navigation item for this page
+      const existingNavItems = (integratedDocument.navigationItems ?? []).filter(
+        (n) => n.pageId !== newPage.id && n.href !== `?page=${newPage.slug}`
+      );
+      const newNavItem: NavigationItem = {
+        id: `nav-${newPage.id}`,
+        label: generated.navigationLabel,
+        href: `?page=${newPage.slug}`,
+        kind: "page",
+        pageId: newPage.id,
+        order: existingNavItems.length,
+        enabled: true
+      };
+      const updatedNavItems = [...existingNavItems, newNavItem];
+
+      // Rebuild template data with injected nav
+      const nextData = injectNavigationItemsIntoTemplateData(
+        integratedDocument.template,
+        mapIntegratedTemplateData(
+          integratedDocument.template,
+          integratedDocument.content,
+          integratedDocument.images,
+          { logoUrl: site.logo_url ?? null }
+        ),
+        updatedNavItems
+      );
+
+      const nextDocument: IntegratedTemplateSiteDocument = {
+        ...integratedDocument,
+        additionalPages: updatedPages,
+        navigationItems: updatedNavItems,
+        data: nextData,
+        meta: {
+          ...integratedDocument.meta,
+          updatedAt: now
+        }
+      };
+
+      const saveError = await persistIntegratedTemplateDocument(admin, siteId, nextDocument);
+      if (saveError) {
+        return NextResponse.json(
+          { error: "Failed to save new page", message: saveError.message },
+          { status: 500 }
+        );
+      }
+
+      console.info("[BUILDER_STUDIO_EDIT_PAGE_ADDED]", {
+        siteId,
+        pageSlug: newPage.slug,
+        pageKind: newPage.kind,
+        blockCount: newPage.blocks.length,
+        knowledgeUsed: Boolean(routingKnowledgeContext)
+      });
+
+      return NextResponse.json({
+        type: "page_added",
+        siteDocument: nextDocument,
+        pageSlug: newPage.slug,
+        pageTitle: newPage.title,
+        pageKind: newPage.kind,
+        navigationLabel: generated.navigationLabel,
+        knowledgeUsed: Boolean(routingKnowledgeContext)
+      });
+    }
+    // ────────────────────────────────────────────────────────────────────────
+
     const analysisRequested = thinkMode || referenceImages.length > 0;
     const openai = analysisRequested ? getOpenAIClient() : null;
     if (analysisRequested && !openai) {
@@ -1163,6 +1317,9 @@ export async function POST(request: Request) {
       prompt,
       referenceGuidance
         ? `Reference image guidance:\n${referenceGuidance}`
+        : null,
+      routingKnowledgeContext
+        ? `Business document context:\n${routingKnowledgeContext}`
         : null
     ]
       .filter(Boolean)
@@ -1380,11 +1537,15 @@ export async function POST(request: Request) {
       uploadedImages,
       forceRefresh: forceRefreshImages
     });
-    const nextData = mapIntegratedTemplateData(
+    const nextData = injectNavigationItemsIntoTemplateData(
       integratedDocument.template,
-      nextContent,
-      images,
-      { logoUrl: site.logo_url ?? null }
+      mapIntegratedTemplateData(
+        integratedDocument.template,
+        nextContent,
+        images,
+        { logoUrl: site.logo_url ?? null }
+      ),
+      integratedDocument.navigationItems
     );
     const nextTheme = buildIntegratedTemplateTheme(
       integratedDocument.template,
@@ -1404,6 +1565,9 @@ export async function POST(request: Request) {
       content: nextContent,
       images,
       data: nextData,
+      // Preserve additional pages and navigation items across regular edits
+      additionalPages: integratedDocument.additionalPages ?? [],
+      navigationItems: integratedDocument.navigationItems,
       meta: {
         ...integratedDocument.meta,
         themeStyle: integratedDocument.meta.themeStyle ?? undefined,

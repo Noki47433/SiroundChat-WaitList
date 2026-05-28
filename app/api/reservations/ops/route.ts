@@ -67,15 +67,26 @@ export async function GET(request: Request) {
     settings = await getOrCreateReservationSettings(context.supabase as any, context.businessId);
   }
 
+  // For the restaurant flow we also include rows where action_type IS NULL —
+  // those are reservations created before action_type was added to the schema.
+  // For non-restaurant flows we match exactly on action_type.
   let query = (context.supabase as any)
     .from("reservations")
     .select(
-      "id,restaurant_id,business_id,conversation_id,source,source_conversation_id,start_at,end_at,datetime,party_size,customer_name,customer_phone,customer_email,notes,special_request,status,created_by,created_at,updated_at,canceled_at,completed_at,seated_at,no_show_at"
+      "id,restaurant_id,business_id,conversation_id,source,source_conversation_id,start_at,end_at,datetime,party_size,customer_name,customer_phone,customer_email,notes,special_request,status,created_by,created_at,updated_at,canceled_at,completed_at,seated_at,no_show_at,action_type"
     )
     .eq("business_id", context.businessId)
-    .eq("action_type", requestedActionType)
     .order("created_at", { ascending: false })
     .limit(500);
+
+  if (isRestaurantFlow) {
+    // Match restaurant_reservation OR legacy rows where action_type is NULL
+    query = query.or(`action_type.eq.restaurant_reservation,action_type.is.null`);
+    // Further narrow to rows that actually belong to the restaurant (have restaurant_id)
+    query = query.not("restaurant_id", "is", null);
+  } else {
+    query = query.eq("action_type", requestedActionType);
+  }
 
   if (parsed.data.dateFrom) {
     query = query.gte("start_at", new Date(parsed.data.dateFrom).toISOString());

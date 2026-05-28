@@ -92,21 +92,23 @@ IMPORTANT:
   return `========================
 1.5) ${actionLabel.toUpperCase()} REQUEST (WORKFLOW MODE)
 ========================
-- ${actionLabel} requests are a WORKFLOW. When the customer wants to ${actionLabel.toLowerCase()}, enter REQUEST MODE.
+- ${actionLabel} requests are a WORKFLOW. When the customer says they want to ${actionLabel.toLowerCase()}, enter REQUEST MODE immediately.
 - Trigger phrases: "book", "schedule", "appointment", "reserve", "${actionLabel.toLowerCase()}", and similar.
 
 REQUEST MODE RULES:
-- Do NOT ask multiple questions at once.
-- Ask for ONLY ONE missing field per message.
-- Stay in request mode until completed or the user cancels.
+- On the VERY FIRST response after entering request mode, ask ALL required fields in ONE single message.
+- Format your request as a numbered list so the customer can reply with everything at once.
+- Example opener: "Great! To book your ${actionLabel.toLowerCase()}, please share:\n${collectFieldsList}\nYou can send all of them in one message!"
+- After the customer replies, extract the fields they provided. If any required field is missing, ask for ONLY the missing ones together in one follow-up message.
+- Do NOT ask for fields one at a time across multiple messages.
 
 FIELDS TO COLLECT:
 ${collectFieldsList}
 
 CONFIRMATION:
-- When all fields are collected, repeat the details back and confirm.
-- Do NOT claim the ${actionLabel.toLowerCase()} is confirmed unless the system explicitly confirms it.
-- Safe wording: "Thank you — I'll pass your ${actionLabel.toLowerCase()} request to the team. They will confirm with you shortly."
+- When all required fields are collected, show a clear summary of the details.
+- Use this EXACT safe wording after the summary: "Thank you — I'll pass your ${actionLabel.toLowerCase()} request to the team. They will confirm with you shortly."
+- Do NOT say the ${actionLabel.toLowerCase()} is confirmed or booked — only that the request has been passed on.
 
 NOTE: This system captures ${actionLabel.toLowerCase()} requests and passes them to the business team. Do not promise instant booking confirmation.`;
 };

@@ -42,46 +42,92 @@ import { createGenericRequestRecord } from "@/lib/reservations/request-operation
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const ACTION_COMPLETION_PHRASES = [
+  // Passing phrases
   "i'll pass your",
   "i will pass your",
+  "i've passed your",
+  "i have passed your",
   "pass your request",
   "pass this request",
+  "passing your",
+  "forwarded your",
+  "forwarding your",
+  "have forwarded",
+  // Submission/receipt phrases
   "submitted your request",
+  "your request has been",
+  "we have your",
+  "we've received your",
+  "received your request",
+  "request has been sent",
+  "request has been noted",
+  "i've noted your",
+  "noted your request",
+  "noted all your",
+  // Follow-up phrases
   "request to the team",
+  "details to the team",
   "they will confirm",
   "team will be in touch",
   "team will confirm",
   "will be in touch shortly",
   "will reach out to confirm",
-  "forwarded your",
-  "have forwarded",
-  "i've noted your",
-  "noted your request",
-  "we have your",
-  "we've received your",
-  "received your request",
-  "your request has been",
   "will contact you shortly",
   "will get back to you",
+  "will follow up",
   "soon as possible",
+  "confirm with you shortly",
 ];
 
+const PHONE_LIKE = /(?:\+?[\d][\d\s\-\.\(\)]{5,20}\d)/;
+
 const extractNameFromConversation = (text: string): string | null => {
-  const patterns = [
-    /(?:my name is|i am|i'm|this is|call me|emri im është|emri im eshte)\s+([A-Za-zÀ-ÖØ-öø-ÿ][a-zA-ZÀ-ÖØ-öø-ÿ]+(?: [A-Za-zÀ-ÖØ-öø-ÿ][a-zA-ZÀ-ÖØ-öø-ÿ]+)*)/i,
-    /^([A-Za-zÀ-ÖØ-öø-ÿ][a-zA-ZÀ-ÖØ-öø-ÿ]+(?: [A-Za-zÀ-ÖØ-öø-ÿ][a-zA-ZÀ-ÖØ-öø-ÿ]+)*)[\.,!?]?\s*$/m,
-  ];
-  for (const pattern of patterns) {
-    const match = text.match(pattern);
-    if (match?.[1] && match[1].trim().length >= 2 && match[1].trim().length < 60) {
-      return match[1].trim();
+  // 1) Explicit prefix: "my name is X", "I am X", Albanian variants, etc.
+  const prefixPattern = /(?:my name is|i am|i'm|this is|call me|emri im është|emri im eshte|emri:)\s+([A-Za-zÀ-ÖØ-öø-ÿ][a-zA-ZÀ-ÖØ-öø-ÿ]+(?: [A-Za-zÀ-ÖØ-öø-ÿ][a-zA-ZÀ-ÖØ-öø-ÿ]+)*)/i;
+  const prefixMatch = text.match(prefixPattern);
+  if (prefixMatch?.[1] && prefixMatch[1].trim().length >= 2 && prefixMatch[1].trim().length < 60) {
+    return prefixMatch[1].trim();
+  }
+
+  // 2) AI summary lines like "Name: Noar" or "- Name: Noar"
+  const summaryPattern = /(?:^|\n)\s*[-•]?\s*name\s*:\s*([A-Za-zÀ-ÖØ-öø-ÿ][a-zA-ZÀ-ÖØ-öø-ÿ]+(?: [A-Za-zÀ-ÖØ-öø-ÿ][a-zA-ZÀ-ÖØ-öø-ÿ]+)*)/im;
+  const summaryMatch = text.match(summaryPattern);
+  if (summaryMatch?.[1] && summaryMatch[1].trim().length >= 2) {
+    return summaryMatch[1].trim();
+  }
+
+  // 3) Comma-separated "ask all at once" format: first token before comma/newline that
+  //    looks like a name (only letters, no digits, no phone-like pattern in same token)
+  const lines = text.split("\n");
+  for (const line of lines) {
+    const trimmed = line.trim();
+    // Must contain a comma (multi-field response) and not be a bot line
+    if (!trimmed.includes(",")) continue;
+    const tokens = trimmed.split(/\s*,\s*/);
+    const first = tokens[0]?.trim() ?? "";
+    // First token must be pure alphabetic (name), 2-40 chars, no digits
+    if (
+      first.length >= 2 &&
+      first.length <= 40 &&
+      /^[A-Za-zÀ-ÖØ-öø-ÿ]+(?: [A-Za-zÀ-ÖØ-öø-ÿ]+)*$/.test(first) &&
+      !PHONE_LIKE.test(first)
+    ) {
+      return first;
     }
   }
+
+  // 4) Standalone single-word/two-word name on its own line
+  const standalonePattern = /^([A-Za-zÀ-ÖØ-öø-ÿ][a-zA-ZÀ-ÖØ-öø-ÿ]+(?: [A-Za-zÀ-ÖØ-öø-ÿ][a-zA-ZÀ-ÖØ-öø-ÿ]+)*)[\.,!?]?\s*$/m;
+  const standaloneMatch = text.match(standalonePattern);
+  if (standaloneMatch?.[1] && standaloneMatch[1].trim().length >= 2 && standaloneMatch[1].trim().length < 40) {
+    return standaloneMatch[1].trim();
+  }
+
   return null;
 };
 
 const extractPhoneFromConversation = (text: string): string | null => {
-  const match = text.match(/(?:\+?[\d][\d\s\-\.\(\)]{5,20}\d)/);
+  const match = text.match(PHONE_LIKE);
   return match?.[0]?.trim() ?? null;
 };
 
@@ -1165,6 +1211,30 @@ const extractTime = (message: string) => {
   return null;
 };
 
+const extractDateFromConversation = (text: string): string | null => {
+  const lines = text.split("\n");
+  for (const line of lines) {
+    const d = extractDate(line.trim());
+    if (d) return d;
+  }
+  return null;
+};
+
+const extractTimeFromConversation = (text: string): string | null => {
+  const lines = text.split("\n");
+  for (const line of lines) {
+    // Also handle bare hour like "13" → "13:00"
+    const bare = line.trim().match(/^(\d{1,2})$/);
+    if (bare) {
+      const h = Number(bare[1]);
+      if (h >= 0 && h <= 23) return `${String(h).padStart(2, "0")}:00`;
+    }
+    const t = extractTime(line.trim());
+    if (t) return t;
+  }
+  return null;
+};
+
 const buildReservationDateTime = (date: string, time: string, timeZone: string) => {
   const [year, month, day] = date.split("-").map(Number);
   const [hour, minute] = time.split(":").map(Number);
@@ -2193,6 +2263,13 @@ export async function POST(req: Request) {
     const chatLocale = detectChatLocale(body.message, reservationState.locale);
     const hasDietaryIntent = isDietaryOrAllergyIntent(normalizedMessage, messageTokens);
     const salesOpportunityKind = isSiroundChatDemo ? null : detectSalesOpportunityKind(body.message, normalizedMessage, messageTokens);
+
+    // Whether this business uses a non-restaurant action flow (appointment, test drive, etc.)
+    const actionFlowAllowed =
+      !isSiroundChatDemo &&
+      botConfig.bookingsEnabled &&
+      botConfig.actionType !== "none" &&
+      botConfig.actionType !== "restaurant_reservation";
 
     const directDemoReply = isSiroundChatDemo ? getSiroundChatDemoReply(body.message, chatLocale) : null;
     if (directDemoReply) {
@@ -3306,7 +3383,7 @@ export async function POST(req: Request) {
     const shouldSuppressFollowup =
       Boolean(followupCandidate) &&
       ((followupCandidate?.intent === "menu_pricing" && directPriceIntent) ||
-        (followupCandidate?.intent === "reservation" && inReservationFlow));
+        (followupCandidate?.intent === "reservation" && (inReservationFlow || actionFlowAllowed)));
     let appendedFollowup = false;
     if (followupCandidate && !shouldSuppressFollowup) {
       reply = `${reply}\n\n${followupCandidate.question}`;
@@ -3330,20 +3407,14 @@ export async function POST(req: Request) {
 
     const assistantMessageId = assistantMessage?.id ? String(assistantMessage.id) : null;
 
-    // Non-restaurant action flow: detect completion and persist the request record
-    const actionFlowAllowed =
-      !isSiroundChatDemo &&
-      botConfig.bookingsEnabled &&
-      botConfig.actionType !== "none" &&
-      botConfig.actionType !== "restaurant_reservation";
-
+    // Non-restaurant action flow: detect completion and show confirmation card to the user
     if (actionFlowAllowed) {
       const existingActionState = (reservationState as any).action_request_state as
-        | { submitted: boolean; request_id: string | null }
+        | { pending?: boolean; submitted?: boolean; request_id?: string | null }
         | undefined;
-      const alreadySubmitted = existingActionState?.submitted === true;
+      const alreadyHandled = existingActionState?.submitted === true || existingActionState?.pending === true;
 
-      if (!alreadySubmitted) {
+      if (!alreadyHandled) {
         const replyLower = reply.toLowerCase();
         const isCompletion = ACTION_COMPLETION_PHRASES.some((phrase) => replyLower.includes(phrase));
 
@@ -3354,11 +3425,20 @@ export async function POST(req: Request) {
             body.message,
           ].join("\n");
 
-          const extractedName = extractNameFromConversation(userMessages);
-          const extractedPhone = extractPhoneFromConversation(userMessages);
+          // Scan user messages first, then fall back to the AI's own structured summary
+          // (the AI writes "Name: X\nPhone: Y\n..." in its confirmation message)
+          const extractedName =
+            extractNameFromConversation(userMessages) ?? extractNameFromConversation(reply);
+          const extractedPhone =
+            extractPhoneFromConversation(userMessages) ?? extractPhoneFromConversation(reply);
 
-          // Require at least name or phone before creating the record to avoid false positives
+          // Require at least name or phone to avoid false positives
           if (extractedName || extractedPhone) {
+            const extractedDate =
+              extractDateFromConversation(userMessages) ?? extractDateFromConversation(reply);
+            const extractedTime =
+              extractTimeFromConversation(userMessages) ?? extractTimeFromConversation(reply);
+
             const conversationSummary = [
               ...historyItems.slice(-12).map(
                 (m) => `${m.role === "user" ? "Customer" : "Bot"}: ${m.content}`
@@ -3367,22 +3447,25 @@ export async function POST(req: Request) {
               `Bot: ${reply}`,
             ].join("\n");
 
-            try {
-              const result = await createGenericRequestRecord({
-                adminClient: admin as any,
-                businessId,
-                actionType: botConfig.actionType,
-                customerName: extractedName ?? "Customer",
-                customerPhone: extractedPhone ?? null,
+            // Push a confirmation action — the widget will show a table with 👍/👎
+            orchestratorActions.push({
+              type: "request_pending_confirm",
+              actionType: botConfig.actionType,
+              businessId,
+              conversationId,
+              widgetKey: body.key,
+              fields: {
+                name: extractedName ?? null,
+                phone: extractedPhone ?? null,
+                date: extractedDate ?? null,
+                time: extractedTime ?? null,
                 notes: conversationSummary.slice(0, 2000),
-                conversationId,
-                source: "website",
-                sendSmsAlert: true,
-              });
+              },
+            });
 
-              const requestId = (result.request as any)?.id as string | undefined;
-              (reservationState as any).action_request_state = { submitted: true, request_id: requestId ?? null };
-
+            // Mark state as pending to avoid duplicate cards on retries
+            (reservationState as any).action_request_state = { pending: true };
+            try {
               await (admin as any)
                 .from("conversation_reservation_state")
                 .upsert(
@@ -3390,7 +3473,7 @@ export async function POST(req: Request) {
                   { onConflict: "conversation_id" }
                 );
             } catch (err) {
-              log("warn", "Failed to persist non-restaurant action request", { error: err, businessId });
+              log("warn", "Failed to persist pending action state", { error: err, businessId });
             }
           }
         }

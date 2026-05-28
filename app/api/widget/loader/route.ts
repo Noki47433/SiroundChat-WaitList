@@ -2,6 +2,7 @@ import { createHash } from "crypto";
 import { NextResponse } from "next/server";
 import { getBusinessEntitlementAccess } from "@/lib/server/billing-access";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
+import { SIROUNDCHAT_DEMO_WIDGET_KEY } from "@/lib/chatbot/siroundchat-demo";
 
 const buildNoopScript = () => "(function(){return;})();";
 
@@ -43,9 +44,14 @@ export async function GET(request: Request) {
     return withEtag(request, buildNoopScript());
   }
 
-  const access = await getBusinessEntitlementAccess(business.id as string, "chatbot_embed");
-  if (!access.allowed) {
-    return withEtag(request, buildNoopScript());
+  // The first-party homepage demo widget always gets the runtime script regardless
+  // of subscription state, same as the config route bypass.
+  const isDemo = key === SIROUNDCHAT_DEMO_WIDGET_KEY;
+  if (!isDemo) {
+    const access = await getBusinessEntitlementAccess(business.id as string, "chatbot_embed");
+    if (!access.allowed) {
+      return withEtag(request, buildNoopScript());
+    }
   }
 
   return withEtag(request, buildRuntimeScript(key));
