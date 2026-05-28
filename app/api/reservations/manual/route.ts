@@ -74,7 +74,7 @@ export async function POST(request: Request) {
       created_at: now,
     };
 
-    const { data: created, error: createError } = await admin
+    const { data: created, error: createError } = await (admin as any)
       .from("reservations")
       .insert(insertPayload)
       .select("*")
