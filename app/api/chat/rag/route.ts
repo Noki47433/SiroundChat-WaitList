@@ -5,6 +5,7 @@ import { userHasLaunchAccess } from "@/lib/server/launch-access";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import { retrieveRelevantChunks } from "@/lib/ai/retrieve";
 import { log } from "@/lib/utils/log";
+import { checkRateLimit } from "@/lib/utils/rate-limit";
 import {
   buildUpgradeRequiredResponse,
   canAccessBillingWorkspace,
@@ -52,6 +53,20 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Last message must be user" }, { status: 400 });
   }
 
+  // P0 COST-1: bound input size and per-user request rate.
+  const totalChars = messages.reduce((sum, m) => sum + (typeof m?.content === "string" ? m.content.length : 0), 0);
+  if (messages.length > 40 || totalChars > 20_000 || (last.content?.length ?? 0) > 8_000) {
+    return NextResponse.json({ error: "Message too long." }, { status: 413 });
+  }
+  const rl = await checkRateLimit({ key: `chat-rag:${user.id}:${businessId}`, limit: 30, windowInSeconds: 60 });
+  if (!rl.allowed) {
+    const retryAfter = Math.max(1, Math.ceil((rl.resetAt - Date.now()) / 1000));
+    return NextResponse.json(
+      { error: "Too many requests. Please slow down." },
+      { status: 429, headers: { "Retry-After": String(retryAfter) } }
+    );
+  }
+
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     console.error("[CHAT_RAG_CONFIG_MISSING]");
@@ -89,6 +104,7 @@ const businessName = (biz?.business_name as string | undefined) ?? "this busines
     const completion = await openai.chat.completions.create({
       model: CHAT_MODEL,
       temperature: 0.2,
+      max_tokens: 600, // P0 COST-1: bound output tokens
       messages: promptMessages
     });
 

@@ -12,6 +12,7 @@ import { buildSectionPatch } from "@/lib/builder/generation/patch";
 import { getGenerationPolicy } from "@/lib/builder/generation/policy";
 import type { GenerationIntake } from "@/lib/builder/generation/types";
 import { getOwnedBuilderSite } from "@/lib/builder/site-access";
+import { checkRateLimit } from "@/lib/utils/rate-limit";
 import { refineRestaurantTemplateContent } from "@/lib/builder/template-sites/content";
 import {
   applyDeterministicIntegratedTemplateEdit,
@@ -1107,6 +1108,18 @@ export async function POST(request: Request) {
 
   if (!(await userHasLaunchAccess(userData.user.id))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  // P0 COST-1: bound edit-endpoint LLM spend per user.
+  {
+    const rl = await checkRateLimit({ key: `studio-edit:${userData.user.id}`, limit: 30, windowInSeconds: 60 });
+    if (!rl.allowed) {
+      const retryAfter = Math.max(1, Math.ceil((rl.resetAt - Date.now()) / 1000));
+      return NextResponse.json(
+        { error: "Too many edit requests. Please wait a moment." },
+        { status: 429, headers: { "Retry-After": String(retryAfter) } }
+      );
+    }
   }
 
   const payloadResult = await readStudioEditPayload(request);

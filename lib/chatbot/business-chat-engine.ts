@@ -841,6 +841,7 @@ async function buildKnowledgeReply(params: {
   const completion = await openai.chat.completions.create({
     model: CHAT_MODEL,
     temperature: 0.2,
+    max_tokens: 500, // P0 COST-1: bound output tokens per reply
     messages: [
       { role: "system", content: SYSTEM_PROMPT(cleanText(business.business_name) || "this business") },
       {

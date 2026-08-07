@@ -7,6 +7,7 @@ type OpenAIChatClient = {
         request: {
           model: string;
           temperature: number;
+          max_tokens?: number;
           response_format: { type: "json_object" };
           messages: Array<{ role: "system" | "user"; content: string }>;
         },
@@ -45,6 +46,7 @@ async function runCompletion(
       {
         model: MODEL,
         temperature: Math.min(0.4, Math.max(0, temperature)),
+        max_tokens: 4000, // P0 COST-1: bound output tokens on the shared builder LLM helper
         response_format: { type: "json_object" },
         messages: [
           { role: "system", content: system },

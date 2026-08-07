@@ -2,6 +2,7 @@ import { log } from "@/lib/utils/log";
 import { getTimeZoneOffsetMs } from "@/lib/utils/timezone";
 import { sendChannelMessage } from "@/lib/channels/provider-adapter";
 import { evaluateBehaviorRules } from "@/lib/chatbot/behavior-offers";
+import { decryptSecret } from "@/lib/crypto/secret-box";
 
 type SupabaseLike = any;
 
@@ -240,9 +241,17 @@ export async function runOutboxTask(admin: SupabaseLike, limit = 100) {
         continue;
       }
 
+      // P0 W2: decrypt the stored token only here, at the point of use.
+      let decryptedToken: string | null = null;
+      try {
+        decryptedToken = decryptSecret(inbox.access_token_encrypted ?? null);
+      } catch {
+        decryptedToken = null; // never log or surface the secret
+      }
+
       const sendResult = await sendChannelMessage({
         channel: inbox.channel,
-        inbox,
+        inbox: { ...inbox, access_token_encrypted: decryptedToken },
         to,
         body: messageBody
       });

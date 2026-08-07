@@ -7,6 +7,7 @@ import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
 import { insertAnalyticsEvent } from "@/lib/analytics/events";
 import { insertWebsiteAnalyticsEvent } from "@/lib/analytics/website-events";
+import { checkRateLimit } from "@/lib/utils/rate-limit";
 import {
   extractLeadInfo,
   isAskingForBusinessContactInfo,
@@ -144,7 +145,7 @@ const BodySchema = z.object({
   key: z.string().uuid(),
   siteId: z.string().optional().nullable(),
 
-  message: z.string().min(1),
+  message: z.string().min(1).max(4000), // P0 COST-1: bound input size
   tonePreset: TonePresetSchema.optional().nullable(),
 
   conversationId: z.string().uuid().optional().nullable(),
@@ -1415,6 +1416,23 @@ export async function POST(req: Request) {
     const canDebug = debug && !!user;
 
     const body = parsed.data;
+
+    // P0 COST-1: bound abuse/cost on this public, widget-key-only endpoint. A leaked widget
+    // key (readable from page HTML) otherwise allows unbounded OpenAI spend. Keyed by widget
+    // key + IP; shared limiter so it holds across instances once a shared backend is configured.
+    {
+      const fwd = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+      const ip = fwd || req.headers.get("x-real-ip")?.trim() || "unknown";
+      const rl = await checkRateLimit({ key: `chat-send:${body.key}:${ip}`, limit: 30, windowInSeconds: 60 });
+      if (!rl.allowed) {
+        const retryAfter = Math.max(1, Math.ceil((rl.resetAt - Date.now()) / 1000));
+        return NextResponse.json(
+          { error: "Too many messages. Please slow down." },
+          { status: 429, headers: { "Retry-After": String(retryAfter) } }
+        );
+      }
+    }
+
     const admin = getSupabaseAdminClient();
     let resolvedWebsiteSiteId: string | null = null;
     let resolvedBuilderSiteId: string | null = null;
@@ -3322,6 +3340,7 @@ export async function POST(req: Request) {
       const completion = await openai.chat.completions.create({
         model: CHAT_MODEL,
         temperature: 0.2,
+        max_tokens: 500, // P0 COST-1: bound output tokens per reply
         messages
       });
 
