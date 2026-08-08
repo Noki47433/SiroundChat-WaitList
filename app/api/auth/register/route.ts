@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 import { getSupabaseAdminClientIfAvailable } from "@/lib/supabase/admin";
 import { getSupabaseRouteClient } from "@/lib/supabase/server";
@@ -77,7 +78,10 @@ export async function POST(request: Request) {
           access_approved: false,
           onboarding_submitted: false,
           onboarding_data: {},
-          launch_access: false
+          launch_access: false,
+          // F7-db (P0): provision the widget key at creation (write path) so the
+          // tenant-resolution READ path no longer needs to backfill it.
+          widget_key: randomUUID()
         } as Database["public"]["Tables"]["businesses"]["Insert"])
         .select("id")
         .single();

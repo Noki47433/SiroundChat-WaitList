@@ -6,6 +6,7 @@ import {
   getBusinessEntitlementAccess
 } from "@/lib/server/billing-access";
 import { log } from "@/lib/utils/log";
+import { encryptSecret, isEncryptionAvailable } from "@/lib/crypto/secret-box";
 
 const BodySchema = z.object({
   channel: z.enum(["whatsapp", "instagram"]),
@@ -54,7 +55,19 @@ export async function POST(request: Request) {
   const supabase = context.supabase as any;
 
   try {
-    const tokenReference = parsed.data.token?.trim() ? parsed.data.token.trim() : null;
+    // P0 W2: never store the provider token in plaintext. Encrypt at rest; if secret storage
+    // is not configured, refuse to store the token rather than persisting it in the clear.
+    const rawToken = parsed.data.token?.trim() ? parsed.data.token.trim() : null;
+    let tokenReference: string | null = null;
+    if (rawToken) {
+      if (!isEncryptionAvailable()) {
+        return NextResponse.json(
+          { error: "Secret storage is not configured; cannot save channel token." },
+          { status: 503 }
+        );
+      }
+      tokenReference = encryptSecret(rawToken);
+    }
 
     const { data, error } = await supabase
       .from("channel_inboxes")

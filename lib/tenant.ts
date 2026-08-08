@@ -108,19 +108,13 @@ export async function getTenantFromSession(userId?: string): Promise<Tenant> {
   }
 
   const row = data as { id?: string; widget_key?: string | null; launch_access?: boolean | null } | null;
-  if (row?.id && !row.widget_key) {
-    const widgetKey = generateWidgetKey();
-    const { error: widgetError } = await (supabase as any)
-      .from("businesses")
-      .update({ widget_key: widgetKey })
-      .eq("id", row.id);
-    if (widgetError) {
-      console.error("[WIDGET_KEY_BACKFILL_ERROR]", widgetError);
-    }
-  }
-  if (row?.id) {
-    await syncRestaurantAccess(supabase, row.id, resolvedUserId);
-  }
+  // F7-db (P0): tenant resolution is a READ path — it runs on every
+  // requireBusinessUser() call. It must never write. Widget-key and
+  // restaurant/member provisioning are handled at explicit write/provisioning
+  // points only: app/api/auth/register (new signups), ensureBusinessRow()
+  // below (onboarding / widget config), and ensureRestaurantBootstrap() on the
+  // booking routes (service-role). Writing here caused per-request lock/write
+  // contention and would fight the SEC-1 RLS policies once enabled.
   return { userId: resolvedUserId, businessId: row?.id ?? "" };
 }
 

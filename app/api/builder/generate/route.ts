@@ -53,6 +53,7 @@ import { SiteDocumentSchema } from "@/lib/website-builder/schema";
 import type { SiteDocument, SiteSection, SiteThemeTokens } from "@/lib/website-builder/types";
 import { hasEntitlement, resolveEntitlements } from "@/src/billing/entitlements";
 import { getOwnedBuilderSite } from "@/lib/builder/site-access";
+import { checkRateLimit } from "@/lib/utils/rate-limit";
 import { DeterministicTemplateRenderer } from "@/components/deterministic-templates";
 import { generateIndustrySiteV2, isIndustryV2Supported } from "@/lib/builder/generation/v2";
 import {
@@ -919,6 +920,7 @@ const runDeterministicCompletion = async (
   const response = await openai.chat.completions.create({
     model: DETERMINISTIC_MODEL,
     temperature: 0,
+    max_tokens: 4000, // P0 COST-1: bound output tokens
     response_format: { type: "json_object" },
     messages: [
       { role: "system", content: systemPrompt },
@@ -1009,6 +1011,20 @@ export async function POST(request: Request) {
 
     if (!(await userHasLaunchAccess(userData.user.id))) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    // P0 COST-1: site generation fires many uncapped model calls; quota it per user.
+    const genLimit = await checkRateLimit({
+      key: `builder-generate:${userData.user.id}`,
+      limit: 12,
+      windowInSeconds: 60
+    });
+    if (!genLimit.allowed) {
+      const retryAfter = Math.max(1, Math.ceil((genLimit.resetAt - Date.now()) / 1000));
+      return NextResponse.json(
+        { error: "Too many generation requests. Please wait a moment and try again." },
+        { status: 429, headers: { "Retry-After": String(retryAfter) } }
+      );
     }
 
     const payload = await request.json().catch(() => null);
