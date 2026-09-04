@@ -12,7 +12,19 @@
     "test:gen": "tsx scripts/test-generation.ts",
     "test:gen:v2": "tsx scripts/test-generation-v2.ts",
     "test:v0-like": "tsx scripts/test-v0-like.ts",
-    "test:deterministic": "tsx scripts/test-deterministic-templates.ts"
+    "test:deterministic": "tsx scripts/test-deterministic-templates.ts",
+    "test:site-spec": "npm run test:site-spec:schema && npm run test:site-spec:ops && npm run test:site-spec:ai && npm run test:site-spec:renderer && npm run test:site-spec:store && npm run test:site-spec:readiness",
+    "test:site-spec:schema": "tsx tests/site-spec-schema.test.ts",
+    "test:site-spec:ops": "tsx tests/site-spec-ops.test.ts",
+    "test:site-spec:ai": "tsx tests/site-spec-ai.test.ts",
+    "test:site-spec:renderer": "TSX_TSCONFIG_PATH=tests/tsconfig.json node --require ./tests/support/css-modules-stub.cjs --import tsx tests/site-spec-renderer.test.ts",
+    "test:site-spec:store": "tsx tests/site-spec-store.test.ts",
+    "test:site-spec:readiness": "tsx tests/site-spec-readiness.test.ts",
+    "test:site-spec:postgres": "tsx --tsconfig scripts/fixtures/tsconfig.json scripts/harness/verify-site-spec-postgres.ts",
+    "test:site-spec:readiness:postgres": "tsx --tsconfig scripts/fixtures/tsconfig.json scripts/harness/verify-site-spec-readiness-postgres.ts",
+    "measure:site-spec": "tsx --tsconfig scripts/fixtures/tsconfig.json scripts/harness/site-spec-measure.ts",
+    "verify:site-spec": "TSX_TSCONFIG_PATH=tests/tsconfig.json node --require ./tests/support/css-modules-stub.cjs --import tsx scripts/verify-site-spec-responsive.ts",
+    "check:service-role": "node scripts/check-service-role-usage.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "6.1.0",

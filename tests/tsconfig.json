@@ -1,0 +1,14 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": "..",
+    // Next compiles JSX with the automatic runtime; `preserve` leaves tsx on the
+    // classic one, where a component that never imports React fails at runtime.
+    "jsx": "react-jsx",
+    "paths": {
+      "@/*": ["*"],
+      "server-only": ["scripts/fixtures/lib/noop.ts"],
+      "client-only": ["scripts/fixtures/lib/noop.ts"]
+    }
+  }
+}

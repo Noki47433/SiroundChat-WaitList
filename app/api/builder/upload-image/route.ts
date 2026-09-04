@@ -16,6 +16,9 @@ import {
   buildUpgradeRequiredResponse,
   getBusinessEntitlementAccess
 } from "@/lib/server/billing-access";
+import { checkImageBounds } from "@/lib/builder/image-bounds";
+import { logSiteSpecEvent, logSiteSpecFailure } from "@/lib/site-spec/telemetry";
+import { enforceRateLimit, RateLimitError } from "@/lib/utils/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -184,12 +187,47 @@ export async function POST(request: Request) {
     return buildUpgradeRequiredResponse("website_builder", billingAccess);
   }
 
+  // Uploads are storage writes and were previously unbounded per business: a
+  // loop could fill a bucket as fast as the network allowed. Generous enough
+  // that a real gallery upload never notices.
+  try {
+    await enforceRateLimit({
+      key: `builder:upload-image:${site.business_id}`,
+      limit: 60,
+      windowInSeconds: 10 * 60
+    });
+  } catch (error) {
+    if (error instanceof RateLimitError) {
+      return NextResponse.json(
+        { error: "That's a lot of images at once. Give it a minute and carry on." },
+        { status: 429, headers: { "Retry-After": String(error.retryAfterSeconds) } }
+      );
+    }
+    throw error;
+  }
+
   // ---- Upload ----
   const extension = resolveExtension(file);
   const fileName = `${kind}-${Date.now()}.${extension}`;
   const storagePath = `sites/${siteId}/${fileName}`;
 
   const arrayBuffer = await file.arrayBuffer();
+
+  // Bytes and MIME type are not enough: a pathological aspect ratio is a layout
+  // bug that arrives as a perfectly valid small file.
+  const bounds = checkImageBounds(arrayBuffer, kind === "logo" ? "logo" : "photo");
+  if (!bounds.ok) {
+    logSiteSpecEvent("ASSET_UPLOAD_FAILED", {
+      siteId,
+      businessId: site.business_id,
+      stage: "bounds",
+      reason: bounds.reason,
+      width: bounds.dimensions.width,
+      height: bounds.dimensions.height
+    });
+    return NextResponse.json({ error: bounds.message }, { status: 400 });
+  }
+
   const admin = getSupabaseAdminClientIfAvailable();
   if (!admin) {
     console.error("[BUILDER_UPLOAD_IMAGE_CONFIG_MISSING]", { siteId, userId: userData.user.id });
@@ -203,6 +241,13 @@ export async function POST(request: Request) {
 
   if (uploadRes.error) {
     console.error("[BUILDER_UPLOAD_IMAGE_ERROR]", uploadRes.error);
+    logSiteSpecFailure("ASSET_UPLOAD_FAILED", {
+      siteId,
+      businessId: site.business_id,
+      stage: "storage"
+    });
+    // Nothing was written and no asset row exists, so the site is unchanged and
+    // still valid — a failed upload never leaves a broken pinned reference.
     return NextResponse.json({ error: "Failed to upload image" }, { status: 500 });
   }
 
@@ -235,8 +280,22 @@ export async function POST(request: Request) {
 
   if (assetError) {
     console.error("[BUILDER_ASSET_INSERT_ERROR]", assetError);
+    logSiteSpecFailure("ASSET_UPLOAD_FAILED", {
+      siteId,
+      businessId: site.business_id,
+      stage: "row"
+    });
     return NextResponse.json({ error: "Failed to save asset" }, { status: 500 });
   }
+
+  logSiteSpecEvent("ASSET_UPLOADED", {
+    siteId,
+    businessId: site.business_id,
+    kind,
+    bytes: file.size,
+    width: bounds.dimensions?.width ?? null,
+    height: bounds.dimensions?.height ?? null
+  });
 
   // ---- If logo, persist on builder_sites ----
   if (kind === "logo") {

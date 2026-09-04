@@ -22,6 +22,13 @@ import {
 import { getBusinessEntitlementAccess } from "@/lib/server/billing-access";
 import { resolveLiveChat } from "@/lib/website-builder/live-chat";
 import { IntegratedAdditionalPageRenderer } from "@/components/templates/IntegratedAdditionalPageRenderer";
+import { SiteSpecRenderer } from "@/components/site-spec/SiteSpecRenderer";
+import { logSiteSpecEvent } from "@/lib/site-spec/telemetry";
+import {
+  loadRenderableDraftSite,
+  loadRenderablePublishedSite,
+  type RenderableSite
+} from "@/lib/site-spec/public";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -121,6 +128,23 @@ const ensureBusinessWidgetKey = async (
   return nextWidgetKey;
 };
 
+/**
+ * A site served from a validated Site Spec.
+ *
+ * Kept as a separate shape from the two legacy document formats rather than
+ * folded into them: the legacy paths below are untouched, and a site reaches
+ * this branch only once it actually has a spec version to serve.
+ */
+type SiteSpecSiteData = {
+  kind: "site_spec";
+  renderable: RenderableSite;
+  widgetKey: string | null;
+  preview: boolean;
+};
+
+const isSiteSpecSiteData = (value: unknown): value is SiteSpecSiteData =>
+  Boolean(value && typeof value === "object" && (value as { kind?: unknown }).kind === "site_spec");
+
 const loadSite = async (slug: string, preview: boolean, siteId?: string | null) => {
   if (preview && siteId) {
     const supabase = getSupabaseServerClient();
@@ -142,9 +166,37 @@ const loadSite = async (slug: string, preview: boolean, siteId?: string | null) 
       "id,business_id,slug,site_document,business_name,logo_url,primary_color,secondary_color"
     );
 
-    if (!site?.site_document) return null;
+    if (!site) return null;
 
     const admin = getSupabaseAdminClient();
+
+    // A site on the Site Spec model previews its DRAFT — the version the owner
+    // is working on, which is deliberately not what customers are served.
+    const draft = await loadRenderableDraftSite(admin as any, site.id);
+    if (draft) {
+      const { data: specBusiness } = await (admin as any)
+        .from("businesses")
+        .select("widget_key")
+        .eq("id", site.business_id)
+        .maybeSingle();
+      const specWidgetKey = await ensureBusinessWidgetKey(
+        admin as any,
+        site.business_id,
+        specBusiness?.widget_key ?? null
+      );
+      const specAccess = await getBusinessEntitlementAccess(
+        site.business_id as string,
+        "chatbot_website_injection"
+      );
+      return {
+        kind: "site_spec" as const,
+        renderable: draft,
+        widgetKey: specAccess.allowed ? specWidgetKey : null,
+        preview: true
+      };
+    }
+
+    if (!site.site_document) return null;
     const { data: business } = await (admin as any)
       .from("businesses")
       .select("widget_key")
@@ -206,7 +258,36 @@ const loadSite = async (slug: string, preview: boolean, siteId?: string | null) 
     .eq("status", "published")
     .maybeSingle();
 
-  if (!site?.site_document) return null;
+  if (!site) return null;
+
+  // A site on the Site Spec model serves its PUBLISHED version. Draft edits
+  // made since then are not visible here — that is the whole point of the
+  // published pointer.
+  const published = await loadRenderablePublishedSite(admin as any, slug);
+  if (published) {
+    const { data: specBusiness } = await (admin as any)
+      .from("businesses")
+      .select("widget_key")
+      .eq("id", site.business_id)
+      .maybeSingle();
+    const specWidgetKey = await ensureBusinessWidgetKey(
+      admin as any,
+      site.business_id,
+      specBusiness?.widget_key ?? null
+    );
+    const specAccess = await getBusinessEntitlementAccess(
+      site.business_id as string,
+      "chatbot_website_injection"
+    );
+    return {
+      kind: "site_spec" as const,
+      renderable: published,
+      widgetKey: specAccess.allowed ? specWidgetKey : null,
+      preview: false
+    };
+  }
+
+  if (!site.site_document) return null;
 
   const { data: business } = await (admin as any)
     .from("businesses")
@@ -268,6 +349,31 @@ export async function generateMetadata({ params, searchParams }: PageProps): Pro
     return { title: "Site not found" };
   }
 
+  if (isSiteSpecSiteData(data)) {
+    const { site, slug: specSlug } = data.renderable;
+    const canonical = buildCanonicalUrl(specSlug, searchParams);
+    return {
+      title: { absolute: site.seo.title },
+      description: site.seo.description,
+      alternates: data.preview ? undefined : { canonical },
+      robots: data.preview
+        ? { index: false, follow: false }
+        : { index: true, follow: true },
+      openGraph: {
+        title: site.seo.title,
+        description: site.seo.description,
+        url: data.preview ? undefined : canonical,
+        siteName: site.brandName,
+        type: "website"
+      },
+      twitter: {
+        card: "summary_large_image",
+        title: site.seo.title,
+        description: site.seo.description
+      }
+    };
+  }
+
   const siteSlug = data.site.slug ?? params.slug;
   const businessName =
     parseIntegratedTemplateSiteDocument(data.document)?.meta.businessName ??
@@ -308,6 +414,66 @@ export default async function PublicSitePage({ params, searchParams }: PageProps
 
   if (!data) {
     notFound();
+  }
+
+  if (isSiteSpecSiteData(data)) {
+    const { renderable } = data;
+    const requestHeadersForSpec = await headers();
+    const requestHostForSpec = getRequestHost(requestHeadersForSpec);
+    const canonicalForSpec = buildCanonicalUrl(renderable.slug, searchParams);
+
+    if (
+      !data.preview &&
+      getPublishedSiteUrlMode() === "subdomain" &&
+      extractPublishedSiteSlugFromHost(requestHostForSpec) !== renderable.slug
+    ) {
+      redirect(canonicalForSpec);
+    }
+
+    console.info("[BUILDER_SITE_RENDER_PIPELINE]", {
+      siteId: renderable.siteId,
+      slug: renderable.slug,
+      preview: data.preview,
+      renderer: "site_spec",
+      version: renderable.versionNumber
+    });
+    // Same fact in the Site Spec event vocabulary, so a canary's public traffic
+    // is countable alongside its generation and edit events.
+    logSiteSpecEvent("RENDER", {
+      siteId: renderable.siteId,
+      businessId: renderable.businessId,
+      preview: data.preview,
+      version: renderable.versionNumber
+    });
+
+    const structuredDataForSpec = {
+      "@context": "https://schema.org",
+      "@type": "LocalBusiness",
+      name: renderable.site.brandName,
+      description: renderable.site.seo.description,
+      address: renderable.site.contact.address ?? undefined,
+      telephone: renderable.site.contact.phone ?? undefined,
+      url: data.preview ? undefined : canonicalForSpec
+    };
+
+    return (
+      <>
+        <SiteSpecRenderer site={renderable.site} slug={renderable.slug} />
+        {!data.preview ? (
+          <Script
+            id={`site-structured-data-${renderable.siteId}`}
+            type="application/ld+json"
+            strategy="afterInteractive"
+            dangerouslySetInnerHTML={{
+              __html: JSON.stringify(structuredDataForSpec).replace(/</g, "\\u003c")
+            }}
+          />
+        ) : null}
+        {data.widgetKey ? (
+          <Script src={`/api/widget/loader?key=${data.widgetKey}`} strategy="afterInteractive" />
+        ) : null}
+      </>
+    );
   }
 
   const siteSlug = data.site.slug ?? params.slug;
