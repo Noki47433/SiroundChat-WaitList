@@ -40,6 +40,12 @@ import { enforceRateLimit, RateLimitError } from "@/lib/utils/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// Availability is a live read. `force-dynamic` governs rendering, not the fetch
+// Data Cache that supabase-js's GET requests land in — and that cache survives
+// redeploys, so one early empty occupancy answer can be served for the life of
+// the project. Nothing on this path may be reused.
+export const fetchCache = "force-no-store";
+export const revalidate = 0;
 
 const Query = z.object({
   slug: z.string().trim().min(1).max(120),
