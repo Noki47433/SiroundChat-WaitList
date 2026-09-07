@@ -28,7 +28,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { listEligibleWorkers, resolveWorkerDaySlots } from "@/lib/booking/availability-service";
+import {
+  buildAvailabilityInput,
+  listEligibleWorkers,
+  resolveWorkerDaySlots
+} from "@/lib/booking/availability-service";
 import { resolveRolloutState } from "@/lib/site-spec/rollout";
 import { logSiteSpecEvent, logSiteSpecFailure } from "@/lib/site-spec/telemetry";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -139,6 +143,7 @@ export async function GET(request: Request) {
   // could not find out" look identical to a visitor otherwise, and the second
   // one dressed as the first is how a website quietly turns customers away.
   const slots: Array<{ startAtIso: string; endAtIso: string }> = [];
+  const occupancyByWorker: string[] = [];
   let eligible: Array<{ id: string; displayName: string }> = [];
   try {
     eligible = await listEligibleWorkers(admin, businessId, common.locationId, common.serviceId);
@@ -150,6 +155,11 @@ export async function GET(request: Request) {
       : eligible;
     const seen = new Set<number>();
     for (const worker of workers) {
+      // Diagnostic, ids and counts only: the canary saw this endpoint offer
+      // times that were already booked while the write path refused them, so
+      // the occupancy this loop actually reads is worth stating out loud.
+      const probe = await buildAvailabilityInput(admin, { ...common, teamMemberId: worker.id });
+      occupancyByWorker.push(`${worker.id.slice(0, 8)}:${probe ? (probe.occupancy ?? []).length : "null"}`);
       const workerSlots = await resolveWorkerDaySlots(admin, { ...common, teamMemberId: worker.id });
       for (const slot of workerSlots) {
         const instant = new Date(slot.startAtIso).getTime();
@@ -176,7 +186,8 @@ export async function GET(request: Request) {
   logSiteSpecEvent("BOOKING_RUNTIME", {
     businessId,
     serviceId: common.serviceId,
-    slots: slots.length
+    slots: slots.length,
+    occupancy: occupancyByWorker.join(",")
   });
 
   return NextResponse.json({
