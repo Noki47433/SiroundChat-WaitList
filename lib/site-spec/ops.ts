@@ -26,6 +26,7 @@ import { z } from "zod";
 
 import {
   ART_TREATMENTS,
+  BOOKING_PRESENTATIONS,
   GALLERY_PRESENTATIONS,
   CTA_SHAPES,
   DENSITIES,
@@ -212,7 +213,7 @@ export const SiteSpecOpSchema = z.discriminatedUnion("op", [
   z.object({
     op: z.literal("insert_section"),
     section: z.enum(INSERTABLE_SECTIONS),
-    presentation: z.enum(GALLERY_PRESENTATIONS),
+    presentation: z.union([z.enum(GALLERY_PRESENTATIONS), z.enum(BOOKING_PRESENTATIONS)]),
     placement: z.union([
       z.object({ at: z.enum(["start", "end"]) }),
       z.object({ after: SectionIdSchema }),

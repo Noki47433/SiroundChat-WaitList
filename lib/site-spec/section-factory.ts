@@ -26,12 +26,13 @@
  */
 import {
   GALLERY_TILE_COUNT,
+  type BookingPresentation,
   type GalleryPresentation
 } from "@/lib/site-spec/vocabulary";
 import type { Section, SiteSpec } from "@/lib/site-spec/schema";
 
 /** Section types the factory can build. Deliberately small and closed. */
-export const INSERTABLE_SECTIONS = ["gallery"] as const;
+export const INSERTABLE_SECTIONS = ["gallery", "booking"] as const;
 export type InsertableSection = (typeof INSERTABLE_SECTIONS)[number];
 
 export type SectionPlacement =
@@ -42,7 +43,7 @@ export type SectionPlacement =
 
 export type InsertSectionIntent = {
   section: InsertableSection;
-  presentation: GalleryPresentation;
+  presentation: GalleryPresentation | BookingPresentation;
   placement: SectionPlacement;
   title?: string;
   eyebrow?: string;
@@ -87,7 +88,8 @@ export const buildGallerySection = (
   intent: InsertSectionIntent,
   assets: AssetChoice[]
 ): Section => {
-  const tiles = GALLERY_TILE_COUNT[intent.presentation];
+  const presentation = intent.presentation as GalleryPresentation;
+  const tiles = GALLERY_TILE_COUNT[presentation];
   const items = Array.from({ length: tiles }, (_, index) => {
     const asset = assets[index];
     return asset
@@ -109,7 +111,7 @@ export const buildGallerySection = (
     id: nextSectionId(spec, "gallery"),
     type: "gallery",
     layout: "wide",
-    presentation: intent.presentation,
+    presentation,
     heading: {
       ...(intent.eyebrow ? { eyebrow: intent.eyebrow.slice(0, 60) } : {}),
       title: (intent.title ?? "Gallery").slice(0, 80)
@@ -119,6 +121,27 @@ export const buildGallerySection = (
     framing: {}
   } as unknown as Section;
 };
+
+/**
+ * Build a booking section.
+ *
+ * The section carries no times and no availability — the renderer draws the
+ * shell and the runtime panel asks the canonical engine. So there is nothing
+ * here to get wrong except the shape, which is why it can be built outright.
+ */
+export const buildBookingSection = (spec: SiteSpec, intent: InsertSectionIntent): Section =>
+  ({
+    id: nextSectionId(spec, "booking"),
+    type: "booking",
+    layout: "wide",
+    presentation: intent.presentation,
+    heading: {
+      ...(intent.eyebrow ? { eyebrow: intent.eyebrow.slice(0, 60) } : {}),
+      title: (intent.title ?? "Book an appointment").slice(0, 80)
+    },
+    cta: { label: "Book now", target: { kind: "booking" } },
+    framing: {}
+  }) as unknown as Section;
 
 export type InsertSectionResult =
   | { ok: true; spec: SiteSpec; sectionId: string }
@@ -149,7 +172,10 @@ export const insertSection = (
     return { ok: false, reason: "duplicate_section" };
   }
 
-  const section = buildGallerySection(spec, intent, assets);
+  const section =
+    intent.section === "booking"
+      ? buildBookingSection(spec, intent)
+      : buildGallerySection(spec, intent, assets);
   const index = resolveInsertIndex(spec, intent.placement);
   const sections = [...spec.sections];
   sections.splice(index, 0, section);

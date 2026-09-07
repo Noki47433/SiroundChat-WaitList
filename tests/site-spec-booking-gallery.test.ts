@@ -54,6 +54,13 @@ const withoutGallery = (): SiteSpec => {
   return spec;
 };
 
+/** FADE_SPEC ships with a booking section, so drop it to test inserting one. */
+const withoutBooking = (): SiteSpec => {
+  const spec = JSON.parse(JSON.stringify(FADE_SPEC)) as SiteSpec;
+  spec.sections = spec.sections.filter((section) => section.type !== "booking");
+  return spec;
+};
+
 const ASSETS = [
   { id: "aaaaaaaa-0000-4000-8000-000000000001", label: "gallery 1" },
   { id: "aaaaaaaa-0000-4000-8000-000000000002", label: "gallery 2" },
@@ -148,7 +155,45 @@ ok("a second gallery is refused, and the page's section cap is respected", () =>
 });
 
 ok("the insertable vocabulary is closed", () => {
-  assert.deepEqual([...INSERTABLE_SECTIONS], ["gallery"]);
+  assert.deepEqual([...INSERTABLE_SECTIONS], ["gallery", "booking"]);
+});
+
+ok("a booking section is built valid, carries no times, and points at booking", () => {
+  const spec = withoutBooking();
+  const result = insertSection(spec, {
+    section: "booking",
+    presentation: "panel",
+    placement: { at: "end" }
+  });
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  const section = result.spec.sections.find((s) => s.id === result.sectionId) as any;
+  assert.equal(section.type, "booking");
+  assert.equal(section.cta.target.kind, "booking");
+  // The section is a shell: no slot, time or availability may be baked into it.
+  assert.equal(/\d{2}:\d{2}/.test(JSON.stringify(section)), false);
+  assert.equal("items" in section, false);
+  // And it must survive the real schema, like every other applied operation.
+  assert.equal(validateSiteSpec(result.spec).ok, true);
+});
+
+ok("a second booking section is refused", () => {
+  const spec = withoutBooking();
+  const once = insertSection(spec, {
+    section: "booking",
+    presentation: "panel",
+    placement: { at: "end" }
+  });
+  assert.equal(once.ok, true);
+  if (!once.ok) return;
+  const twice = insertSection(once.spec, {
+    section: "booking",
+    presentation: "plain",
+    placement: { at: "end" }
+  });
+  assert.equal(twice.ok, false);
+  if (twice.ok) return;
+  assert.equal(twice.reason, "duplicate_section");
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

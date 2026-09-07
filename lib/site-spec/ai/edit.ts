@@ -19,7 +19,12 @@ import { z } from "zod";
 import { callStructured, SITE_SPEC_MODEL, type ModelUsage } from "@/lib/site-spec/ai/client";
 import { INSERTABLE_SECTIONS } from "@/lib/site-spec/section-factory";
 import { TOKEN_PATHS, type SiteSpecOp } from "@/lib/site-spec/ops";
-import { FOOTER_PRESENTATIONS, GALLERY_PRESENTATIONS, SECTION_LAYOUTS } from "@/lib/site-spec/vocabulary";
+import {
+  BOOKING_PRESENTATIONS,
+  FOOTER_PRESENTATIONS,
+  GALLERY_PRESENTATIONS,
+  SECTION_LAYOUTS
+} from "@/lib/site-spec/vocabulary";
 import type { SiteSpec } from "@/lib/site-spec/schema";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -128,7 +133,11 @@ export const ModelEditOpSchema = z.discriminatedUnion("op", [
   z.object({
     op: z.literal("insert_section"),
     section: z.enum(INSERTABLE_SECTIONS).describe("The kind of section to add."),
-    presentation: z.enum(GALLERY_PRESENTATIONS).describe("How it should feel."),
+    presentation: z
+      .enum([...GALLERY_PRESENTATIONS, ...BOOKING_PRESENTATIONS])
+      .describe(
+        "How it should feel. Gallery: mosaic, portfolio, filmstrip, duo. Booking: panel, plain, invert."
+      ),
     placementAfterSectionId: z
       .string()
       .nullable()
@@ -302,6 +311,8 @@ RULES
   rejected.
 · "Use this photo for the hero" is bind_asset with an asset id you were given. You cannot
   write an image address; there is no field for one.
+· "Add a booking section" / "let people book from the site" is insert_section with section
+  "booking". The section carries no times: the page asks the real booking engine at runtime.
 · "Add a gallery" / "show my photos" is insert_section. You choose the kind, how it should feel
   and roughly where it goes; the application builds the section itself, binds the business's own
   uploaded images and fills every tile. Do not try to describe a section's internals — you cannot,
