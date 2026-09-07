@@ -40,7 +40,13 @@ export const dynamic = "force-dynamic";
 const Query = z.object({
   slug: z.string().trim().min(1).max(120),
   serviceId: z.string().uuid(),
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  /**
+   * Optional. Omitted means "anyone" — the union across every eligible worker,
+   * which is what the assistant offers. A value narrows to that one provider.
+   * It is validated against real eligibility below, never trusted as given.
+   */
+  teamMemberId: z.string().uuid().optional()
 });
 
 export async function GET(request: Request) {
@@ -48,7 +54,8 @@ export async function GET(request: Request) {
   const parsed = Query.safeParse({
     slug: url.searchParams.get("slug"),
     serviceId: url.searchParams.get("serviceId"),
-    date: url.searchParams.get("date")
+    date: url.searchParams.get("date"),
+    teamMemberId: url.searchParams.get("teamMemberId") ?? undefined
   });
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid query." }, { status: 400 });
@@ -132,8 +139,15 @@ export async function GET(request: Request) {
   // could not find out" look identical to a visitor otherwise, and the second
   // one dressed as the first is how a website quietly turns customers away.
   const slots: Array<{ startAtIso: string; endAtIso: string }> = [];
+  let eligible: Array<{ id: string; displayName: string }> = [];
   try {
-    const workers = await listEligibleWorkers(admin, businessId, common.locationId, common.serviceId);
+    eligible = await listEligibleWorkers(admin, businessId, common.locationId, common.serviceId);
+    // A worker the caller names must actually be eligible for this service at
+    // this location. An id that is not in the canonical list is simply not a
+    // choice, so it narrows to nothing rather than widening anything.
+    const workers = parsed.data.teamMemberId
+      ? eligible.filter((worker) => worker.id === parsed.data.teamMemberId)
+      : eligible;
     const seen = new Set<number>();
     for (const worker of workers) {
       const workerSlots = await resolveWorkerDaySlots(admin, { ...common, teamMemberId: worker.id });
@@ -169,6 +183,9 @@ export async function GET(request: Request) {
     available: slots.length > 0,
     timezone: location.timezone ?? null,
     service: { id: service.id, name: service.name, durationMin: service.base_duration_min },
+    // Names and ids only — enough to offer a choice, nothing about the person.
+    workers: eligible.map((worker) => ({ id: worker.id, name: worker.displayName })),
+    selectedTeamMemberId: parsed.data.teamMemberId ?? null,
     // Capped: a page shows a handful of times, not a calendar dump.
     slots: slots.slice(0, 12)
   });

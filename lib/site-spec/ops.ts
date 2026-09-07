@@ -26,6 +26,7 @@ import { z } from "zod";
 
 import {
   ART_TREATMENTS,
+  GALLERY_PRESENTATIONS,
   CTA_SHAPES,
   DENSITIES,
   EYEBROW_STYLES,
@@ -37,6 +38,7 @@ import {
   NAV_SHAPES,
   SECTION_LAYOUTS
 } from "@/lib/site-spec/vocabulary";
+import { INSERTABLE_SECTIONS, insertSection, type AssetChoice } from "@/lib/site-spec/section-factory";
 import {
   ColorSchema,
   SectionIdSchema,
@@ -198,6 +200,27 @@ export const SiteSpecOpSchema = z.discriminatedUnion("op", [
     /** Where to insert. Omitted means "at the end". */
     index: z.number().int().min(0).max(14).optional()
   }),
+  /**
+   * Insert a section the APPLICATION builds.
+   *
+   * `add_section` above requires a complete, valid Site Spec section, which is a
+   * thing a model reliably cannot author — the Stage 3C canary proved it, twice.
+   * This operation carries only the choices a person actually makes, from closed
+   * vocabularies, and `lib/site-spec/section-factory` constructs a section that
+   * is valid by construction. The result is validated like any other operation's.
+   */
+  z.object({
+    op: z.literal("insert_section"),
+    section: z.enum(INSERTABLE_SECTIONS),
+    presentation: z.enum(GALLERY_PRESENTATIONS),
+    placement: z.union([
+      z.object({ at: z.enum(["start", "end"]) }),
+      z.object({ after: SectionIdSchema }),
+      z.object({ before: SectionIdSchema })
+    ]),
+    title: ShortTextSchema.optional(),
+    eyebrow: ShortTextSchema.optional()
+  }),
   z.object({
     op: z.literal("remove_section"),
     sectionId: SectionIdSchema
@@ -304,7 +327,12 @@ const setPath = (target: Record<string, any>, path: string, value: unknown) => {
  * validator before it is returned, so a caller can never be handed — and can
  * never persist — a spec that the renderer would not accept.
  */
-export const applyOps = (spec: SiteSpec, ops: unknown): ApplyResult => {
+export type ApplyContext = {
+  /** The site's own assets, so an inserted gallery can bind real photographs. */
+  assets?: AssetChoice[];
+};
+
+export const applyOps = (spec: SiteSpec, ops: unknown, context: ApplyContext = {}): ApplyResult => {
   const parsedOps = SiteSpecOpListSchema.safeParse(ops);
   if (!parsedOps.success) {
     return {
@@ -321,7 +349,7 @@ export const applyOps = (spec: SiteSpec, ops: unknown): ApplyResult => {
   const draft = clone(spec);
 
   for (const [index, op] of parsedOps.data.entries()) {
-    const failure = applyOne(draft, op);
+    const failure = applyOne(draft, op, context);
     if (failure) return { ok: false, reason: "unapplicable", opIndex: index, message: failure, op };
   }
 
@@ -331,7 +359,7 @@ export const applyOps = (spec: SiteSpec, ops: unknown): ApplyResult => {
 };
 
 /** Returns null on success, or a human-readable reason the op cannot apply. */
-const applyOne = (spec: SiteSpec, op: SiteSpecOp): string | null => {
+const applyOne = (spec: SiteSpec, op: SiteSpecOp, context: ApplyContext = {}): string | null => {
   switch (op.op) {
     // ── copy ──────────────────────────────────────────────────────────────
     case "set_copy": {
@@ -446,6 +474,30 @@ const applyOne = (spec: SiteSpec, op: SiteSpecOp): string | null => {
         default:
           return `unsupported copy target ${(target as { field: string }).field}`;
       }
+    }
+
+    // ── factory-built section insertion ───────────────────────────────────
+    case "insert_section": {
+      const result = insertSection(spec, {
+        section: op.section,
+        presentation: op.presentation,
+        placement: op.placement,
+        title: op.title,
+        eyebrow: op.eyebrow
+      }, context.assets ?? []);
+      if (!result.ok) {
+        if (result.reason === "duplicate_section") {
+          return `this page already has a ${op.section} section`;
+        }
+        if (result.reason === "too_many_sections") {
+          return "this page already has as many sections as it can hold";
+        }
+        return `${op.section} is not a section that can be added`;
+      }
+      // Replace the working draft's sections with the factory's result. Nothing
+      // else in the spec is touched, so an insertion cannot disturb the rest.
+      spec.sections = result.spec.sections;
+      return null;
     }
 
     // ── design tokens ─────────────────────────────────────────────────────

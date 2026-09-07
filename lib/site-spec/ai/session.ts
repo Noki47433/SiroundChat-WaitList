@@ -15,7 +15,7 @@ import { buildGenerationBrief, type GenerationBrief, type KnowledgeExcerpt } fro
 import { decideRemaining, nextClarifications, summariseDecisions, type ClarificationAnswer, type ClarificationQuestion } from "@/lib/site-spec/clarify";
 import { emptyModelUsage, type ModelUsage } from "@/lib/site-spec/ai/client";
 import { generateSiteSpec } from "@/lib/site-spec/ai/generate";
-import { interpretEdit } from "@/lib/site-spec/ai/edit";
+import { EDIT_MODEL_TIMEOUT_MS, interpretEdit } from "@/lib/site-spec/ai/edit";
 import { authorizeOps, type OpRejection, type OpWarning } from "@/lib/site-spec/authorize";
 import { applyOps, describeOps, type SiteSpecOp } from "@/lib/site-spec/ops";
 import { saveDraftSpec, type SiteVersion } from "@/lib/site-spec/store";
@@ -253,6 +253,10 @@ export const runEdit = async ({
     usage.completionTokens += next.completionTokens;
   };
 
+  // One edit gets ONE ceiling's worth of model time in total. The bounded repair
+  // is worth having, but not at the cost of the owner waiting through a second
+  // full timeout — so it only runs if there is budget left.
+  const deadline = Date.now() + EDIT_MODEL_TIMEOUT_MS;
   const interpreted = await interpret({ message, spec, assets, history });
   record(interpreted.usage);
 
@@ -263,6 +267,7 @@ export const runEdit = async ({
       ops: [],
       rejections: [],
       warnings: [],
+      diagnostics: { stage: "model", detail: interpreted.reason },
       reply:
         interpreted.reason === "timeout"
           ? "That took too long to work out — your site is exactly as it was. Try again?"
@@ -307,26 +312,28 @@ export const runEdit = async ({
     };
   }
 
-  let applied = applyOps(spec, decision.authorized);
+  let applied = applyOps(spec, decision.authorized, { assets });
   let authorized = decision.authorized;
 
   // ONE bounded repair. Generation already feeds validation issues back to the
   // model; editing needs the same, because ordinary requests ("make it feel more
   // premium") routinely land one token outside what the renderer accepts, and
   // refusing outright makes the product look broken when it is merely strict.
-  if (!applied.ok) {
+  const remaining = deadline - Date.now();
+  if (!applied.ok && remaining > 3_000) {
     const retry = await interpret({
       message: `${message}\n\n(Your previous attempt was rejected: ${describeFailure(applied)} Propose a corrected, smaller set of operations.)`,
       spec,
       assets,
-      history
+      history,
+      timeoutMs: remaining
     });
     record(retry.usage);
 
     if (retry.ok && retry.ops.length) {
       const retryDecision = authorizeOps(retry.ops, { spec, business });
       if (retryDecision.authorized.length) {
-        const second = applyOps(spec, retryDecision.authorized);
+        const second = applyOps(spec, retryDecision.authorized, { assets });
         if (second.ok) {
           applied = second;
           authorized = retryDecision.authorized;

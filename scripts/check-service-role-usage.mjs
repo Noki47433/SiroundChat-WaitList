@@ -107,6 +107,14 @@ const ALLOWLIST = new Set([
   // slug + status='published' + a published_version_id — never from the request —
   // and the route is read-only, returning availability slots and nothing else.
   "app/api/site-spec/booking/route.ts",
+  // Stage 3D · reviewed. A public visitor has no session, so the tenant is derived
+  // from a PUBLISHED SLUG (builder_sites where slug + status='published' +
+  // published_version_id) — the "published-site lookup" derivation this guard
+  // names. The request body has no business or location field at all; serviceId is
+  // re-checked with .eq("business_id", businessId); teamMemberId is checked against
+  // canonical eligibility for that business+location+service; and the write goes
+  // through create_booking, whose FKs bind location and eligibility to the business.
+  "app/api/site-spec/booking/create/route.ts",
   "app/api/site/forms/submit/route.ts",
   "app/api/widget/config/route.ts",
   "app/api/widget/loader/route.ts",

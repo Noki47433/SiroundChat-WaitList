@@ -17,8 +17,9 @@
 import { z } from "zod";
 
 import { callStructured, SITE_SPEC_MODEL, type ModelUsage } from "@/lib/site-spec/ai/client";
+import { INSERTABLE_SECTIONS } from "@/lib/site-spec/section-factory";
 import { TOKEN_PATHS, type SiteSpecOp } from "@/lib/site-spec/ops";
-import { FOOTER_PRESENTATIONS, SECTION_LAYOUTS } from "@/lib/site-spec/vocabulary";
+import { FOOTER_PRESENTATIONS, GALLERY_PRESENTATIONS, SECTION_LAYOUTS } from "@/lib/site-spec/vocabulary";
 import type { SiteSpec } from "@/lib/site-spec/schema";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -123,6 +124,17 @@ export const ModelEditOpSchema = z.discriminatedUnion("op", [
   z.object({
     op: z.literal("set_footer"),
     presentation: z.enum(FOOTER_PRESENTATIONS)
+  }),
+  z.object({
+    op: z.literal("insert_section"),
+    section: z.enum(INSERTABLE_SECTIONS).describe("The kind of section to add."),
+    presentation: z.enum(GALLERY_PRESENTATIONS).describe("How it should feel."),
+    placementAfterSectionId: z
+      .string()
+      .nullable()
+      .describe("Put it after this section id, or null for the end of the page."),
+    title: z.string().nullable().describe("A heading for it, or null for a sensible default."),
+    eyebrow: z.string().nullable().describe("A short line above the heading, or null.")
   })
 ]);
 
@@ -238,6 +250,18 @@ export const toSiteSpecOp = (op: ModelEditOp): SiteSpecOp | null => {
     case "set_footer":
       return { op: "set_footer", presentation: op.presentation };
 
+    case "insert_section":
+      return {
+        op: "insert_section",
+        section: op.section,
+        presentation: op.presentation,
+        placement: op.placementAfterSectionId
+          ? { after: op.placementAfterSectionId }
+          : { at: "end" },
+        ...(op.title ? { title: op.title } : {}),
+        ...(op.eyebrow ? { eyebrow: op.eyebrow } : {})
+      };
+
     default:
       return null;
   }
@@ -278,6 +302,10 @@ RULES
   rejected.
 · "Use this photo for the hero" is bind_asset with an asset id you were given. You cannot
   write an image address; there is no field for one.
+· "Add a gallery" / "show my photos" is insert_section. You choose the kind, how it should feel
+  and roughly where it goes; the application builds the section itself, binds the business's own
+  uploaded images and fills every tile. Do not try to describe a section's internals — you cannot,
+  and there is no field for it.
 · A request to change a price, a duration, an opening time, an address or a phone number is
   NOT a website change. Return no operations and set notAWebsiteChange, explaining that this
   lives in the business record and the website shows whatever is in there.
@@ -315,7 +343,23 @@ export type InterpretResult =
       usage: ModelUsage;
     };
 
+/**
+ * The hard ceiling for one conversational edit's model call.
+ *
+ * The Stage 3C production canary recorded a single 61-second edit — one upstream
+ * call that returned 48 tokens after a minute. Nothing was corrupted, but a
+ * minute of silence with a spinner is not an acceptable experience, and 60s was
+ * only ever the *generation* budget borrowed by default. An edit is a small,
+ * fast call; if it has not come back in 25 seconds it is not going to be worth
+ * waiting for.
+ *
+ * Generation keeps its own, longer budget — this mission does not change it.
+ */
+export const EDIT_MODEL_TIMEOUT_MS = 25_000;
+
 export type InterpretInput = {
+  /** Overrides the 25-second edit ceiling. Tests use it; product code does not. */
+  timeoutMs?: number;
   message: string;
   spec: SiteSpec;
   /** Assets the owner actually owns, so the model can only name a real one. */
@@ -379,6 +423,7 @@ export const interpretEdit = async ({
   history = [],
   model = SITE_SPEC_MODEL,
   maxAttempts = 2,
+  timeoutMs = EDIT_MODEL_TIMEOUT_MS,
   call = callStructured
 }: InterpretInput): Promise<InterpretResult> => {
   const context = [
@@ -400,7 +445,11 @@ export const interpretEdit = async ({
     user: context,
     model,
     maxAttempts,
-    temperature: 0.2
+    temperature: 0.2,
+    // Hard ceiling. `callStructured` passes this to the provider as an abort,
+    // so a call that overruns is cancelled rather than left running — which is
+    // what makes "a timed-out edit never mutates later" true rather than hoped.
+    timeoutMs
   });
 
   if (!result.ok) {
