@@ -134,13 +134,24 @@ export async function buildAvailabilityInput(
   const dayStart = new Date(`${dateISO}T00:00:00Z`).getTime();
   const from = new Date(dayStart - 24 * 3600_000).toISOString();
   const to = new Date(dayStart + 48 * 3600_000).toISOString();
-  const { data: occ } = await admin
+  // An occupancy read that fails must NOT degrade to "the day is wide open".
+  // Every other input to this engine fails in the safe direction — a missing
+  // schedule offers nothing — but a missing occupancy list offers times that are
+  // already taken, which is the one failure a visitor cannot detect and the
+  // business absorbs. So this read is the one that is allowed to throw.
+  const { data: occ, error: occError } = await admin
     .from("booking")
     .select("start_at, end_at, status")
     .eq("team_member_id", teamMemberId)
     .in("status", OCCUPYING)
     .gte("start_at", from)
     .lte("start_at", to);
+
+  if (occError) {
+    throw new Error(
+      `occupancy_read_failed:${occError.code ?? "?"}:${String(occError.message ?? "").slice(0, 120)}`
+    );
+  }
 
   // Map snake_case DB columns to the pure engine's camelCase shape.
   return {

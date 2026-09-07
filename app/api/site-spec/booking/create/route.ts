@@ -118,6 +118,20 @@ export async function POST(request: Request) {
     .maybeSingle();
   if (!service || service.is_active === false) return notFound();
 
+  // A named worker must belong to THIS business. Availability already fails
+  // closed for a foreign id, but that is an implicit guarantee borrowed from
+  // another module. On a public write path the tenant check is stated here.
+  if (input.teamMemberId) {
+    const { data: worker } = await admin
+      .from("team_member")
+      .select("id")
+      .eq("id", input.teamMemberId)
+      .eq("business_id", businessId)
+      .eq("is_active", true)
+      .maybeSingle();
+    if (!worker) return notFound();
+  }
+
   const { data: location } = await admin
     .from("location")
     .select("id, timezone")
