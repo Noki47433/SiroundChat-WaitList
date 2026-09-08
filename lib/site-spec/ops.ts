@@ -38,6 +38,7 @@ import {
   NAV_POSITIONS,
   NAV_SHAPES,
   SECTION_LAYOUTS,
+  TYPE_SCALES,
   type GalleryPresentation
 } from "@/lib/site-spec/vocabulary";
 import {
@@ -48,6 +49,7 @@ import {
 } from "@/lib/site-spec/section-factory";
 import {
   ColorSchema,
+  isFlushSafe,
   SectionIdSchema,
   SectionSchema,
   ShortTextSchema,
@@ -127,6 +129,8 @@ export const TOKEN_PATHS = [
   "typography.heroWeight",
   "typography.tracking",
   "typography.measure",
+  "typography.headingScale",
+  "typography.bodyScale",
   "hero.height",
   "hero.mobileHeight",
   "hero.measure"
@@ -162,6 +166,8 @@ const TOKEN_VALUE: Record<TokenPath, z.ZodTypeAny> = {
   "typography.heroWeight": z.number(),
   "typography.tracking": z.number(),
   "typography.measure": z.number(),
+  "typography.headingScale": z.enum(TYPE_SCALES),
+  "typography.bodyScale": z.enum(TYPE_SCALES),
   "hero.height": z.number(),
   "hero.mobileHeight": z.number(),
   "hero.measure": z.number()
@@ -523,7 +529,18 @@ const applyOne = (spec: SiteSpec, op: SiteSpecOp, context: ApplyContext = {}): s
       const section = findSection(spec, op.sectionId);
       if (!section) return `there is no section called "${op.sectionId}"`;
       if (!("layout" in section)) return "that section's composition is fixed";
-      section.layout = op.layout;
+      // "Make the services section full width" is a perfectly ordinary request
+      // that failed in Stage 3E, because the widest-sounding layout — `flush` —
+      // removes horizontal padding and only a `contact` section is built to
+      // survive it. The result was a spec the validator refused and an owner told
+      // their site would not render.
+      //
+      // But the vocabulary already contains the layout they actually meant:
+      // `wide` is a heading above a body that uses the full measure. So the
+      // intent maps to the legal layout rather than being refused. This is not a
+      // silent drop — the request is honoured, in the only form the renderer can
+      // honour it, and the owner-facing sentence says "full width" either way.
+      section.layout = op.layout === "flush" && !isFlushSafe(section.type) ? "wide" : op.layout;
       return null;
     }
 
@@ -735,17 +752,42 @@ const TOKEN_LABELS: Partial<Record<TokenPath, string>> = {
   "palette.ink": "text colour",
   "geometry.radius": "corner rounding",
   "typography.display": "heading font",
-  "typography.body": "body font"
+  "typography.body": "body font",
+  "typography.headingScale": "heading size",
+  "typography.bodyScale": "body text size"
 };
 
 const describeOne = (op: SiteSpecOp): string => {
   switch (op.op) {
     case "set_copy":
       return `Rewrote the ${copyLabel(op.target)}`;
-    case "set_token":
+    case "set_token": {
+      // "I made the headings larger" beats "Changed the typography.headingScale".
+      // Direction is the whole content of the message for a size change, so it is
+      // spoken rather than left for the owner to infer from the page.
+      if (op.path === "typography.headingScale" || op.path === "typography.bodyScale") {
+        const what = op.path === "typography.headingScale" ? "headings" : "body text";
+        const direction: Record<string, string> = {
+          smaller: `Made the ${what} smaller`,
+          default: `Put the ${what} back to the normal size`,
+          larger: `Made the ${what} larger`,
+          largest: `Made the ${what} noticeably larger`
+        };
+        return direction[String(op.value)] ?? `Changed the ${what} size`;
+      }
       return `Changed the ${TOKEN_LABELS[op.path] ?? op.path.split(".").pop()}`;
-    case "set_layout":
-      return `Changed the ${op.sectionId} layout`;
+    }
+    case "set_layout": {
+      const named: Record<string, string> = {
+        wide: "full width",
+        flush: "full width",
+        stack: "stacked",
+        split: "a side-by-side layout",
+        centered: "centred",
+        edge: "a large offset heading"
+      };
+      return `Made the ${op.sectionId} section ${named[op.layout] ?? op.layout}`;
+    }
     case "set_presentation":
       return `Changed how ${op.sectionId} is presented`;
     case "reorder_sections":

@@ -21,6 +21,8 @@ import { INSERTABLE_SECTIONS } from "@/lib/site-spec/section-factory";
 import { TOKEN_PATHS, type SiteSpecOp } from "@/lib/site-spec/ops";
 import {
   BOOKING_PRESENTATIONS,
+  FONT_STACK_CHARACTER,
+  FONT_STACK_IDS,
   FOOTER_PRESENTATIONS,
   GALLERY_PRESENTATIONS,
   SECTION_LAYOUTS
@@ -299,6 +301,16 @@ const toSlot = (
 // Prompting
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * The seven font ids, described the way an owner would describe them.
+ *
+ * Built from the vocabulary rather than written out here, so a stack added later
+ * cannot silently become unreachable — which is precisely the failure this fixes.
+ */
+const FONT_CHARACTER_LINES = FONT_STACK_IDS.map(
+  (id) => `    ${id} — ${FONT_STACK_CHARACTER[id]}`
+).join("\n");
+
 export const EDIT_SYSTEM_PROMPT = `You edit an existing website by proposing small, precise operations.
 
 You never rewrite the site. You never return HTML, CSS or a document. You choose from the
@@ -309,6 +321,23 @@ RULES
   not a redesign.
 · "Put X above Y" is a reorder. List EVERY section id in the new order — a partial list is
   rejected.
+· Layout is one of six compositions: stack (heading above body), split (label column
+  beside the body), wide (heading above a body using the full measure), centered, edge
+  (oversized heading beside the body), flush (edge-to-edge, no side padding).
+  "Make it full width" / "make it wider" / "use the whole page" is set_layout with
+  layout "wide". The flush layout is only for a contact section; asking for it anywhere else is
+  read as "wide".
+· Typography is two separate things and both are closed choices.
+  SIZE — "make the headings a little larger", "the typography is too big", "make the body
+  text smaller", "put the headings back to normal" — is set_token on
+  typography.headingScale or typography.bodyScale, with stringValue one of:
+  smaller, default, larger, largest. There is no px, rem, em or number for type size;
+  numberValue is meaningless for these two paths.
+  TYPEFACE — "use a more classic typeface for headings", "something more modern",
+  "warmer", "more technical" — is set_token on typography.display (headings) or
+  typography.body (body text), with stringValue one of the font ids below. You cannot
+  write a font name: there is no field for one.
+${FONT_CHARACTER_LINES}
 · "Use this photo for the hero" is bind_asset with an asset id you were given. You cannot
   write an image address; there is no field for one.
 · "Add a booking section" / "let people book from the site" is insert_section with section
@@ -367,6 +396,31 @@ export type InterpretResult =
  * Generation keeps its own, longer budget — this mission does not change it.
  */
 export const EDIT_MODEL_TIMEOUT_MS = 25_000;
+
+/**
+ * The promise made to the person waiting.
+ *
+ * These are two different numbers and conflating them is how a contract quietly
+ * becomes a lie. `EDIT_MODEL_TIMEOUT_MS` is the budget the MODEL gets. This is
+ * what the OWNER is promised end to end, and it has to be the larger of the two,
+ * because between the model answering and the reply arriving there is real work
+ * — authorising the operations, applying them, validating the whole spec,
+ * writing a version, and the network in both directions.
+ *
+ * Stage 3E measured 26.9 seconds against a "hard 25-second ceiling" and the
+ * honest reading of that is not that the ceiling failed; it is that 25 was being
+ * quoted for something it never covered. So the model keeps 25 and the product
+ * promises 30:
+ *
+ *   an edit returns either a result or a safe timeout response within 30 seconds,
+ *   and the model is given at most 25 of them.
+ *
+ * The gap is deliberately generous enough that the promise holds on a slow day
+ * rather than only on a fast one. `verify-edit-timeout.ts` asserts it against a
+ * production build with a deliberately slow model, and a unit test asserts the
+ * two numbers stay in the right order.
+ */
+export const EDIT_RESPONSE_SLA_MS = 30_000;
 
 export type InterpretInput = {
   /** Overrides the 25-second edit ceiling. Tests use it; product code does not. */

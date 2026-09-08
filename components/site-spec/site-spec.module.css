@@ -35,7 +35,7 @@
 .site [hidden]{display:none}
 
 /* ── density modifier — spacing itself is scaled in `tokens.ts` ───────── */
-.site[data-density="spacious"] .wh2{font-size:clamp(25px,4.4cqw,39px)}
+.site[data-density="spacious"] .wh2{font-size:calc(clamp(25px,4.4cqw,39px) * var(--w-hscale,1))}
 .site[data-density="spacious"] .wlbl{letter-spacing:.34em}
 .site[data-density="spacious"] .wp{line-height:1.85}
 
@@ -76,9 +76,9 @@
    letter-spacing:.02em;font-size:13px;font-weight:400;color:var(--w-mut)}
 .site[data-eyebrow="rule"] .wlbl{display:flex;align-items:center;gap:11px}
 .site[data-eyebrow="rule"] .wlbl::after{content:"";height:1px;flex:1;background:var(--w-acc);opacity:.4;max-width:80px}
-.wh2{font-size:clamp(21px,3.6cqw,31px);line-height:1.1;letter-spacing:var(--w-track);
+.wh2{font-size:calc(clamp(21px,3.6cqw,31px) * var(--w-hscale,1));line-height:1.1;letter-spacing:var(--w-track);
      font-family:var(--w-disp);font-weight:var(--w-dispw);margin:11px 0 0;text-wrap:balance;hyphens:none}
-.wp{font-size:13px;color:var(--w-mut);margin-top:12px;max-width:var(--w-measure);line-height:1.7}
+.wp{font-size:calc(13px * var(--w-bscale,1));color:var(--w-mut);margin-top:12px;max-width:var(--w-measure);line-height:1.7}
 .wp + .wp{margin-top:11px}
 .wbtn{display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;
       padding:12px 20px;background:var(--w-acc);color:var(--w-acc-ink);letter-spacing:-.005em;white-space:nowrap}
@@ -101,7 +101,7 @@
 .lay-centered .wacts{justify-content:center}
 .lay-centered .wlbl{justify-content:center}
 .lay-edge{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);gap:var(--w-colgap);align-items:start}
-.lay-edge .wh2{font-size:clamp(28px,5.4cqw,52px);line-height:1.02}
+.lay-edge .wh2{font-size:calc(clamp(28px,5.4cqw,52px) * var(--w-hscale,1));line-height:1.02}
 .lay-wide > .head{max-width:none}
 .head .wh2:first-child{margin-top:0}
 .body{min-width:0}
@@ -153,7 +153,7 @@
 .framed .im{aspect-ratio:var(--ar,4/3)}
 
 /* ══ HERO variants ═══════════════════════════════════════════════════ */
-.hero-h{font-size:clamp(30px,6.2cqw,58px);line-height:1;letter-spacing:-.042em;margin:0;
+.hero-h{font-size:calc(clamp(30px,6.2cqw,58px) * var(--w-hscale,1));line-height:1;letter-spacing:-.042em;margin:0;
         font-family:var(--w-disp);font-weight:var(--w-herow);text-wrap:balance;
         hyphens:none;overflow-wrap:normal;word-break:normal}
 .hero{padding:0;position:relative}

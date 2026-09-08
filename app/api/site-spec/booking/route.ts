@@ -90,7 +90,15 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     if (error instanceof RateLimitError) {
-      return NextResponse.json({ error: "Too many requests." }, { status: 429 });
+      // A visitor reading times too fast is still a visitor. Tell them how long
+      // to wait, in words, and in a header a browser or client can act on.
+      return NextResponse.json(
+        {
+          error: "rate_limited",
+          message: "Too many requests just now. Please try again in a moment."
+        },
+        { status: 429, headers: { "Retry-After": String(error.retryAfterSeconds) } }
+      );
     }
     throw error;
   }

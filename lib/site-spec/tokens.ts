@@ -10,7 +10,9 @@
 import type { CSSProperties } from "react";
 
 import type { ArtDirection, ArtStop, Design, SiteSpec } from "@/lib/site-spec/schema";
-import { FONT_STACKS } from "@/lib/site-spec/vocabulary";
+import { FONT_STACKS,
+  TYPE_SCALE_FACTOR
+} from "@/lib/site-spec/vocabulary";
 
 /**
  * Rounded to 3 decimals and forced through `Number`, so an unexpected value
@@ -63,6 +65,11 @@ export const designToCssVariables = (design: Design): CSSProperties => {
     "--w-dispw": num(typography.displayWeight),
     "--w-herow": num(typography.heroWeight),
     "--w-track": `${num(typography.tracking)}em`,
+    // Named steps, resolved to multipliers HERE rather than anywhere a model can
+    // reach. The stylesheet multiplies its existing clamps by these, so type size
+    // stays inside the range the responsive fixtures already cover.
+    "--w-hscale": num(TYPE_SCALE_FACTOR[typography.headingScale]),
+    "--w-bscale": num(TYPE_SCALE_FACTOR[typography.bodyScale]),
     "--w-measure": `${num(typography.measure)}ch`,
 
     "--hero-h": px(hero.height),

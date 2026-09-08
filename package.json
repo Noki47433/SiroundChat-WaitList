@@ -13,7 +13,7 @@
     "test:gen:v2": "tsx scripts/test-generation-v2.ts",
     "test:v0-like": "tsx scripts/test-v0-like.ts",
     "test:deterministic": "tsx scripts/test-deterministic-templates.ts",
-    "test:site-spec": "npm run test:site-spec:schema && npm run test:site-spec:ops && npm run test:site-spec:ai && npm run test:site-spec:renderer && npm run test:site-spec:store && npm run test:site-spec:readiness && npm run test:site-spec:booking && npm run test:site-spec:failclosed",
+    "test:site-spec": "npm run test:site-spec:schema && npm run test:site-spec:ops && npm run test:site-spec:ai && npm run test:site-spec:renderer && npm run test:site-spec:store && npm run test:site-spec:readiness && npm run test:site-spec:booking && npm run test:site-spec:failclosed && npm run test:site-spec:typography",
     "test:site-spec:schema": "tsx tests/site-spec-schema.test.ts",
     "test:site-spec:ops": "tsx tests/site-spec-ops.test.ts",
     "test:site-spec:ai": "tsx tests/site-spec-ai.test.ts",
@@ -29,7 +29,8 @@
     "test:site-spec:failclosed": "tsx tests/site-spec-failclosed.test.ts",
     "check:live-reads": "node scripts/check-live-read-freshness.mjs",
     "test:rate-limit:shared": "tsx tests/rate-limit-shared.test.ts",
-    "test:live-reads": "tsx scripts/harness/verify-live-read-freshness.ts"
+    "test:live-reads": "tsx scripts/harness/verify-live-read-freshness.ts",
+    "test:site-spec:typography": "tsx tests/site-spec-typography.test.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "6.1.0",

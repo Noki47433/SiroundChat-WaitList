@@ -47,7 +47,8 @@ import {
   SERVICES_PRESENTATIONS,
   STORY_PRESENTATIONS,
   TEAM_PRESENTATIONS,
-  TOKEN_BOUNDS
+  TOKEN_BOUNDS,
+  TYPE_SCALES
 } from "@/lib/site-spec/vocabulary";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -233,7 +234,13 @@ export const TypographySchema = z.object({
   displayWeight: bounded("displayWeight"),
   heroWeight: bounded("heroWeight"),
   tracking: bounded("tracking"),
-  measure: bounded("measure")
+  measure: bounded("measure"),
+  /**
+   * Named type scale. Defaulted, so every spec written before Stage 3E.1 — 56 of
+   * them on the canary alone — still validates unchanged and renders identically.
+   */
+  headingScale: z.enum(TYPE_SCALES).default("default"),
+  bodyScale: z.enum(TYPE_SCALES).default("default")
 });
 
 export const HeroMetricsSchema = z.object({
@@ -756,7 +763,16 @@ export type SiteSpec = z.infer<typeof SiteSpecSchema>;
  * the responsive fixtures actually cover at that width. Widening this set is a
  * deliberate decision that needs a fixture behind it.
  */
-const FLUSH_SAFE = new Set<Section["type"]>(["contact"]);
+/**
+ * Which sections survive `flush`.
+ *
+ * `flush` removes horizontal padding entirely, which only a composition built for
+ * it can take; anything else runs its text into the viewport edge. Exported so
+ * the operation layer can answer "can this section be edge-to-edge?" without
+ * having to discover the answer by failing validation.
+ */
+export const FLUSH_SAFE = new Set<Section["type"]>(["contact"]);
+export const isFlushSafe = (type: Section["type"]): boolean => FLUSH_SAFE.has(type);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Contrast (WCAG relative luminance)

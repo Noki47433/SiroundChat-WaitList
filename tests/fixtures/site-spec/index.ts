@@ -249,7 +249,9 @@ export const FADE_SPEC: SiteSpec = {
       displayWeight: 800,
       heroWeight: 840,
       tracking: -0.04,
-      measure: 46
+      measure: 46,
+      headingScale: "default",
+      bodyScale: "default"
     },
     hero: { height: 600, mobileHeight: 520, measure: 660 },
     chrome: { nav: "square", navPosition: "edge", cta: "square", eyebrow: "caps" },
@@ -451,7 +453,9 @@ export const LUMI_SPEC: SiteSpec = {
       displayWeight: 600,
       heroWeight: 620,
       tracking: -0.03,
-      measure: 50
+      measure: 50,
+      headingScale: "default",
+      bodyScale: "default"
     },
     hero: { height: 540, mobileHeight: 480, measure: 620 },
     chrome: { nav: "soft", navPosition: "edge", cta: "pill", eyebrow: "caps" },
@@ -658,7 +662,9 @@ export const ELEGANCE_SPEC: SiteSpec = {
       displayWeight: 400,
       heroWeight: 400,
       tracking: -0.022,
-      measure: 52
+      measure: 52,
+      headingScale: "default",
+      bodyScale: "default"
     },
     hero: { height: 560, mobileHeight: 460, measure: 640 },
     chrome: { nav: "rule", navPosition: "center", cta: "rule", eyebrow: "serif" },
@@ -869,7 +875,9 @@ export const LENS_SPEC: SiteSpec = {
       displayWeight: 560,
       heroWeight: 560,
       tracking: -0.03,
-      measure: 42
+      measure: 42,
+      headingScale: "default",
+      bodyScale: "default"
     },
     hero: { height: 680, mobileHeight: 560, measure: 600 },
     chrome: { nav: "rule", navPosition: "edge", cta: "square", eyebrow: "mono" },

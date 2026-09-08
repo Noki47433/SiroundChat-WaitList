@@ -142,6 +142,50 @@ export const FONT_STACKS = {
 export type FontStackId = keyof typeof FONT_STACKS;
 export const FONT_STACK_IDS = Object.keys(FONT_STACKS) as [FontStackId, ...FontStackId[]];
 
+/**
+ * How a font stack reads, in the words an owner would use.
+ *
+ * Stage 3E measured "use a more classic typeface for headings" as a hard failure.
+ * The token it needed already existed and was already reachable — what was
+ * missing was any way to know that `serif-display` is the classic one. The ids
+ * are engineering names; these are the same seven fonts described the way the
+ * person asking would describe them, so an ordinary sentence can land on one.
+ */
+export const FONT_STACK_CHARACTER: Record<FontStackId, string> = {
+  system: "the platform's own neutral sans — plain, modern, invisible",
+  "system-display": "a slightly larger, more confident sans for headings",
+  grotesk: "a clean Swiss-style sans — modern, neutral, a little technical",
+  humanist: "a warm, softer sans with calligraphic roots — friendly, less corporate",
+  serif: "a traditional book serif — classic, trustworthy, editorial",
+  "serif-display": "a high-contrast display serif — the most classic and elegant choice",
+  mono: "a monospaced typeface — technical, deliberate, unusual for a business site"
+};
+
+/**
+ * Type scale.
+ *
+ * "Make the headings a little larger" was the other Stage 3E failure, and unlike
+ * the font one it had no token behind it at all — heading sizes lived only in the
+ * stylesheet. The obvious fix, letting a size through, is the one thing the
+ * architecture forbids: a number from a model is a number nobody has looked at,
+ * on a page nobody has seen, at a width nobody tested.
+ *
+ * So the vocabulary is four named steps and the multipliers belong to us. The
+ * model chooses a word; the code chooses the arithmetic; the renderer clamps the
+ * result the same way it always did. There is no path here for `px`, `rem`, `em`
+ * or a bare number to reach a stylesheet.
+ */
+export const TYPE_SCALES = ["smaller", "default", "larger", "largest"] as const;
+export type TypeScale = (typeof TYPE_SCALES)[number];
+
+/** Deliberately modest. The largest step is a noticeable change, not a new design. */
+export const TYPE_SCALE_FACTOR: Record<TypeScale, number> = {
+  smaller: 0.88,
+  default: 1,
+  larger: 1.14,
+  largest: 1.3
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Call-to-action targets
 // ─────────────────────────────────────────────────────────────────────────────
