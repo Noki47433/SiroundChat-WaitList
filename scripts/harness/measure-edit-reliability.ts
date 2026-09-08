@@ -172,6 +172,10 @@ const main = async () => {
     if (response.status === 429 || /a lot of changes very quickly/i.test(reply)) result = "throttled";
     else if (response.status === 409) result = "concurrency";
     else if (/took too long/i.test(reply)) result = "timeout";
+    // A refusal because the page already has that section is the duplicate guard
+    // working, not a failure to understand — and which sections a site already has
+    // depends on the site, so it cannot be declared in the prompt list.
+    else if (/already has a/.test(reply)) result = "correct_refusal";
     else if (prompt.mustRefuse) result = applied ? "hard_failure" : "correct_refusal";
     else result = applied ? "applied" : "hard_failure";
 

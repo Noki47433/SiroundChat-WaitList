@@ -125,31 +125,61 @@ const main = async () => {
       return `${target.slice(11, 16)}Z was offered, booked, then gone on the very next request`;
     });
 
-    // ── 2 · the rollout flag takes effect on the next request ────────────────
-    await check("rollout flag: flipping it changes the next public response", async () => {
+    // ── 2 · public serving mode takes effect on the next request ─────────────
+    await check("public mode: changing it changes the next public response", async () => {
       const path = `/api/site-spec/booking?slug=${SLUG}&serviceId=${SERVICE}&date=${dayISO(2)}`;
       const before = await get(path);
       if (before.status !== 200) throw new Error(`expected 200 to begin with, got ${before.status}`);
 
-      await db.from("business_site_spec_rollout").update({ state: "off" }).eq("business_id", BUSINESS);
+      await db
+        .from("business_site_spec_rollout")
+        .update({ public_mode: "maintenance" })
+        .eq("business_id", BUSINESS);
       let restored = false;
       const restore = async () => {
         if (restored) return;
         restored = true;
         await db
           .from("business_site_spec_rollout")
-          .update({ state: "canary" })
+          .update({ public_mode: "site_spec" })
           .eq("business_id", BUSINESS);
       };
       cleanup.push(restore);
 
-      const off = await get(path);
+      const held = await get(path);
       await restore();
       const back = await get(path);
 
-      if (off.status !== 404) throw new Error(`STALE: flag off still returned ${off.status}`);
-      if (back.status !== 200) throw new Error(`flag restored but response is ${back.status}`);
-      return "200 → flag off → 404 → flag on → 200, no redeploy";
+      if (held.status !== 404) throw new Error(`STALE: maintenance still returned ${held.status}`);
+      if (back.status !== 200) throw new Error(`mode restored but response is ${back.status}`);
+      return "200 → maintenance → 404 → site_spec → 200, no redeploy";
+    });
+
+    // ── 2b · and the two controls really are separate ────────────────────────
+    await check("withdrawing the editor does not take the website down", async () => {
+      // The whole point of Stage 3E's split. Before it, this test would have
+      // found a 404 — the rollback lever and the delete-the-website lever were
+      // the same switch.
+      const page = `/s/${SLUG}`;
+      const before = await get(page);
+      if (before.status !== 200) throw new Error(`page was already ${before.status}`);
+
+      await db.from("business_site_spec_rollout").update({ state: "off" }).eq("business_id", BUSINESS);
+      let restored = false;
+      const restore = async () => {
+        if (restored) return;
+        restored = true;
+        await db.from("business_site_spec_rollout").update({ state: "canary" }).eq("business_id", BUSINESS);
+      };
+      cleanup.push(restore);
+
+      const withEditorOff = await get(page);
+      await restore();
+
+      if (withEditorOff.status !== 200) {
+        throw new Error(`the website went to ${withEditorOff.status} when the editor was withdrawn`);
+      }
+      return "editor withdrawn, website still served 200 — the two controls are independent";
     });
 
     // ── 3 · the published page reflects a change to canonical business data ──
