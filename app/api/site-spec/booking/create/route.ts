@@ -30,16 +30,21 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { buildAvailabilityInput } from "@/lib/booking/availability-service";
+import { AvailabilityReadError, buildAvailabilityInput } from "@/lib/booking/availability-service";
 import { resolveDayAvailability } from "@/lib/booking/availability";
 import { createBooking, createBookingAnyAvailable, BookingCommandError } from "@/lib/booking/command";
 import { generateManageToken } from "@/lib/booking/manage-token";
 import { getBookingState, writeTargetForState } from "@/lib/booking/migration-state";
 import { claimRequestOnce } from "@/lib/site-spec/idempotency";
-import { resolveRolloutState } from "@/lib/site-spec/rollout";
+import { resolvePublicMode } from "@/lib/site-spec/rollout";
 import { logSiteSpecEvent, logSiteSpecFailure } from "@/lib/site-spec/telemetry";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
-import { enforceRateLimit, RateLimitError } from "@/lib/utils/rate-limit";
+import {
+  enforceSharedRateLimit,
+  RateLimitError,
+  RateLimitUnavailableError
+} from "@/lib/utils/rate-limit";
+import { callerId } from "@/lib/utils/rate-limit-identity";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -72,13 +77,41 @@ export async function POST(request: Request) {
   const input = parsed.data;
 
   // Bound before any work: booking is a write, and a public one.
+  // Two budgets. The tenant budget is the cost ceiling; the per-caller budget is
+  // what stops one visitor spending it and locking out the real customers.
   try {
-    await enforceRateLimit({ key: `site-spec:book:${input.slug}`, limit: 20, windowInSeconds: 60 * 10 });
+    await enforceSharedRateLimit({
+      key: `site-spec:book:${input.slug}`,
+      limit: 20,
+      windowInSeconds: 60 * 10,
+      // A booking write that can be spammed while the limiter is blind costs the
+      // business real chairs. A short honest outage is the cheaper failure.
+      whenUnavailable: "fail_closed"
+    });
+    await enforceSharedRateLimit({
+      key: `site-spec:book:${input.slug}:${callerId(request)}`,
+      limit: 5,
+      windowInSeconds: 60 * 10,
+      whenUnavailable: "fail_closed"
+    });
   } catch (error) {
     if (error instanceof RateLimitError) {
       return NextResponse.json(
-        { error: "Too many booking attempts just now. Please try again shortly." },
+        {
+          error: "rate_limited",
+          message: "Too many booking attempts just now. Please try again shortly."
+        },
         { status: 429, headers: { "Retry-After": String(error.retryAfterSeconds) } }
+      );
+    }
+    if (error instanceof RateLimitUnavailableError) {
+      logSiteSpecFailure("BOOKING_CREATE_FAILED", { stage: "rate_limit_unavailable" });
+      return NextResponse.json(
+        {
+          error: "temporarily_unavailable",
+          message: "Online booking is briefly unavailable. Please try again in a few minutes."
+        },
+        { status: 503, headers: { "Retry-After": "120" } }
       );
     }
     throw error;
@@ -96,7 +129,8 @@ export async function POST(request: Request) {
   if (!site?.published_version_id) return notFound();
   const businessId = site.business_id as string;
 
-  if ((await resolveRolloutState(admin, businessId)) === "off") return notFound();
+  // Public surface: follows public serving mode, not editor access.
+  if ((await resolvePublicMode(admin, businessId)) !== "site_spec") return notFound();
 
   // Only a business on the neutral write path books here. A legacy business's
   // website must not quietly start writing into the neutral table.
@@ -271,7 +305,12 @@ export async function POST(request: Request) {
       manageUrl: `/manage-booking/${manage.token}`
     });
   } catch (error) {
-    const detail = error instanceof BookingCommandError ? "command" : "unexpected";
+    const detail =
+      error instanceof AvailabilityReadError
+        ? "read_failed"
+        : error instanceof BookingCommandError
+          ? "command"
+          : "unexpected";
     logSiteSpecFailure("BOOKING_CREATE_FAILED", {
       businessId,
       serviceId: input.serviceId,

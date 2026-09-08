@@ -37,9 +37,15 @@ import {
   MAX_NAV_ITEMS,
   NAV_POSITIONS,
   NAV_SHAPES,
-  SECTION_LAYOUTS
+  SECTION_LAYOUTS,
+  type GalleryPresentation
 } from "@/lib/site-spec/vocabulary";
-import { INSERTABLE_SECTIONS, insertSection, type AssetChoice } from "@/lib/site-spec/section-factory";
+import {
+  INSERTABLE_SECTIONS,
+  insertSection,
+  withGalleryPresentation,
+  type AssetChoice
+} from "@/lib/site-spec/section-factory";
 import {
   ColorSchema,
   SectionIdSchema,
@@ -537,6 +543,15 @@ const applyOne = (spec: SiteSpec, op: SiteSpecOp, context: ApplyContext = {}): s
       if (!allowed) return "that section has no presentation to change";
       if (!allowed.includes(op.presentation)) {
         return `a ${section.type} section can be ${allowed.join(", ")} — not "${op.presentation}"`;
+      }
+      if (section.type === "gallery") {
+        // A gallery's tile count belongs to its presentation, so changing one
+        // without the other builds a section the validator will refuse. Rebuild
+        // it the way the factory would, keeping the bound images.
+        const rebuilt = withGalleryPresentation(section, op.presentation as GalleryPresentation);
+        const index = spec.sections.findIndex((candidate) => candidate.id === op.sectionId);
+        spec.sections[index] = rebuilt;
+        return null;
       }
       (section as { presentation: string }).presentation = op.presentation;
       return null;

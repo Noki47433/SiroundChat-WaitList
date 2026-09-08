@@ -3,6 +3,7 @@ import { createRouteHandlerClient, createServerComponentClient } from "@supabase
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/db/schema";
 import { ensureSupabaseEnv } from "@/lib/config/auth";
+import { LIVE_FETCH_OPTIONS } from "@/lib/supabase/live-fetch";
 
 const supabaseEnv = ensureSupabaseEnv();
 
@@ -11,7 +12,8 @@ export const getSupabaseServerClient = () =>
     { cookies },
     {
       supabaseUrl: supabaseEnv.supabaseUrl,
-      supabaseKey: supabaseEnv.supabaseAnonKey
+      supabaseKey: supabaseEnv.supabaseAnonKey,
+      options: LIVE_FETCH_OPTIONS
     }
   ) as any;
 
@@ -20,11 +22,13 @@ export const getSupabaseRouteClient = () =>
     { cookies },
     {
       supabaseUrl: supabaseEnv.supabaseUrl,
-      supabaseKey: supabaseEnv.supabaseAnonKey
+      supabaseKey: supabaseEnv.supabaseAnonKey,
+      options: LIVE_FETCH_OPTIONS
     }
   ) as any;
 
 export const getSupabasePublicClient = () =>
   createClient<Database>(supabaseEnv.supabaseUrl, supabaseEnv.supabaseAnonKey, {
-    auth: { persistSession: false, autoRefreshToken: false }
+    auth: { persistSession: false, autoRefreshToken: false },
+    ...LIVE_FETCH_OPTIONS
   }) as any;

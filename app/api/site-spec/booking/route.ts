@@ -29,14 +29,16 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import {
+  AvailabilityReadError,
   buildAvailabilityInput,
   listEligibleWorkers,
   resolveWorkerDaySlots
 } from "@/lib/booking/availability-service";
-import { resolveRolloutState } from "@/lib/site-spec/rollout";
+import { resolvePublicMode } from "@/lib/site-spec/rollout";
 import { logSiteSpecEvent, logSiteSpecFailure } from "@/lib/site-spec/telemetry";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
-import { enforceRateLimit, RateLimitError } from "@/lib/utils/rate-limit";
+import { enforceSharedRateLimit, RateLimitError } from "@/lib/utils/rate-limit";
+import { callerId } from "@/lib/utils/rate-limit-identity";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -72,10 +74,19 @@ export async function GET(request: Request) {
   }
 
   try {
-    await enforceRateLimit({
+    await enforceSharedRateLimit({
       key: `site-spec:availability:${parsed.data.slug}`,
       limit: 120,
-      windowInSeconds: 60
+      windowInSeconds: 60,
+      // A read. Taking a website's times offline because Redis blinked would be a
+      // self-inflicted outage, so this holds a tighter local line instead.
+      whenUnavailable: "local_fallback"
+    });
+    await enforceSharedRateLimit({
+      key: `site-spec:availability:${parsed.data.slug}:${callerId(request)}`,
+      limit: 40,
+      windowInSeconds: 60,
+      whenUnavailable: "local_fallback"
     });
   } catch (error) {
     if (error instanceof RateLimitError) {
@@ -103,7 +114,9 @@ export async function GET(request: Request) {
   // Spec rows, but stops being served by the Site Spec renderer — so this
   // endpoint must stop answering for it too, or a cached page would keep
   // pulling live availability through a path that is supposed to be dark.
-  if ((await resolveRolloutState(admin, businessId)) === "off") {
+  // Booking is a public surface, so it follows public serving mode. In
+  // maintenance the page shows no slots, and this must agree with it.
+  if ((await resolvePublicMode(admin, businessId)) !== "site_spec") {
     return NextResponse.json({ error: "Not found." }, { status: 404 });
   }
 
@@ -175,9 +188,15 @@ export async function GET(request: Request) {
       }
     }
   } catch (error) {
+    // Telemetry has to tell "the diary is empty" from "the diary did not answer",
+    // because those look identical in the response and only one is a bug.
+    // AvailabilityReadError carries a table and a PostgREST code and nothing else.
+    const readFailure = error instanceof AvailabilityReadError;
     logSiteSpecFailure("BOOKING_RUNTIME_FAILED", {
       businessId,
       serviceId: common.serviceId,
+      class: readFailure ? "read_failed" : "unexpected",
+      ...(readFailure ? { table: (error as AvailabilityReadError).table } : {}),
       // Bounded metadata: the shape of the failure, never the query or the data.
       detail: String((error as Error)?.message ?? error).slice(0, 200)
     });

@@ -4,7 +4,7 @@ import { WebsiteStudioClient } from "@/components/site-spec/studio/WebsiteStudio
 import { getEntitlementAccess } from "@/src/billing/requireEntitlement";
 import { UpgradeOverlay } from "@/src/components/billing/UpgradeOverlay";
 import { requireBusinessUser } from "@/lib/server/business-auth";
-import { resolveRolloutState } from "@/lib/site-spec/rollout";
+import { resolvePublicMode, resolveRolloutState } from "@/lib/site-spec/rollout";
 
 export const dynamic = "force-dynamic";
 
@@ -81,5 +81,31 @@ export default async function WebsitePage() {
     );
   }
 
-  return <WebsiteStudioClient siteId={site.id} slug={site.slug ?? null} />;
+  // Two different switches, and an owner who cannot tell them apart will read a
+  // held-back website as a broken one. `state` decided whether they reached this
+  // page at all; `public_mode` decides what a visitor sees right now, and when
+  // those disagree the owner is told so in plain words before anything else.
+  const publicMode = await resolvePublicMode(context.supabase, context.businessId);
+
+  return (
+    <>
+      {publicMode !== "site_spec" ? (
+        <div className="sc-dash mx-auto w-full max-w-[900px] px-4 pt-6 sm:px-6">
+          <div className="rounded-xl border border-[color:var(--d-line)] bg-[color:var(--d-raise)] px-4 py-3">
+            <p className="text-sm font-semibold text-[color:var(--d-ink)]">
+              {publicMode === "maintenance"
+                ? "Your website is showing a temporary notice to visitors"
+                : "Visitors are being shown your previous website"}
+            </p>
+            <p className="mt-1 text-sm text-[color:var(--d-muted)]">
+              {publicMode === "maintenance"
+                ? "Visitors see your name and contact details with a short message, and cannot book online. Everything you have made here is saved and unchanged — you can keep editing."
+                : "Your new website is saved and you can keep editing it, but visitors are still being served your previous site until it is switched over."}
+            </p>
+          </div>
+        </div>
+      ) : null}
+      <WebsiteStudioClient siteId={site.id} slug={site.slug ?? null} />
+    </>
+  );
 }

@@ -414,6 +414,67 @@ ok("the bounded repair still runs when there is budget, and is skipped when ther
   assert.equal(db.versions.length, 1, "a failed repair wrote a version");
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 5 · Stage 3E — changing a gallery's presentation rebuilds its tiles
+// ─────────────────────────────────────────────────────────────────────────────
+
+ok("changing gallery presentation re-derives the tile count and keeps bound images", () => {
+  const spec = withoutGallery();
+  const inserted = insertSection(
+    spec,
+    { section: "gallery", presentation: "mosaic", placement: { at: "end" } },
+    ASSETS
+  );
+  assert.equal(inserted.ok, true);
+  if (!inserted.ok) return;
+
+  const before = inserted.spec.sections.find((s) => s.id === inserted.sectionId) as any;
+  assert.equal(before.items.length, GALLERY_TILE_COUNT.mosaic);
+  const boundBefore = before.items.filter((i: any) => i.kind === "asset").map((i: any) => i.assetId);
+
+  for (const presentation of GALLERY_PRESENTATIONS) {
+    const applied = applyOps(inserted.spec, [
+      { op: "set_presentation", sectionId: inserted.sectionId, presentation }
+    ]);
+    assert.equal(applied.ok, true, `presentation "${presentation}" was refused`);
+    if (!applied.ok) continue;
+
+    const after = applied.spec.sections.find((s) => s.id === inserted.sectionId) as any;
+    assert.equal(after.presentation, presentation);
+    assert.equal(
+      after.items.length,
+      GALLERY_TILE_COUNT[presentation],
+      `"${presentation}" should have exactly ${GALLERY_TILE_COUNT[presentation]} tiles`
+    );
+    const boundAfter = after.items.filter((i: any) => i.kind === "asset").map((i: any) => i.assetId);
+    assert.deepEqual(
+      boundAfter,
+      boundBefore.slice(0, boundAfter.length),
+      `"${presentation}" reordered or lost bound images`
+    );
+    assert.equal(validateSiteSpec(applied.spec).ok, true, `"${presentation}" produced an invalid spec`);
+  }
+});
+
+ok("shrinking a gallery drops tiles but never the asset rows behind them", () => {
+  const spec = withoutGallery();
+  const inserted = insertSection(
+    spec,
+    { section: "gallery", presentation: "mosaic", placement: { at: "end" } },
+    ASSETS
+  );
+  if (!inserted.ok) return;
+  const applied = applyOps(inserted.spec, [
+    { op: "set_presentation", sectionId: inserted.sectionId, presentation: "duo" }
+  ]);
+  assert.equal(applied.ok, true);
+  if (!applied.ok) return;
+  const after = applied.spec.sections.find((s) => s.id === inserted.sectionId) as any;
+  assert.equal(after.items.length, GALLERY_TILE_COUNT.duo);
+  const stillReferenced = after.items.filter((i: any) => i.kind === "asset").length;
+  assert.ok(stillReferenced < ASSETS.length, "expected fewer bound tiles after shrinking");
+});
+
 queue.then(() => {
   console.log(`\n${passed} passed, ${failed} failed.`);
   if (failed > 0) process.exit(1);

@@ -224,6 +224,15 @@ export default function ManageBookingPage({ params }: { params: { token: string 
     : null;
 
   const businessName = booking?.business.name ?? "your appointment";
+
+  // The tab, the history entry and any screenshot should say whose appointment
+  // this is. Set here rather than in server metadata so the business never has to
+  // be resolved from the token during rendering — the token stays out of the head
+  // entirely. Falls back to the layout's generic title until the booking loads.
+  useEffect(() => {
+    const name = booking?.business.name?.trim();
+    if (name) document.title = `Your booking · ${name}`;
+  }, [booking?.business.name]);
   const historical = statusKey === "canceled" || statusKey === "completed" || statusKey === "noshow";
 
   /* ── flows ── */

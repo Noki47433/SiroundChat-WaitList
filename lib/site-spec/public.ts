@@ -9,7 +9,7 @@
  */
 import { loadBusiness } from "@/lib/business/load";
 import { resolveSite, type ResolvedSite, type SiteAsset } from "@/lib/site-spec/resolve";
-import { resolveRolloutState } from "@/lib/site-spec/rollout";
+import { resolvePublicMode } from "@/lib/site-spec/rollout";
 import { logSiteSpecEvent } from "@/lib/site-spec/telemetry";
 import {
   loadDraftSpecBySiteId,
@@ -38,8 +38,11 @@ const servableUnderRollout = async (
   businessId: string,
   siteId: string
 ): Promise<boolean> => {
-  if ((await resolveRolloutState(supabase, businessId)) !== "off") return true;
-  logSiteSpecEvent("ROLLOUT_BLOCKED", { businessId, siteId, surface: "renderer" });
+  // Stage 3E: the public renderer asks about public serving, not about editor
+  // access. A business whose builder has been withdrawn keeps its website.
+  const mode = await resolvePublicMode(supabase, businessId);
+  if (mode === "site_spec") return true;
+  logSiteSpecEvent("ROLLOUT_BLOCKED", { businessId, siteId, surface: "renderer", mode });
   return false;
 };
 

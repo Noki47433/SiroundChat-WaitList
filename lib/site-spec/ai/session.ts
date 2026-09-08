@@ -15,7 +15,11 @@ import { buildGenerationBrief, type GenerationBrief, type KnowledgeExcerpt } fro
 import { decideRemaining, nextClarifications, summariseDecisions, type ClarificationAnswer, type ClarificationQuestion } from "@/lib/site-spec/clarify";
 import { emptyModelUsage, type ModelUsage } from "@/lib/site-spec/ai/client";
 import { generateSiteSpec } from "@/lib/site-spec/ai/generate";
-import { EDIT_MODEL_TIMEOUT_MS, interpretEdit } from "@/lib/site-spec/ai/edit";
+import {
+  EDIT_MODEL_TIMEOUT_MS,
+  interpretEdit,
+  type InterpretResult
+} from "@/lib/site-spec/ai/edit";
 import { authorizeOps, type OpRejection, type OpWarning } from "@/lib/site-spec/authorize";
 import { applyOps, describeOps, type SiteSpecOp } from "@/lib/site-spec/ops";
 import { saveDraftSpec, type SiteVersion } from "@/lib/site-spec/store";
@@ -257,7 +261,48 @@ export const runEdit = async ({
   // is worth having, but not at the cost of the owner waiting through a second
   // full timeout — so it only runs if there is budget left.
   const deadline = Date.now() + EDIT_MODEL_TIMEOUT_MS;
-  const interpreted = await interpret({ message, spec, assets, history });
+
+  /**
+   * The ceiling has to belong to the EDIT, not to one network call.
+   *
+   * `timeoutMs` reaches the provider SDK, which applies it per request — and the
+   * SDK is allowed to retry. Three attempts at twenty-five seconds is
+   * seventy-five, before a repair pass, and Stage 3E measured exactly that: an
+   * edit answering after fifty seconds against a "hard" twenty-five second
+   * ceiling, having written a version the owner had stopped waiting for.
+   *
+   * A deadline is only a deadline if something enforces it from outside the work
+   * it bounds. This does. Whatever is still running loses the race, and because
+   * every write happens after this point in the function, losing the race means
+   * nothing was written — the abandoned work has nothing left to do but finish
+   * quietly and be discarded.
+   */
+  const withinDeadline = async <T,>(work: Promise<T>, onExpiry: () => T): Promise<T> => {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) return onExpiry();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const expiry = new Promise<T>((resolve) => {
+      timer = setTimeout(() => resolve(onExpiry()), remaining);
+    });
+    try {
+      return await Promise.race([work, expiry]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  };
+
+  const timedOutInterpretation = (): InterpretResult => ({
+    ok: false,
+    reason: "timeout",
+    message: "the edit deadline passed before the model answered",
+    attempts: 0,
+    usage: emptyModelUsage()
+  });
+
+  const interpreted = await withinDeadline(
+    interpret({ message, spec, assets, history }),
+    timedOutInterpretation
+  );
   record(interpreted.usage);
 
   if (!interpreted.ok) {
@@ -321,13 +366,16 @@ export const runEdit = async ({
   // refusing outright makes the product look broken when it is merely strict.
   const remaining = deadline - Date.now();
   if (!applied.ok && remaining > 3_000) {
-    const retry = await interpret({
-      message: `${message}\n\n(Your previous attempt was rejected: ${describeFailure(applied)} Propose a corrected, smaller set of operations.)`,
-      spec,
-      assets,
-      history,
-      timeoutMs: remaining
-    });
+    const retry = await withinDeadline(
+      interpret({
+        message: `${message}\n\n(Your previous attempt was rejected: ${describeFailure(applied)} Propose a corrected, smaller set of operations.)`,
+        spec,
+        assets,
+        history,
+        timeoutMs: remaining
+      }),
+      timedOutInterpretation
+    );
     record(retry.usage);
 
     if (retry.ok && retry.ops.length) {
@@ -473,8 +521,38 @@ const describeAttempt = (op: SiteSpecOp): string => {
   }
 };
 
+/**
+ * Refusals an owner can act on, said plainly.
+ *
+ * Most applier messages are written for a repair prompt and a log — precise,
+ * internal, and no help at all to the person who just asked for something. But a
+ * few refusals are not failures of understanding at all: the request was
+ * understood perfectly and declined for a reason the owner would immediately
+ * accept if anyone told them. "You already have a gallery" is a complete answer.
+ * "It didn't come through in a form I can use" is the system apologising for the
+ * owner's own page.
+ *
+ * Curated rather than pass-through: only these shapes are spoken, so an applier
+ * message can never become the route by which internal wording reaches a page.
+ */
+const ownerReadableRefusal = (
+  result: Extract<ReturnType<typeof applyOps>, { ok: false; reason: "unapplicable" }>
+): string | null => {
+  if (result.op.op !== "insert_section") return null;
+  const kind = result.op.section === "booking" ? "booking section" : "gallery";
+  if (/already has a/.test(result.message)) {
+    return `Your site already has a ${kind}, so I haven't added a second one. If you'd like it to look different, or to move somewhere else on the page, just say so.`;
+  }
+  if (/as many sections as it can hold/.test(result.message)) {
+    return `Your page is already as long as it can be, so I haven't added the ${kind}. Remove a section you no longer need and ask me again.`;
+  }
+  return null;
+};
+
 const explainApplyFailure = (result: Extract<ReturnType<typeof applyOps>, { ok: false }>): string => {
   if (result.reason === "unapplicable") {
+    const readable = ownerReadableRefusal(result);
+    if (readable) return readable;
     return `I couldn't make ${describeAttempt(result.op)} — it didn't come through in a form I can use. Your site is exactly as it was, so try saying it another way.`;
   }
   if (result.reason === "invalid_result") {

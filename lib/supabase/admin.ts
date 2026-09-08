@@ -1,6 +1,7 @@
 import "server-only";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/db/schema";
+import { LIVE_FETCH_OPTIONS } from "@/lib/supabase/live-fetch";
 import {
   getMissingServerSupabaseAdminEnvNames,
   getServerSupabaseAdminEnv,
@@ -20,7 +21,8 @@ const logMissingAdminEnv = () => {
 
 const createAdminClientInstance = (env: ReturnType<typeof getServerSupabaseAdminEnvOrThrow>) =>
   createClient<Database>(env.supabaseUrl, env.serviceRoleKey, {
-    auth: { persistSession: false, autoRefreshToken: false }
+    auth: { persistSession: false, autoRefreshToken: false },
+    ...LIVE_FETCH_OPTIONS
   });
 
 export const getSupabaseAdminClientIfAvailable = () => {

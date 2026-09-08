@@ -143,6 +143,39 @@ export const buildBookingSection = (spec: SiteSpec, intent: InsertSectionIntent)
     framing: {}
   }) as unknown as Section;
 
+/**
+ * Re-derive a gallery's tiles for a new presentation.
+ *
+ * A gallery's tile count is a property of its presentation, not a free choice —
+ * `mosaic` is six tiles and `duo` is two, and a grid with the wrong number of
+ * them has a hole in it. Changing only the enum therefore produced a section the
+ * validator refused, and an owner asking for a carousel got "that change would
+ * have left the site in a state I can't render", which is true and useless.
+ *
+ * So the presentation change goes back through the same construction rule that
+ * built the section:
+ *
+ *  · bound images are kept, in order, as far as the new count allows
+ *  · growing fills the rest deterministically, exactly as a fresh gallery would
+ *  · shrinking drops the trailing tiles — and drops only the tile. The asset row
+ *    is untouched, so the picture is still in the library and can come back.
+ */
+export const withGalleryPresentation = (
+  section: Section,
+  presentation: GalleryPresentation
+): Section => {
+  const current = ((section as any).items ?? []) as Array<Record<string, unknown>>;
+  const target = GALLERY_TILE_COUNT[presentation];
+
+  const items = Array.from({ length: target }, (_, index) => {
+    const existing = current[index];
+    if (existing) return existing;
+    return { kind: "generated" as const, seed: index % 64 };
+  });
+
+  return { ...(section as any), presentation, items } as unknown as Section;
+};
+
 export type InsertSectionResult =
   | { ok: true; spec: SiteSpec; sectionId: string }
   | { ok: false; reason: "unsupported_section" | "duplicate_section" | "too_many_sections" };

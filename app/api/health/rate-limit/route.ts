@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
-import { getRateLimitMode, ensureRateLimitReady } from "@/lib/utils/rate-limit";
+import {
+  ensureRateLimitReady,
+  getRateLimitMode,
+  isSharedRateLimitConfigured
+} from "@/lib/utils/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -10,8 +14,19 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   await ensureRateLimitReady();
   const mode = getRateLimitMode();
-  return NextResponse.json(mode, {
-    status: mode.productionSafe ? 200 : 503,
-    headers: { "Cache-Control": "no-store" }
-  });
+  const configured = isSharedRateLimitConfigured();
+  return NextResponse.json(
+    {
+      ...mode,
+      // Names only — never the URL, host or credential.
+      configured,
+      // "configured but memory" means a backend was given and is not answering,
+      // which is an outage; "not configured" is a deployment gap.
+      reason: mode.mode === "shared" ? "shared" : configured ? "configured_unreachable" : "not_configured"
+    },
+    {
+      status: mode.productionSafe ? 200 : 503,
+      headers: { "Cache-Control": "no-store" }
+    }
+  );
 }

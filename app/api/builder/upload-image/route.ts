@@ -18,7 +18,7 @@ import {
 } from "@/lib/server/billing-access";
 import { checkImageBounds } from "@/lib/builder/image-bounds";
 import { logSiteSpecEvent, logSiteSpecFailure } from "@/lib/site-spec/telemetry";
-import { enforceRateLimit, RateLimitError } from "@/lib/utils/rate-limit";
+import { enforceSharedRateLimit, RateLimitError } from "@/lib/utils/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -191,10 +191,13 @@ export async function POST(request: Request) {
   // loop could fill a bucket as fast as the network allowed. Generous enough
   // that a real gallery upload never notices.
   try {
-    await enforceRateLimit({
+    await enforceSharedRateLimit({
       key: `builder:upload-image:${site.business_id}`,
       limit: 60,
-      windowInSeconds: 10 * 60
+      windowInSeconds: 10 * 60,
+      // Authenticated and tenant-keyed; degrading beats locking an owner out of
+      // uploading their own photographs.
+      whenUnavailable: "local_fallback"
     });
   } catch (error) {
     if (error instanceof RateLimitError) {

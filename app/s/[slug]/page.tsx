@@ -4,6 +4,8 @@ import { headers } from "next/headers";
 import Script from "next/script";
 import { notFound, redirect } from "next/navigation";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
+import { loadMaintenanceSite } from "@/lib/site-spec/maintenance";
+import { MaintenanceSitePage } from "@/components/site-spec/MaintenanceSitePage";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { getOwnedBuilderSite } from "@/lib/builder/site-access";
 import { SiteDocumentSchema } from "@/lib/website-builder/schema";
@@ -410,6 +412,17 @@ export async function generateMetadata({ params, searchParams }: PageProps): Pro
 export default async function PublicSitePage({ params, searchParams }: PageProps) {
   const preview = searchParams?.preview === "true";
   const siteId = searchParams?.siteId ?? null;
+
+  // Maintenance is checked before anything else, and deliberately so: the reason
+  // a site is being held back may be the very thing the loader would try to
+  // render. Preview is exempt, so an owner can keep working on the site that the
+  // public is not currently being shown.
+  if (!preview) {
+    const maintenance = await loadMaintenanceSite(getSupabaseAdminClient() as any, params.slug);
+    // Served 200. The business exists; only its website is briefly held back.
+    if (maintenance) return <MaintenanceSitePage site={maintenance} />;
+  }
+
   const data = await loadSite(params.slug, preview, siteId);
 
   if (!data) {

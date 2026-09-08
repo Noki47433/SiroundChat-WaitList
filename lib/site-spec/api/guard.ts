@@ -25,7 +25,7 @@ import { requireBusinessUser } from "@/lib/server/business-auth";
 import { resolveRolloutState, type SiteSpecRolloutState } from "@/lib/site-spec/rollout";
 import { claimRequestOnce } from "@/lib/site-spec/idempotency";
 import { logSiteSpecEvent, logSiteSpecFailure } from "@/lib/site-spec/telemetry";
-import { enforceRateLimit, RateLimitError } from "@/lib/utils/rate-limit";
+import { enforceSharedRateLimit, RateLimitError } from "@/lib/utils/rate-limit";
 
 export type SiteSpecContext = {
   userId: string;
@@ -114,7 +114,14 @@ export const limitModelWork = async (
       : { limit: 60, windowInSeconds: 60 * 10 };
 
   try {
-    await enforceRateLimit({ key: `site-spec:${kind}:${businessId}`, ...config });
+    // Authenticated and tenant-keyed already, so the blast radius is bounded by
+    // who can sign in. An owner mid-edit should not be locked out of their own
+    // website because Redis blinked, so this degrades rather than refuses.
+    await enforceSharedRateLimit({
+      key: `site-spec:${kind}:${businessId}`,
+      ...config,
+      whenUnavailable: "local_fallback"
+    });
     return null;
   } catch (error) {
     if (error instanceof RateLimitError) {

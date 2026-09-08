@@ -103,6 +103,17 @@ export const callStructured = async <T>({
   timeoutMs = 60_000,
   verify
 }: StructuredCall<T>): Promise<StructuredResult<T>> => {
+  // ── deterministic slow model, for verifying the timeout ceiling ────────────
+  // A timeout is only worth what it does when the model is genuinely slow, and
+  // that is not something you can wait around for. This makes it reproducible on
+  // a production-equivalent build without touching customer traffic: the delay
+  // only exists when an operator sets the variable, and it refuses to exist on
+  // the production deployment at all.
+  const injectedDelayMs = Number(process.env.SITE_SPEC_TEST_SLOW_MODEL_MS ?? 0);
+  if (injectedDelayMs > 0 && process.env.VERCEL_ENV !== "production") {
+    await new Promise((resolve) => setTimeout(resolve, injectedDelayMs));
+  }
+
   const client = getOpenAIClient();
   const usage = emptyModelUsage();
   if (!client) {

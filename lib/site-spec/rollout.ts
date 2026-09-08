@@ -69,3 +69,66 @@ export const isSiteSpecEnabled = async (
   supabase: SupabaseLike,
   businessId: string
 ): Promise<boolean> => (await resolveRolloutState(supabase, businessId)) !== "off";
+
+/**
+ * What the PUBLIC is served — a different question from `state`.
+ *
+ * Stage 3D drilled a rollback by turning the flag off and watched the canary's
+ * website return 404, because a Site-Spec-only business has no legacy document
+ * to fall back to. Nothing was lost — every version, asset and pointer survived
+ * — but for as long as the flag was off the customer's website was gone. That
+ * is a fine property for an internal canary and an unacceptable one for a real
+ * business, and it came from one column answering two questions.
+ *
+ * So they are two questions now:
+ *
+ *   `state`        may this owner use the new builder?     off / canary / enabled
+ *   `public_mode`  what does a visitor see?                site_spec /
+ *                                                          legacy_fallback /
+ *                                                          maintenance
+ *
+ * Withdrawing the editor no longer takes a website down, and putting a website
+ * into a holding state no longer destroys anything.
+ *
+ * On failure this deliberately does NOT fall back to a fixed answer. The first
+ * build of this function resolved every unknown to `legacy_fallback`, which
+ * reads as the safe choice until you notice what it means for the one business
+ * it would affect: Siround has no legacy document, so `legacy_fallback` is a
+ * 404, and deploying this code before its own migration would have taken the
+ * canary's website off the internet — the exact failure this whole change exists
+ * to prevent, caused by the change itself.
+ *
+ * So an unanswerable `public_mode` falls back to the *historic rule* instead:
+ * whatever `state` says today. Behaviour is then identical before and after the
+ * migration, in either order, and the new column only ever adds choices.
+ */
+export const PUBLIC_MODES = ["site_spec", "legacy_fallback", "maintenance"] as const;
+export type SiteSpecPublicMode = (typeof PUBLIC_MODES)[number];
+
+const isPublicMode = (value: unknown): value is SiteSpecPublicMode =>
+  typeof value === "string" && (PUBLIC_MODES as readonly string[]).includes(value);
+
+export const resolvePublicMode = async (
+  supabase: SupabaseLike,
+  businessId: string
+): Promise<SiteSpecPublicMode> => {
+  if (!businessId) return "legacy_fallback";
+
+  try {
+    const { data, error } = await supabase.rpc("site_spec_public_mode", {
+      target_business_id: businessId
+    });
+    if (!error) {
+      const value = Array.isArray(data) ? data[0] : data;
+      if (isPublicMode(value)) return value;
+    }
+  } catch {
+    /* fall through to the historic rule */
+  }
+
+  // The column or function is not there yet (or did not answer). Reproduce
+  // exactly what this business was being served before Stage 3E existed.
+  return (await resolveRolloutState(supabase, businessId)) === "off"
+    ? "legacy_fallback"
+    : "site_spec";
+};
