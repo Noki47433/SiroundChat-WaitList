@@ -251,7 +251,10 @@ const main = async () => {
     for (const f of failures) console.log(`    [${f.kind}] ${f.prompt}\n        → ${f.reply}`);
   }
 
-  const path = "/Users/kyro/Downloads/next/audit-output/phase-3/evidence/site-spec-stage3e/edit-reliability.json";
+  // Timestamped: a fixed filename means each run silently destroys the one it is
+  // meant to be compared against, which is how the Stage 3E baseline was lost.
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const path = `/Users/kyro/Downloads/next/audit-output/phase-3/evidence/site-spec-stage3e1/edit-reliability-${stamp}.json`;
   const { writeFileSync } = await import("node:fs");
   writeFileSync(
     path,
