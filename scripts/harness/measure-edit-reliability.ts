@@ -213,7 +213,13 @@ const main = async () => {
   const hard = count("hard_failure");
   // The denominator is attempts the model was actually asked to answer. A request
   // the limiter turned away never reached it.
-  const attempted = outcomes.length - count("throttled") - count("concurrency");
+  // The gate says "excluding correct refusals, conflicts and throttling", and all
+  // three have to come out of the DENOMINATOR, not just the numerator. Leaving
+  // correct refusals in flatters the rate by counting seven guaranteed successes
+  // that were never model work — Stage 3E.1 reported 11.1% that way when the
+  // pre-declared rule gives 13.8%.
+  const attempted =
+    outcomes.length - count("throttled") - count("concurrency") - count("correct_refusal");
   const rate = (hard / Math.max(1, attempted)) * 100;
 
   console.log("\n──────────────────────────────────────────────────────────────");
@@ -224,6 +230,12 @@ const main = async () => {
   console.log(`  throttled               ${count("throttled")}  (rate limiter working, not a model failure)`);
   console.log(`  timeouts                ${count("timeout")}`);
   console.log(`  HARD FAILURES           ${hard} of ${attempted} attempted  →  ${rate.toFixed(1)}%   (target < 5%)`);
+  console.log(
+    `  owner-perceived         ${hard + count("timeout")} of ${attempted + count("timeout")}  →  ${(
+      ((hard + count("timeout")) / Math.max(1, attempted + count("timeout"))) *
+      100
+    ).toFixed(1)}%   (includes timeouts)`
+  );
   console.log(`  p50 latency             ${(pct(50) / 1000).toFixed(1)}s`);
   console.log(`  p95 latency             ${(pct(95) / 1000).toFixed(1)}s`);
   console.log(`  worst                   ${(times[times.length - 1] / 1000).toFixed(1)}s`);
