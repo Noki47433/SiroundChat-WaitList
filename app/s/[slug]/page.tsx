@@ -346,6 +346,23 @@ const loadSite = async (slug: string, preview: boolean, siteId?: string | null) 
 export async function generateMetadata({ params, searchParams }: PageProps): Promise<Metadata> {
   const preview = searchParams?.preview === "true";
   const siteId = searchParams?.siteId ?? null;
+
+  // A site in maintenance must not be titled "Site not found". The page body was
+  // already careful about this — the whole point of a holding page is that it
+  // does not read as a closed business — and the tab, the browser history and
+  // the search result all have to agree with it.
+  if (!preview) {
+    const maintenance = await loadMaintenanceSite(getSupabaseAdminClient() as any, params.slug);
+    if (maintenance) {
+      return {
+        title: { absolute: maintenance.businessName },
+        description: "Our website is temporarily unavailable. We are still open — please get in touch.",
+        // Held-back pages should not be indexed in place of the real site.
+        robots: { index: false, follow: false }
+      };
+    }
+  }
+
   const data = await loadSite(params.slug, preview, siteId);
   if (!data) {
     return { title: "Site not found" };
