@@ -123,15 +123,23 @@ export function isSharedRateLimitConfigured(): boolean {
  *    limiter is blind costs the business real chairs and real reputation, and a
  *    short honest outage is the cheaper failure. Used by booking creation.
  *
- *  · `local_fallback` — for reads and for authenticated work. Taking a website's
- *    availability offline because Redis blinked would be a self-inflicted outage,
- *    and an owner mid-edit should not be locked out of their own site. These keep
- *    serving under a deliberately tighter per-instance bound, so the worst case is
- *    bounded by (instances × tightened limit) rather than by nothing at all.
+ *  · `local_fallback_tight` — for public, unauthenticated reads. Taking a
+ *    website's availability offline because Redis blinked would be a
+ *    self-inflicted outage, so these keep serving under a deliberately tighter
+ *    per-instance bound: the worst case becomes (instances × a quarter of the
+ *    limit) rather than (instances × the whole limit).
+ *
+ *  · `local_fallback` — for authenticated, tenant-keyed work. The same reasoning
+ *    about not causing an outage applies, but the tightening does not: the caller
+ *    already had to sign in and the budget is already keyed to one business, so
+ *    the blast radius is bounded by who can log in rather than by the counter.
+ *    Quartering here buys almost nothing and costs the owner real work — Stage 3E
+ *    measured it directly, watching an owner's edit budget fall from 60 per ten
+ *    minutes to 15 and stop a perfectly ordinary editing session halfway through.
  */
-export type DegradedPolicy = "fail_closed" | "local_fallback";
+export type DegradedPolicy = "fail_closed" | "local_fallback" | "local_fallback_tight";
 
-/** How much of the configured budget a single instance may spend when blind. */
+/** How much of the configured budget one instance may spend when blind and anonymous. */
 const LOCAL_FALLBACK_DIVISOR = 4;
 
 export class RateLimitUnavailableError extends Error {
@@ -159,7 +167,10 @@ export async function enforceSharedRateLimit(
     throw new RateLimitUnavailableError();
   }
 
-  const limit = shared ? options.limit : Math.max(1, Math.floor(options.limit / LOCAL_FALLBACK_DIVISOR));
+  const limit =
+    shared || options.whenUnavailable !== "local_fallback_tight"
+      ? options.limit
+      : Math.max(1, Math.floor(options.limit / LOCAL_FALLBACK_DIVISOR));
   const result = await checkRateLimit({ key: options.key, limit, windowInSeconds: options.windowInSeconds });
   if (!result.allowed) {
     const retryAfter = Math.max(1, Math.ceil((result.resetAt - Date.now()) / 1000));

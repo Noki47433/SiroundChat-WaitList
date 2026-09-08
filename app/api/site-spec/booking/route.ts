@@ -80,13 +80,13 @@ export async function GET(request: Request) {
       windowInSeconds: 60,
       // A read. Taking a website's times offline because Redis blinked would be a
       // self-inflicted outage, so this holds a tighter local line instead.
-      whenUnavailable: "local_fallback"
+      whenUnavailable: "local_fallback_tight"
     });
     await enforceSharedRateLimit({
       key: `site-spec:availability:${parsed.data.slug}:${callerId(request)}`,
       limit: 40,
       windowInSeconds: 60,
-      whenUnavailable: "local_fallback"
+      whenUnavailable: "local_fallback_tight"
     });
   } catch (error) {
     if (error instanceof RateLimitError) {
