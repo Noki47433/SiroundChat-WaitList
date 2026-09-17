@@ -113,11 +113,23 @@ export const NO_OP_PREDICATES: Record<string, (spec: any) => { satisfied: boolea
     observed: `chrome.navPosition = ${spec?.design?.chrome?.navPosition ?? "(unset)"}`
   }),
   "Add the gallery to the navigation": (spec) => {
+    // AMENDED 2026-09-17, before any of the 180 executions ran. The original read
+    // `i?.sectionId ?? i?.target?.sectionId ?? i?.label` from each entry, which
+    // describes a nav item shape this product does not have: `nav.items` is an
+    // array of plain section-id strings. As written the predicate could never be
+    // satisfied by any spec, which would have made a true no-op claim count as a
+    // hard failure and — used as a post-condition — made a correct application
+    // count as a wrong mutation.
+    //
+    // At the five declared Phase D baselines no site has the gallery in its
+    // navigation, so this correction cannot move a single verdict in this run:
+    // false before, false after. It is recorded because a predicate that is
+    // wrong about the schema is wrong whichever way it happens to point.
     const items: any[] = spec?.nav?.items ?? spec?.design?.chrome?.navItems ?? [];
-    const has = items.some((i: any) =>
-      String(i?.sectionId ?? i?.target?.sectionId ?? i?.label ?? "").toLowerCase().includes("galler")
-    );
-    return { satisfied: has, observed: `nav items = ${JSON.stringify(items.map((i: any) => i?.label ?? i))}` };
+    const id = (item: any) =>
+      typeof item === "string" ? item : String(item?.sectionId ?? item?.target?.sectionId ?? item?.label ?? "");
+    const has = items.some((item) => id(item).toLowerCase().includes("galler"));
+    return { satisfied: has, observed: `nav items = ${JSON.stringify(items.map(id))}` };
   },
   "Make the headings a little larger": (spec) => ({
     // Only "largest" is already-satisfied: from "larger" there is still a step up.

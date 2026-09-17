@@ -35,9 +35,9 @@ const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPAB
   auth: { persistSession: false }
 });
 
-type Kind = "copy" | "design" | "layout" | "section" | "asset" | "terminology" | "policy";
+export type Kind = "copy" | "design" | "layout" | "section" | "asset" | "terminology" | "policy";
 
-const PROMPTS: Array<{ text: string; kind: Kind; mustRefuse?: boolean }> = [
+export const PROMPTS: Array<{ text: string; kind: Kind; mustRefuse?: boolean }> = [
   // ── copy ──
   { text: "Make the hero heading shorter and more confident", kind: "copy" },
   { text: "Rewrite the intro paragraph so it sounds warmer", kind: "copy" },
@@ -304,4 +304,7 @@ async function versionCount(siteId: string) {
   return count ?? 0;
 }
 
-void main();
+// Only when run directly. Stage 3F.1 imports PROMPTS from here rather than
+// copying the list, so "byte-identical fixture" is a fact about the code instead
+// of a claim in a report — and importing it must not fire a measurement run.
+if (process.argv[1]?.includes("measure-edit-reliability")) void main();
