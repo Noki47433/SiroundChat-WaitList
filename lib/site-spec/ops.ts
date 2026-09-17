@@ -661,11 +661,17 @@ const applyOne = (spec: SiteSpec, op: SiteSpecOp, context: ApplyContext = {}): s
       return null;
 
     case "set_nav": {
+      // Caught here rather than left to the schema, so the owner is told the menu
+      // is full instead of "that would have left the site in a state I can't
+      // render" — which is true, useless, and what Stage 3F actually showed them.
+      if (op.items.length > MAX_NAV_ITEMS) {
+        return `the menu holds at most ${MAX_NAV_ITEMS} links, and that would make ${op.items.length}`;
+      }
       for (const id of op.items) {
         const section = findSection(spec, id);
         if (!section) return `there is no section called "${id}"`;
         if (section.type === "hero" || section.type === "bookingStrip") {
-          return `"${id}" is not something the navigation can link to`;
+          return `"${id}" sits at the top of the page already, so the navigation cannot link to it`;
         }
       }
       spec.nav.items = op.items;

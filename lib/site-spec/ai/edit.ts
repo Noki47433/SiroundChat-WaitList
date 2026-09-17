@@ -25,6 +25,7 @@ import {
   FONT_STACK_IDS,
   FOOTER_PRESENTATIONS,
   GALLERY_PRESENTATIONS,
+  MAX_NAV_ITEMS,
   SECTION_LAYOUTS
 } from "@/lib/site-spec/vocabulary";
 import type { SiteSpec } from "@/lib/site-spec/schema";
@@ -480,6 +481,32 @@ export const describeSpecForEditing = (
     const title = typeof section.heading.title === "string" ? section.heading.title : null;
     lines.push(parts.join("") + (title ? ` — "${title}"` : ""));
   }
+
+  // THE NAVIGATION.
+  //
+  // `set_nav` replaces the whole menu, so a model asked to add one item must
+  // restate every item already there. Until Stage 3F.1 this description never
+  // mentioned the navigation at all, so the model was restating a list it had
+  // never seen — it enumerated the sections instead, which both overflowed the
+  // cap and began with the hero, and "add the gallery to the menu" died at the
+  // validator. Showing the list, the cap and the legal choices costs four lines
+  // and removes the guesswork entirely.
+  const linkable = spec.sections.filter(
+    (section) => section.type !== "hero" && section.type !== "bookingStrip"
+  );
+  lines.push("");
+  lines.push("NAVIGATION:");
+  lines.push(
+    `  currently: ${spec.nav.items.length ? spec.nav.items.join(", ") : "(empty)"}`
+  );
+  lines.push(
+    `  set_nav REPLACES this whole list, so include everything you want to keep. ` +
+      `At most ${MAX_NAV_ITEMS} items.`
+  );
+  lines.push(
+    `  can be linked: ${linkable.map((section) => section.id).join(", ")}` +
+      ` — the hero and any booking strip cannot be linked to.`
+  );
 
   const hero = spec.sections.find((section) => section.type === "hero");
   if (hero && hero.type === "hero") {

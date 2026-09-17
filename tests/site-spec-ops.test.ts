@@ -333,7 +333,7 @@ ok("set_terminology, set_nav and set_footer change presentation vocabulary only"
   assert.equal(spec.footer.presentation, "minimal");
 
   const badNav = applyFails(base(), [{ op: "set_nav", items: ["hero"] }], "nav to the hero");
-  assert.match((badNav as { message: string }).message, /not something the navigation can link to/);
+  assert.match((badNav as { message: string }).message, /the navigation cannot link to it/);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
