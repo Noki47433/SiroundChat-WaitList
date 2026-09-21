@@ -128,6 +128,21 @@ ok("a duplicate refusal is recognised by the product's own sentence, not by 'alr
   assert.notEqual(notDup.outcome, "duplicate_section_refusal");
 });
 
+ok("the hero-image contracts read the field the schema actually has", () => {
+  const before = spec();
+  const hero = before.sections.find((s: any) => s.type === "hero");
+  assert.ok(hero.media, "fixture hero has no media — the schema field moved again");
+  const asset = { kind: "asset", assetId: "11111111-2222-4333-8444-555555555555", alt: "x", fallbackSeed: 0 };
+  const after = JSON.parse(JSON.stringify(before));
+  after.sections.find((s: any) => s.type === "hero").media = asset;
+  const change = PROMPT_CONTRACTS["Change the picture at the top of the page"].post!(before, after);
+  assert.equal(change.satisfied, true, change.observed);
+  const mine = PROMPT_CONTRACTS["Use one of my photos for the hero image"];
+  assert.equal(mine.post!(before, after).satisfied, true);
+  assert.equal(mine.noOp!(after).satisfied, true, "an owner photo already on the hero is a provable no-op");
+  assert.equal(PROMPT_CONTRACTS["Change the picture at the top of the page"].post!(after, after).satisfied, false);
+});
+
 ok("Stage 3F.1's actual replies are caught as misleading", () => {
   assert.ok(misleadingReply("Changed the navPosition.", true, false).length >= 2, "field name + false claim");
   assert.ok(misleadingReply("Changed the cta.", true, false).length >= 2);

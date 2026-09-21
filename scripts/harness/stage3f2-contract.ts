@@ -49,6 +49,9 @@
  *    header, on every page. So the request is already true everywhere. The
  *    contract now says so — the only success is a truthful no-op, and ANY
  *    mutation is a wrong_mutation.
+ *  · AMENDMENT, before measurement: the two hero-image contracts read
+ *    `hero.image`; the field is `hero.media`. Corrected, and pinned by a check.
+ *    No edit had been sent when this was found, so no result could inform it.
  *  · `ALREADY_REPLY` is /\balready\b/ rather than 3F.1's narrower list, because
  *    the brief's own example reply ("already at that size") did not match the
  *    old pattern. Duplicate refusals are recognised by their exact product
@@ -106,7 +109,12 @@ const densityRank = (value: unknown) => {
   const rank = (DENSITIES as readonly string[]).indexOf(String(value ?? "regular"));
   return rank === -1 ? 1 : rank;
 };
-const heroImage = (spec: any) => first(spec, "hero")?.image ?? null;
+// AMENDED before any measurement ran (see the header): the hero's picture lives in
+// `media` (schema.ts HeroSectionSchema), not `image`. As first frozen, these
+// predicates read a field that does not exist, which would have scored every
+// correct hero-image change as a wrong mutation. Caught while wiring the product
+// change, before a single edit was sent; the check file now pins it.
+const heroImage = (spec: any) => first(spec, "hero")?.media ?? null;
 const bookingish = (spec: any) =>
   sections(spec)
     .map((s, i) => ({ id: s?.id, type: s?.type, i }))
