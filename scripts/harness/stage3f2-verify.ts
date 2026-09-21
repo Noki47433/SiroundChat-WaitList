@@ -30,7 +30,7 @@ const WITNESS = JSON.parse(
 );
 /** The measurement began after the witness; the mission itself began today. */
 // A reconstructed witness has no exact time, only the window it was taken in;
-// the window's end (the first measurement request) is the conservative bound.
+// the window's START (the backup) is the conservative bound — it counts more rows.
 const MISSION_START = String(WITNESS.takenAt ?? WITNESS.takenBetween?.[0]?.split(" ")[0]);
 const MISSION_DAY = "2026-09-21T00:00:00Z";
 const db = admin();
