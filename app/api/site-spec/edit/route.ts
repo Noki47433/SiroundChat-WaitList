@@ -27,7 +27,7 @@ import {
   logSiteSpecEvent,
   startTimer
 } from "@/lib/site-spec/api/guard";
-import { runEdit } from "@/lib/site-spec/ai/session";
+import { editDiagnostics, runEdit } from "@/lib/site-spec/ai/session";
 import { getDraftVersion } from "@/lib/site-spec/store";
 
 export const runtime = "nodejs";
@@ -120,7 +120,9 @@ export async function POST(request: Request) {
     durationMs,
     modelMs: outcome.usage.durationMs,
     modelAttempts: outcome.usage.attempts,
-    repaired: outcome.usage.attempts > 1,
+    repairAttempted: outcome.repair?.attempted ?? false,
+    repaired: outcome.repair?.succeeded ?? false,
+    noOp: outcome.noOp ?? false,
     promptTokens: outcome.usage.promptTokens,
     completionTokens: outcome.usage.completionTokens,
     changed: outcome.changed,
@@ -148,6 +150,14 @@ export async function POST(request: Request) {
       : null,
     undoToVersionId: outcome.undoToVersionId ?? null,
     // Reasons only — never the private context that produced them.
-    rejections: outcome.rejections.map((rejection) => ({ reason: rejection.reason, message: rejection.message }))
+    rejections: outcome.rejections.map((rejection) => ({ reason: rejection.reason, message: rejection.message })),
+    // Stage 3F.2. Bounded, numeric-or-enum diagnostics for the owner's own route,
+    // so cost and repair rate can be measured instead of read as zero off a field
+    // that did not exist. Deliberately NOT here: the prompt, the owner's message,
+    // generated copy, the model's understanding, the failure detail (which can
+    // carry a validator or database message), any customer data, token or key.
+    // Every value is a number, a boolean, a closed stage name, or the configured
+    // model id.
+    diagnostics: editDiagnostics(outcome, durationMs)
   });
 }

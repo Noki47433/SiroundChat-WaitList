@@ -306,7 +306,8 @@ export type ApplyResult =
   | { ok: false; reason: "invalid_result"; issues: Array<{ path: string; message: string }> };
 
 /** Which presentation values each section type accepts. */
-const PRESENTATIONS_BY_TYPE: Partial<Record<Section["type"], readonly string[]>> = {
+/** Exported read-only so the edit context can tell the model what each section accepts. */
+export const PRESENTATIONS_BY_TYPE: Partial<Record<Section["type"], readonly string[]>> = {
   services: ["rows", "cards", "editorial", "packages"],
   gallery: ["mosaic", "portfolio", "filmstrip", "duo"],
   story: ["pullquote", "column"],
@@ -577,12 +578,26 @@ const applyOne = (spec: SiteSpec, op: SiteSpecOp, context: ApplyContext = {}): s
     case "reorder_sections": {
       const current = spec.sections.map((section) => section.id);
       const requested = op.order;
-      if (requested.length !== current.length) {
-        return "a reorder has to list every section exactly once";
-      }
+      // Stage 3F.2: the refusal names what is wrong. The length check used to run
+      // first and answer every malformed list with the same sentence, so the one
+      // bounded repair was told "list every section exactly once" and nothing
+      // about which one it had dropped — and, replayed on a site whose booking
+      // STRIP has the id "booking" and whose booking SECTION is "booking-2", it
+      // dropped the same id again. The rule is unchanged: a partial list is
+      // still refused. Only the explanation is specific now.
       const missing = current.filter((id) => !requested.includes(id));
-      if (missing.length) return `the new order is missing ${missing.join(", ")}`;
-      if (new Set(requested).size !== requested.length) return "the new order repeats a section";
+      const unknown = requested.filter((id) => !current.includes(id));
+      const repeated = [...new Set(requested.filter((id, index) => requested.indexOf(id) !== index))];
+      if (missing.length || unknown.length || repeated.length || requested.length !== current.length) {
+        const problems: string[] = [];
+        if (missing.length) problems.push(`it left out ${missing.map((id) => `"${id}"`).join(", ")}`);
+        if (unknown.length) problems.push(`there is no section called ${unknown.map((id) => `"${id}"`).join(", ")}`);
+        if (repeated.length) problems.push(`it lists ${repeated.map((id) => `"${id}"`).join(", ")} more than once`);
+        return (
+          `a reorder has to list every section exactly once — all ${current.length}: ${current.join(", ")}; ` +
+          (problems.join("; ") || "the count is wrong")
+        );
+      }
 
       const byId = new Map(spec.sections.map((section) => [section.id, section]));
       spec.sections = requested.map((id) => byId.get(id)!);
@@ -613,23 +628,33 @@ const applyOne = (spec: SiteSpec, op: SiteSpecOp, context: ApplyContext = {}): s
 
     // ── assets ────────────────────────────────────────────────────────────
     case "bind_asset": {
-      const media = { kind: "asset" as const, assetId: op.assetId, alt: op.alt, fallbackSeed: op.fallbackSeed };
+      const fresh = { kind: "asset" as const, assetId: op.assetId, alt: op.alt, fallbackSeed: op.fallbackSeed };
+      // Stage 3F.2: putting the SAME image back in the slot it already fills is
+      // not a request to rewrite its description. Without this, "use one of my
+      // photos" on a hero that already shows one re-bound it with whatever alt
+      // text the model happened to write, the site moved by one attribute, and
+      // the owner was told the picture had changed. The existing description is
+      // kept, so the edit is recognised as the no-op it is.
+      const keepIfSame = (current: unknown) =>
+        current && (current as any).kind === "asset" && (current as any).assetId === op.assetId
+          ? (current as typeof fresh)
+          : fresh;
       if (op.slot.kind === "hero") {
         const hero = spec.sections.find((section) => section.type === "hero");
         if (!hero || hero.type !== "hero") return "this site has no hero section";
-        hero.media = media;
+        hero.media = keepIfSame(hero.media);
         return null;
       }
       if (op.slot.kind === "gallery") {
         const gallery = spec.sections.find((section) => section.type === "gallery");
         if (!gallery || gallery.type !== "gallery") return "this site has no gallery";
         if (op.slot.index >= gallery.items.length) return "there is no image at that position";
-        gallery.items[op.slot.index] = media;
+        gallery.items[op.slot.index] = keepIfSame(gallery.items[op.slot.index]);
         return null;
       }
       const team = spec.sections.find((section) => section.type === "team");
       if (!team || team.type !== "team") return "this site has no team section";
-      team.portraits = { ...team.portraits, [op.slot.memberId]: media };
+      team.portraits = { ...team.portraits, [op.slot.memberId]: keepIfSame(team.portraits?.[op.slot.memberId]) };
       return null;
     }
 

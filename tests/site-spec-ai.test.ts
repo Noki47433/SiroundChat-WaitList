@@ -577,7 +577,8 @@ const scriptEdit = (plan: EditPlan) => {
 const editPlan = (operations: ModelEditOp[], understanding = "…", notAWebsiteChange: string | null = null): EditPlan => ({
   understanding,
   operations,
-  notAWebsiteChange
+  notAWebsiteChange,
+  alreadyTrue: null
 });
 
 ok("a simple copy change appends a draft version and reports what it did", async () => {

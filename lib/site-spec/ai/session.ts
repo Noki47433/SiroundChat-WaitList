@@ -13,7 +13,7 @@
 import type { BusinessPayload } from "@/lib/business/load";
 import { buildGenerationBrief, type GenerationBrief, type KnowledgeExcerpt } from "@/lib/site-spec/brief";
 import { decideRemaining, nextClarifications, summariseDecisions, type ClarificationAnswer, type ClarificationQuestion } from "@/lib/site-spec/clarify";
-import { emptyModelUsage, type ModelUsage } from "@/lib/site-spec/ai/client";
+import { emptyModelUsage, SITE_SPEC_MODEL, type ModelUsage } from "@/lib/site-spec/ai/client";
 import { generateSiteSpec } from "@/lib/site-spec/ai/generate";
 import {
   EDIT_MODEL_TIMEOUT_MS,
@@ -21,7 +21,9 @@ import {
   type InterpretResult
 } from "@/lib/site-spec/ai/edit";
 import { authorizeOps, type OpRejection, type OpWarning } from "@/lib/site-spec/authorize";
-import { applyOps, describeOps, type SiteSpecOp } from "@/lib/site-spec/ops";
+import { applyOps, type SiteSpecOp } from "@/lib/site-spec/ops";
+import { ALREADY_TRUE_REPLIES, describeObservedChange, describeUnchanged } from "@/lib/site-spec/describe-change";
+import { sameWebsite } from "@/lib/site-spec/semantic-fingerprint";
 import { saveDraftSpec, type SiteVersion } from "@/lib/site-spec/store";
 import type { SiteSpec } from "@/lib/site-spec/schema";
 
@@ -217,6 +219,16 @@ export type EditOutcome = {
   undoToVersionId?: string | null;
   /** Latency and tokens across every model call this edit made, repairs included. */
   usage: ModelUsage;
+  /**
+   * Stage 3F.2. True when the edit was understood and applied cleanly but the
+   * website would be exactly the same afterwards — so nothing was written, and
+   * the owner was told the site already looks that way.
+   */
+  noOp?: boolean;
+  /** Whether the one bounded repair ran, and whether its result is what applied. */
+  repair?: { attempted: boolean; succeeded: boolean };
+  /** The model the edit was interpreted with. Not a secret; reported for cost. */
+  model?: string;
 };
 
 /**
@@ -225,7 +237,36 @@ export type EditOutcome = {
  * Every failure path leaves the draft untouched — an edit either lands whole or
  * does not land at all.
  */
-export const runEdit = async ({
+type EditTrace = { repair: { attempted: boolean; succeeded: boolean } };
+
+/**
+ * The diagnostics the owner's edit route returns (Stage 3F.2 · Phase E).
+ *
+ * One function so the shape is testable and cannot grow by accident. Every value
+ * is a number, a boolean, a closed stage name or the configured model id — never
+ * the prompt, the owner's words, generated copy, the model's understanding, the
+ * failure detail, customer data, a token or a key.
+ */
+export const editDiagnostics = (outcome: EditOutcome, totalMs: number) => ({
+  model: outcome.model ?? null,
+  promptTokens: outcome.usage.promptTokens,
+  completionTokens: outcome.usage.completionTokens,
+  attempts: outcome.usage.attempts,
+  repairAttempted: outcome.repair?.attempted ?? false,
+  repaired: outcome.repair?.succeeded ?? false,
+  modelMs: outcome.usage.durationMs,
+  totalMs,
+  noOp: outcome.noOp ?? false,
+  stage: outcome.diagnostics?.stage ?? null
+});
+
+export const runEdit = async (input: Parameters<typeof runEditPipeline>[0]): Promise<EditOutcome> => {
+  const trace: EditTrace = { repair: { attempted: false, succeeded: false } };
+  const outcome = await runEditPipeline(input, trace);
+  return { ...outcome, repair: trace.repair, model: SITE_SPEC_MODEL };
+};
+
+const runEditPipeline = async ({
   supabase,
   siteId,
   spec,
@@ -234,7 +275,8 @@ export const runEdit = async ({
   assets = [],
   history = [],
   expectedParentVersionId = null,
-  interpret = interpretEdit
+  interpret = interpretEdit,
+  deadlineMs = EDIT_MODEL_TIMEOUT_MS
 }: {
   supabase: SupabaseLike;
   siteId: string;
@@ -246,7 +288,9 @@ export const runEdit = async ({
   /** The draft version `spec` came from. The save is refused if it has moved. */
   expectedParentVersionId?: string | null;
   interpret?: typeof interpretEdit;
-}): Promise<EditOutcome> => {
+  /** Overrides the 25-second edit ceiling. Tests use it; product code does not. */
+  deadlineMs?: number;
+}, trace: EditTrace): Promise<EditOutcome> => {
   // Accumulated across the first interpretation and any repair attempt, because
   // "what did this edit cost" is a question about the whole request.
   const usage = emptyModelUsage();
@@ -260,7 +304,7 @@ export const runEdit = async ({
   // One edit gets ONE ceiling's worth of model time in total. The bounded repair
   // is worth having, but not at the cost of the owner waiting through a second
   // full timeout — so it only runs if there is budget left.
-  const deadline = Date.now() + EDIT_MODEL_TIMEOUT_MS;
+  const deadline = Date.now() + deadlineMs;
 
   /**
    * The ceiling has to belong to the EDIT, not to one network call.
@@ -332,6 +376,20 @@ export const runEdit = async ({
     };
   }
 
+  // A fact true of every site, which no operation can move ("put the menu at the
+  // top"). The model only names WHICH fact; the words are ours.
+  if ("alreadyTrue" in interpreted && interpreted.alreadyTrue) {
+    return {
+      changed: false,
+      noOp: true,
+      usage,
+      ops: [],
+      rejections: [],
+      warnings: [],
+      reply: ALREADY_TRUE_REPLIES[interpreted.alreadyTrue]
+    };
+  }
+
   if (!interpreted.ops.length) {
     return {
       changed: false,
@@ -359,16 +417,27 @@ export const runEdit = async ({
 
   let applied = applyOps(spec, decision.authorized, { assets });
   let authorized = decision.authorized;
+  // An explicit, checkable constraint in the owner's own words ("shorter"),
+  // checked the way contrast is: before anything is saved.
+  let unmet = applied.ok ? unmetLengthRequest(message, spec, authorized) : null;
 
   // ONE bounded repair. Generation already feeds validation issues back to the
   // model; editing needs the same, because ordinary requests ("make it feel more
   // premium") routinely land one token outside what the renderer accepts, and
   // refusing outright makes the product look broken when it is merely strict.
   const remaining = deadline - Date.now();
-  if (!applied.ok && remaining > 3_000) {
+  // A refusal the owner is told in plain words — "you already have a gallery",
+  // "the page is full" — is a product rule, not a malformed answer, and no
+  // second attempt can legitimately get past it. Stage 3F.2's rehearsal spent a
+  // second model call on every duplicate request (ten per cohort run) and added
+  // seconds to the reply for nothing. Only repairable failures are repaired.
+  const final = !applied.ok && applied.reason === "unapplicable" && ownerReadableRefusal(applied) !== null;
+  if (((!applied.ok && !final) || unmet) && remaining > 3_000) {
+    trace.repair.attempted = true;
+    const feedback = !applied.ok ? `${describeFailure(applied)} ${repairAdvice(applied)}` : unmet!.feedback;
     const retry = await withinDeadline(
       interpret({
-        message: `${message}\n\n(Your previous attempt was rejected: ${describeFailure(applied)} Propose a corrected, smaller set of operations.)`,
+        message: `${message}\n\n(Your previous attempt was rejected: ${feedback})`,
         spec,
         assets,
         history,
@@ -382,7 +451,9 @@ export const runEdit = async ({
       const retryDecision = authorizeOps(retry.ops, { spec, business });
       if (retryDecision.authorized.length) {
         const second = applyOps(spec, retryDecision.authorized, { assets });
-        if (second.ok) {
+        if (second.ok && !unmetLengthRequest(message, spec, retryDecision.authorized)) {
+          trace.repair.succeeded = true;
+          unmet = null;
           applied = second;
           authorized = retryDecision.authorized;
           decision.rejected.push(...retryDecision.rejected);
@@ -404,7 +475,45 @@ export const runEdit = async ({
     };
   }
 
-  const label = describeOps(authorized);
+  // The owner asked for it shorter, and it is not. Saving it would be a change
+  // they did not ask for, reported as the one they did.
+  if (applied.ok && unmet) {
+    return {
+      changed: false,
+      usage,
+      ops: authorized,
+      rejections: decision.rejected,
+      warnings: decision.warnings,
+      diagnostics: { stage: "apply", detail: "length request not met" },
+      reply: unmet.reply
+    };
+  }
+
+  // THE NO-OP GUARD (Stage 3F.2).
+  //
+  // "The operations applied" and "the website changed" are different claims, and
+  // until this line they were treated as one: in the Stage 3F.1 run, 40 of 134
+  // edits that reported a change wrote a version byte-identical to its parent and
+  // told the owner "Changed the heading font." So the site is compared, by the
+  // same semantic fingerprint the measurement uses, BEFORE anything is written.
+  // If nothing a visitor could see would differ, no version is created, the
+  // draft pointer does not move, and the owner is told the site already looks
+  // that way — in terms of what it IS, not of what was attempted.
+  if (sameWebsite(spec, applied.spec)) {
+    return {
+      changed: false,
+      noOp: true,
+      usage,
+      ops: authorized,
+      rejections: decision.rejected,
+      warnings: decision.warnings,
+      reply: composeReply(describeUnchanged(authorized, spec).replace(/\.$/, ""), decision.rejected, decision.warnings)
+    };
+  }
+
+  // The reply, and the history label, describe what actually changed — read off
+  // the difference between the two specs, never off the operation names.
+  const label = describeObservedChange(spec, applied.spec).replace(/\.$/, "");
   const saved = await saveDraftSpec(supabase, siteId, applied.spec, {
     source: "edit",
     label,
@@ -483,6 +592,101 @@ const describeFailure = (result: Extract<ReturnType<typeof applyOps>, { ok: fals
     return `the resulting site failed validation: ${result.issues.map((i) => `${i.path}: ${i.message}`).join("; ")}.`;
   }
   return "the change could not be applied.";
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Checkable requests
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Words that make a copy request a request about LENGTH. Deliberately narrow. */
+const SHORTER = /\b(shorter|shorten|more concise|briefer)\b/i;
+
+/** The current text a copy target points at, for the fields a length request can mean. */
+const readCopy = (spec: SiteSpec, op: Extract<SiteSpecOp, { op: "set_copy" }>): string | undefined => {
+  const target = op.target as { field: string; sectionId?: string };
+  const hero = spec.sections.find((section) => section.type === "hero") as any;
+  switch (target.field) {
+    case "hero.headline":
+      return typeof hero?.headline === "string" ? hero.headline : undefined;
+    case "hero.body":
+      return typeof hero?.body === "string" ? hero.body : undefined;
+    case "hero.eyebrow":
+      return typeof hero?.eyebrow === "string" ? hero.eyebrow : undefined;
+    case "section.title":
+    case "section.sub": {
+      const section = spec.sections.find((s) => s.id === target.sectionId) as any;
+      const value = target.field === "section.title" ? section?.heading?.title : section?.heading?.sub;
+      return typeof value === "string" ? value : undefined;
+    }
+    default:
+      return undefined;
+  }
+};
+
+/**
+ * "Make the headline shorter" is a request with a measurable meaning, and the
+ * Stage 3F.2 rehearsal showed the model meeting it by WORDS and missing it by
+ * characters — "Relax with Our Treatment" (24) became "Experience True
+ * Relaxation" (26), three runs out of three, and the owner was told the headline
+ * had been rewritten. So when the owner asks for shorter, a rewrite that is not
+ * shorter goes back through the one bounded repair with the real counts, and if
+ * it still is not shorter nothing is saved and the owner is told so.
+ *
+ * Nothing is relaxed: this can only turn a save into a refusal.
+ */
+const unmetLengthRequest = (
+  message: string,
+  spec: SiteSpec,
+  ops: SiteSpecOp[]
+): { feedback: string; reply: string } | null => {
+  if (!SHORTER.test(message)) return null;
+  for (const op of ops) {
+    if (op.op !== "set_copy") continue;
+    const current = readCopy(spec, op);
+    const next = op.value.trim();
+    if (current === undefined || !next) continue;
+    if (next.length >= current.length) {
+      const what = op.target.field === "hero.headline" ? "headline" : "text";
+      return {
+        feedback:
+          `the owner asked for the ${what} to be SHORTER. It is ${current.length} characters now and your ` +
+          `version is ${next.length}. Write one with at most ${current.length - 1} characters — count them.`,
+        reply: `I couldn't find a shorter ${what} I was happy with, so I left it as it was. If you tell me the words you'd like, I'll use them.`
+      };
+    }
+  }
+  return null;
+};
+
+/**
+ * What the repair attempt is asked to do about the failure.
+ *
+ * It used to end every repair with "Propose a corrected, smaller set of
+ * operations" — and a contrast failure is exactly the case where the fix is one
+ * operation MORE: keep the warmer accent and change the text colour on it. The
+ * Stage 3F.2 replay showed the repair re-proposing the identical failing colour
+ * twice in three runs. Nothing here loosens a check; it says which pair failed
+ * and that changing the partner colour is allowed.
+ */
+const repairAdvice = (result: Extract<ReturnType<typeof applyOps>, { ok: false }>): string => {
+  const issues = result.reason === "invalid_result" ? result.issues : [];
+  if (issues.some((issue) => /accentInk/.test(issue.path) || /accentInk/.test(issue.message))) {
+    return (
+      "Keep the change the owner asked for if you can, and ALSO set palette.accentInk so the text on " +
+      "the accent colour reaches 3:1 — a dark accentInk on a light accent, a light one on a dark accent. " +
+      "If no such pair exists, choose a different accent that passes."
+    );
+  }
+  if (issues.some((issue) => /contrast/i.test(issue.message))) {
+    return (
+      "Keep the change the owner asked for if you can, and ALSO adjust the partner colour so body text " +
+      "(palette.ink on palette.background) reaches 4.5:1. If no such pair exists, choose values that pass."
+    );
+  }
+  if (result.reason === "unapplicable" && result.op.op === "reorder_sections") {
+    return "Return the reorder again with EVERY section id exactly once, starting from CURRENT ORDER.";
+  }
+  return "Propose a corrected set of operations.";
 };
 
 /**
