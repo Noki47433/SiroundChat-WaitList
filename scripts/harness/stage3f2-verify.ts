@@ -29,7 +29,9 @@ const WITNESS = JSON.parse(
   )
 );
 /** The measurement began after the witness; the mission itself began today. */
-const MISSION_START = String(WITNESS.takenAt);
+// A reconstructed witness has no exact time, only the window it was taken in;
+// the window's end (the first measurement request) is the conservative bound.
+const MISSION_START = String(WITNESS.takenAt ?? WITNESS.takenBetween?.[0]?.split(" ")[0]);
 const MISSION_DAY = "2026-09-21T00:00:00Z";
 const db = admin();
 
@@ -64,7 +66,7 @@ const json = async (path: string, init?: RequestInit) => {
 const COHORT_BUSINESS_IDS = new Set(COHORT.map((entry) => entry.businessId));
 
 const main = async () => {
-  console.log(`\n════════ Stage 3F.1 · Phase F · production verification ════════`);
+  console.log(`\n════════ Stage 3F.2 · Phase I · production verification ════════`);
 
   // ── 1 · the cohort is still exactly five ───────────────────────────────────
   await ok("exactly five businesses are enabled, and they are the five", async () => {

@@ -149,7 +149,11 @@ const main = async () => {
   if (legacySame !== legacy.length) process.exit(1);
 };
 
-void main().catch((error) => {
-  console.error(String((error as Error)?.message ?? error));
-  process.exit(1);
-});
+// Only when run directly. Importing COUNTED_TABLES once ran this and overwrote the
+// pre-measurement witness with post-measurement state — see the Stage 3F.2 report.
+if (process.argv[1]?.includes("stage3f2-witness")) {
+  void main().catch((error) => {
+    console.error(String((error as Error)?.message ?? error));
+    process.exit(1);
+  });
+}
