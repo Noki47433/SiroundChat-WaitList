@@ -141,6 +141,14 @@ ok("the hero-image contracts read the field the schema actually has", () => {
   assert.equal(mine.post!(before, after).satisfied, true);
   assert.equal(mine.noOp!(after).satisfied, true, "an owner photo already on the hero is a provable no-op");
   assert.equal(PROMPT_CONTRACTS["Change the picture at the top of the page"].post!(after, after).satisfied, false);
+  const newAlt = JSON.parse(JSON.stringify(after));
+  newAlt.sections.find((s: any) => s.type === "hero").media.alt = "a different description";
+  assert.equal(
+    PROMPT_CONTRACTS["Change the picture at the top of the page"].post!(after, newAlt).satisfied,
+    false,
+    "new alt text on the same photo is not a new picture"
+  );
+  assert.equal(mine.post!(after, newAlt).satisfied, false);
 });
 
 ok("Stage 3F.1's actual replies are caught as misleading", () => {

@@ -52,6 +52,9 @@
  *  · AMENDMENT, before measurement: the two hero-image contracts read
  *    `hero.image`; the field is `hero.media`. Corrected, and pinned by a check.
  *    No edit had been sent when this was found, so no result could inform it.
+ *  · AMENDMENT 2, before measurement, stricter: the hero-image post-conditions
+ *    compare WHICH picture (asset id or generated seed), not the whole media
+ *    object, so a new alt text on the same photo cannot pass as a new picture.
  *  · `ALREADY_REPLY` is /\balready\b/ rather than 3F.1's narrower list, because
  *    the brief's own example reply ("already at that size") did not match the
  *    old pattern. Duplicate refusals are recognised by their exact product
@@ -115,6 +118,14 @@ const densityRank = (value: unknown) => {
 // correct hero-image change as a wrong mutation. Caught while wiring the product
 // change, before a single edit was sent; the check file now pins it.
 const heroImage = (spec: any) => first(spec, "hero")?.media ?? null;
+// AMENDED before any measurement ran, in the STRICTER direction: which picture it
+// is, not its alt text. Comparing whole media objects would have scored a re-bind
+// of the SAME photo with new alt text as "changed the picture". Identity only.
+const heroIdentity = (spec: any) => {
+  const media = heroImage(spec);
+  if (!media) return null;
+  return media.kind === "asset" ? `asset:${media.assetId}` : `generated:${media.seed}`;
+};
 const bookingish = (spec: any) =>
   sections(spec)
     .map((s, i) => ({ id: s?.id, type: s?.type, i }))
@@ -328,14 +339,14 @@ export const PROMPT_CONTRACTS: Record<string, Contract> = {
   "Use one of my photos for the hero image": {
     noOp: (pre) => ({ satisfied: heroImage(pre)?.kind === "asset", observed: `hero image kind = ${heroImage(pre)?.kind ?? "(none)"}` }),
     post: (pre, post) => ({
-      satisfied: heroImage(post)?.kind === "asset" && !same(heroImage(pre), heroImage(post)),
+      satisfied: heroImage(post)?.kind === "asset" && heroIdentity(pre) !== heroIdentity(post),
       observed: `hero image ${heroImage(pre)?.kind}:${heroImage(pre)?.assetId ?? heroImage(pre)?.seed} → ${heroImage(post)?.kind}:${heroImage(post)?.assetId ?? heroImage(post)?.seed}`
     })
   },
   "Change the picture at the top of the page": {
     post: (pre, post) => ({
-      satisfied: !!heroImage(post) && !same(heroImage(pre), heroImage(post)),
-      observed: `hero image ${same(heroImage(pre), heroImage(post)) ? "unchanged" : "changed"}`
+      satisfied: !!heroImage(post) && heroIdentity(pre) !== heroIdentity(post),
+      observed: `hero image ${heroIdentity(pre)} → ${heroIdentity(post)}`
     })
   },
 
