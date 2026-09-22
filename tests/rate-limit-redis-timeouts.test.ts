@@ -38,7 +38,7 @@ const ok = (name: string, fn: () => Promise<void>) => {
   });
 };
 
-const listen = (onConnection: Parameters<typeof createServer>[0]) =>
+const listen = (onConnection: (socket: Socket) => void) =>
   new Promise<{ server: Server; port: number }>((resolve) => {
     const server = createServer(onConnection);
     server.listen(0, "127.0.0.1", () => resolve({ server, port: (server.address() as any).port }));
