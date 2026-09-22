@@ -343,7 +343,7 @@ const runEditPipeline = async ({
     usage: emptyModelUsage()
   });
 
-  const interpreted = await withinDeadline(
+  let interpreted = await withinDeadline(
     interpret({ message, spec, assets, history }),
     timedOutInterpretation
   );
@@ -390,6 +390,35 @@ const runEditPipeline = async ({
     };
   }
 
+  // Every operation the model proposed was unmappable — a shape that does not
+  // exist, or one missing a field it needs. Stage 3G found five sites in a row
+  // answering "I'm not sure what to change there" to a request the model had
+  // understood perfectly ("add a caption to the gallery section"), because the
+  // malformed operations were dropped in silence and the list was then empty, so
+  // the bounded repair — which exists for exactly this — never ran. It runs now,
+  // told what was wrong, and only then does the owner get that sentence.
+  if (!interpreted.ops.length && interpreted.dropped > 0) {
+    const remaining = deadline - Date.now();
+    if (remaining > 3_000) {
+      trace.repair.attempted = true;
+      const retry = await withinDeadline(
+        interpret({
+          message: `${message}\n\n(Your previous attempt was rejected: ${describeDroppedOps(("droppedOps" in interpreted && interpreted.droppedOps) || [])})`,
+          spec,
+          assets,
+          history,
+          timeoutMs: remaining
+        }),
+        timedOutInterpretation
+      );
+      record(retry.usage);
+      if (retry.ok && retry.ops.length) {
+        trace.repair.succeeded = true;
+        interpreted = retry;
+      }
+    }
+  }
+
   if (!interpreted.ops.length) {
     return {
       changed: false,
@@ -397,6 +426,7 @@ const runEditPipeline = async ({
       ops: [],
       rejections: [],
       warnings: [],
+      diagnostics: interpreted.dropped > 0 ? { stage: "model", detail: `dropped ${interpreted.dropped} operation(s)` } : undefined,
       reply: "I'm not sure what to change there. Can you tell me which part of the page you mean?"
     };
   }
@@ -612,6 +642,16 @@ const readCopy = (spec: SiteSpec, op: Extract<SiteSpecOp, { op: "set_copy" }>): 
       return typeof hero?.body === "string" ? hero.body : undefined;
     case "hero.eyebrow":
       return typeof hero?.eyebrow === "string" ? hero.eyebrow : undefined;
+    case "hero.primaryCta":
+      return typeof hero?.primaryCta?.label === "string" ? hero.primaryCta.label : undefined;
+    case "hero.secondaryCta":
+      return typeof hero?.secondaryCta?.label === "string" ? hero.secondaryCta.label : undefined;
+    case "nav.cta":
+      return typeof (spec as any)?.nav?.cta?.label === "string" ? (spec as any).nav.cta.label : undefined;
+    case "section.cta": {
+      const section = spec.sections.find((s) => s.id === target.sectionId) as any;
+      return typeof section?.cta?.label === "string" ? section.cta.label : undefined;
+    }
     case "section.title":
     case "section.sub": {
       const section = spec.sections.find((s) => s.id === target.sectionId) as any;
@@ -626,7 +666,10 @@ const readCopy = (spec: SiteSpec, op: Extract<SiteSpecOp, { op: "set_copy" }>): 
 /**
  * "Make the headline shorter" is a request with a measurable meaning, and the
  * Stage 3F.2 rehearsal showed the model meeting it by WORDS and missing it by
- * characters — "Relax with Our Treatment" (24) became "Experience True
+ * characters. Stage 3G then found the check reaching only headlines and section
+ * text: asked to shorten the BUTTON at the top, the model rewrote the headline
+ * instead and nothing noticed, because no CTA label was readable here. Every
+ * label a "shorter" request can mean is readable now — "Relax with Our Treatment" (24) became "Experience True
  * Relaxation" (26), three runs out of three, and the owner was told the headline
  * had been rewritten. So when the owner asks for shorter, a rewrite that is not
  * shorter goes back through the one bounded repair with the real counts, and if
@@ -646,7 +689,11 @@ const unmetLengthRequest = (
     const next = op.value.trim();
     if (current === undefined || !next) continue;
     if (next.length >= current.length) {
-      const what = op.target.field === "hero.headline" ? "headline" : "text";
+      const what = op.target.field === "hero.headline"
+        ? "headline"
+        : op.target.field.endsWith("Cta") || op.target.field.endsWith(".cta")
+          ? "button label"
+          : "text";
       return {
         feedback:
           `the owner asked for the ${what} to be SHORTER. It is ${current.length} characters now and your ` +
@@ -656,6 +703,28 @@ const unmetLengthRequest = (
     }
   }
   return null;
+};
+
+/**
+ * What was wrong with operations that could not be mapped at all.
+ *
+ * Named by shape rather than passed through: the model gets the fields its own
+ * operation was missing, which is what it needs to try again, and nothing here
+ * can reach an owner.
+ */
+const describeDroppedOps = (dropped: Array<{ op: string; [key: string]: unknown }>): string => {
+  if (!dropped.length) return "none of your operations could be used. Propose a corrected set.";
+  const reasons = dropped.map((op) => {
+    if (op.op === "set_copy" && String(op.field) === "gallery.caption" && op.index == null) {
+      return `set_copy gallery.caption needs "index" — which photo. A line under a section's heading is set_copy "section.sub" with that section's id.`;
+    }
+    if (op.op === "set_copy" && String(op.field).startsWith("section.") && !op.sectionId) {
+      return `set_copy ${op.field} needs "sectionId".`;
+    }
+    if (op.op === "bind_asset") return `bind_asset needs a slot, and an asset id you were given.`;
+    return `${op.op} was missing a field it needs, or named something that does not exist.`;
+  });
+  return `${[...new Set(reasons)].join(" ")} Propose a corrected set of operations that uses the fields listed above.`;
 };
 
 /**

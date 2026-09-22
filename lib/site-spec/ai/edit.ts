@@ -397,6 +397,14 @@ RULES
   and say plainly that it is not something you can do to the page. Do NOT substitute
   some other edit in its place: doing something unrelated to a request you should have
   refused is worse than refusing it.
+· PRESENTATION and LAYOUT are different things, and SECTIONS below lists both for
+  every section. A section's PRESENTATION is how that section arranges its own
+  content — a gallery as a mosaic or a filmstrip, hours as a strip, a card or
+  columns, services as rows, cards or packages. Its LAYOUT is how the section's
+  heading and body sit in the page. If the owner's word is one of the values
+  listed after "can be" for that section, it is a set_presentation — never a
+  set_layout. "Show the hours as columns" is set_presentation "cols"; it is not a
+  layout change.
 · Layout is one of six compositions: stack (heading above body), split (label column
   beside the body), wide (heading above a body using the full measure), centered, edge
   (oversized heading beside the body), flush (edge-to-edge, no side padding).
@@ -429,7 +437,13 @@ ${FONT_CHARACTER_LINES}
   website request that happens to be true already.
 · Never put a price, duration, opening time, address or phone number into any copy. Those are
   bound from the business record and appear automatically.
-· Never invent a fact — an award, a count, a year, a review, a credential — to fill space.
+· Never INVENT a fact to fill space — an award, a count, a year, a credential the owner
+  has not given you. But a fact the owner states about their OWN business is theirs to
+  state: if they tell you they won an award, the year they opened, or how they would
+  describe themselves, you may put it on the page in their words.
+· Never write words and attribute them to someone else. A testimonial or review from a
+  named customer is not yours to write, however it is asked for: return no operations and
+  say plainly that a review has to come from the customer.
 · If a request is broad ("make it feel more premium"), express it as design tokens,
   presentation and layout changes, and copy where it genuinely helps. Do not remove sections
   the owner did not ask you to remove.
@@ -443,7 +457,22 @@ Leave alreadyTrue null unless the MENU rule above applies.`;
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type InterpretResult =
-  | { ok: true; ops: SiteSpecOp[]; understanding: string; dropped: number; attempts: number; usage: ModelUsage }
+  | {
+      ok: true;
+      ops: SiteSpecOp[];
+      understanding: string;
+      dropped: number;
+      /**
+       * The model operations that could not be mapped to a typed operation, kept
+       * so the one bounded repair can be told what was wrong with them. Stage 3G
+       * found these being discarded in silence: a request whose operations were
+       * ALL unmappable came back as "I'm not sure what to change there", without
+       * the repair that exists for exactly this ever running.
+       */
+      droppedOps?: ModelEditOp[];
+      attempts: number;
+      usage: ModelUsage;
+    }
   | {
       ok: true;
       ops: [];
@@ -645,7 +674,11 @@ export const describeSpecForEditing = (
   // appointments wording" can only be done completely by a model that can see
   // every place the word appears.
   lines.push("");
-  lines.push("WORDING — terminology (set_terminology key) and every button label (set_copy field):");
+  lines.push("WORDING — terminology (set_terminology key) and every button label (set_copy field).");
+  lines.push(
+    "  Terminology is the word the site uses where it generates one; it does NOT rewrite a " +
+      "button label that already exists. To change what a button says, use set_copy on the field named here."
+  );
   for (const [key, value] of Object.entries(spec.terminology)) lines.push(`  terminology ${key} = ${JSON.stringify(value)}`);
   if (hero && hero.type === "hero") {
     lines.push(`  hero.primaryCta = ${JSON.stringify(hero.primaryCta.label)}`);
@@ -753,12 +786,14 @@ export const interpretEdit = async ({
 
   const mapped = plan.operations.map(toSiteSpecOp);
   const ops = mapped.filter((op): op is SiteSpecOp => op !== null);
+  const droppedOps = plan.operations.filter((_, index) => mapped[index] === null);
 
   return {
     ok: true,
     ops,
     understanding: plan.understanding,
     dropped: mapped.length - ops.length,
+    droppedOps,
     attempts: result.attempts,
     usage: result.usage
   };
