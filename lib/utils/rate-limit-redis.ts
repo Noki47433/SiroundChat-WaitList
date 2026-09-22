@@ -39,6 +39,22 @@ function loadTls(): TlsModule {
 
 type RespValue = string | number | null | Array<RespValue>;
 
+/**
+ * How long a connection attempt and a single command may take.
+ *
+ * Stage 3G.1 found this client able to hang forever in three different ways —
+ * a TLS connect that neither completes nor errors, a command whose reply never
+ * comes, and queued commands left unsettled when the socket closed underneath
+ * them. Production showed the consequence: four requests killed at Vercel's
+ * 300-second ceiling, one of them a visitor's page. The rate limiter already has
+ * a policy for an unreachable Redis (degrade to per-instance counting, never
+ * fail the request), but it could never engage, because "unreachable" never
+ * resolved. These budgets are what turn a hang into an error the policy can act
+ * on. Deliberately short: the limiter is a guard, not the work.
+ */
+const CONNECT_TIMEOUT_MS = Number(process.env.RATE_LIMIT_REDIS_CONNECT_TIMEOUT_MS || 2_000);
+const COMMAND_TIMEOUT_MS = Number(process.env.RATE_LIMIT_REDIS_COMMAND_TIMEOUT_MS || 2_000);
+
 class MiniRedis {
   private host: string;
   private port: number;
@@ -80,16 +96,51 @@ class MiniRedis {
     if (this.connecting) return this.connecting;
     this.authed = false;
     this.connecting = new Promise((resolve, reject) => {
-      const ready = () => { this.socket = s; this.connecting = null; resolve(); };
+      let settled = false;
+      const fail = (error: Error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        this.connecting = null;
+        this.failQueue(error);
+        try { s.destroy(); } catch { /* already gone */ }
+        reject(error);
+      };
+      const ready = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        this.socket = s;
+        this.connecting = null;
+        resolve();
+      };
+      const timer = setTimeout(
+        () => fail(new Error(`redis connect timed out after ${CONNECT_TIMEOUT_MS}ms`)),
+        CONNECT_TIMEOUT_MS
+      );
       const s = this.tls
         ? (loadTls().connect({ host: this.host, port: this.port, servername: this.host }, ready) as unknown as Socket)
         : loadNet().createConnection({ host: this.host, port: this.port }, ready);
       s.setNoDelay(true);
-      s.on("error", (e) => { this.connecting = null; reject(e); });
+      s.on("error", (e) => fail(e as Error));
       s.on("data", (d) => this.onData(d));
-      s.on("close", () => { this.socket = null; this.authed = false; });
+      // A socket that goes away with commands still in flight must fail them,
+      // not leave them waiting for a reply that can no longer arrive.
+      s.on("close", () => {
+        this.socket = null;
+        this.authed = false;
+        this.buf = Buffer.alloc(0);
+        this.failQueue(new Error("redis connection closed"));
+      });
     });
     return this.connecting;
+  }
+
+  /** Settle everything still waiting for a reply. */
+  private failQueue(error: Error) {
+    const waiting = this.queue;
+    this.queue = [];
+    for (const waiter of waiting) waiter.reject(error);
   }
 
   private onData(chunk: Buffer) {
@@ -146,8 +197,28 @@ class MiniRedis {
     let out = `*${parts.length}\r\n`;
     for (const p of parts) out += `$${Buffer.byteLength(p)}\r\n${p}\r\n`;
     return new Promise<RespValue>((resolve, reject) => {
-      this.queue.push({ resolve, reject });
-      this.socket!.write(out);
+      let settled = false;
+      const waiter = {
+        resolve: (value: RespValue) => { if (!settled) { settled = true; clearTimeout(timer); resolve(value); } },
+        reject: (error: Error) => { if (!settled) { settled = true; clearTimeout(timer); reject(error); } }
+      };
+      // A silent socket — half-open, or a server that simply stops answering —
+      // used to wait forever. It waits this long now, then gives the caller an
+      // error and drops the connection so the next call starts clean.
+      const timer = setTimeout(() => {
+        const index = this.queue.indexOf(waiter);
+        if (index !== -1) this.queue.splice(index, 1);
+        try { this.socket?.destroy(); } catch { /* already gone */ }
+        this.socket = null;
+        this.authed = false;
+        waiter.reject(new Error(`redis command timed out after ${COMMAND_TIMEOUT_MS}ms`));
+      }, COMMAND_TIMEOUT_MS);
+      this.queue.push(waiter);
+      try {
+        this.socket!.write(out);
+      } catch (error) {
+        waiter.reject(error as Error);
+      }
     });
   }
 
