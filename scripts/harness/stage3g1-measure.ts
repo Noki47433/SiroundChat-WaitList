@@ -55,7 +55,7 @@ const LATE_WRITE_WATCH_MS = 45_000;
 const OWNER_SLA_MS = 30_000;
 
 type Snapshot = { versionId: string | null; spec: unknown; versionCount: number };
-type Attempt = { status: number; body: any; aborted: boolean; ms: number };
+type Attempt = { status: number; body: any; aborted: boolean; ms: number; transport?: number };
 
 type Executor = {
   snapshot: () => Promise<Snapshot>;
@@ -82,9 +82,11 @@ const productionExecutor = async (entry: CohortEntry): Promise<Executor> => {
   return {
     snapshot,
     edit: async (message, baseVersionId, requestId) => {
+      const started = Date.now();
+      let transport = 0;
+      const post = async (attempt: number): Promise<Attempt> => {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), CLIENT_DEADLINE_MS);
-      const started = Date.now();
       try {
         const response = await fetch(`${BASE}/api/site-spec/edit`, {
           method: "POST",
@@ -93,13 +95,22 @@ const productionExecutor = async (entry: CohortEntry): Promise<Executor> => {
           signal: controller.signal
         });
         const body = await response.json().catch(() => ({}));
-        return { status: response.status, body, aborted: false, ms: Date.now() - started };
+        return { status: response.status, body, aborted: false, ms: Date.now() - started, transport };
       } catch (error) {
         if ((error as Error)?.name === "AbortError") return { status: 0, body: {}, aborted: true, ms: Date.now() - started };
-        throw error;
+        // A transport failure is the network, not the product. The first run of
+        // this suite died at execution 108 on a `fetch failed`, losing 92
+        // executions to a blip. Retried here, twice, with a pause; only a
+        // request that cannot be delivered three times over stops the run.
+        transport += 1;
+        if (attempt >= 2) throw error;
+        await new Promise((resolve) => setTimeout(resolve, 5_000 * (attempt + 1)));
+        return post(attempt + 1);
       } finally {
         clearTimeout(timer);
       }
+      };
+      return post(0);
     },
     restore: async () => {
       const response = await fetch(`${BASE}/api/site-spec/undo`, {
