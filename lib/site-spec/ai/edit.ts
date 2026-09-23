@@ -18,17 +18,15 @@ import { z } from "zod";
 
 import { callStructured, SITE_SPEC_MODEL, type ModelUsage } from "@/lib/site-spec/ai/client";
 import { INSERTABLE_SECTIONS } from "@/lib/site-spec/section-factory";
-import { PRESENTATIONS_BY_TYPE, TOKEN_PATHS, type SiteSpecOp, type TokenPath } from "@/lib/site-spec/ops";
+import { PRESENTATIONS_BY_TYPE, TOKEN_PATHS, type SiteSpecOp } from "@/lib/site-spec/ops";
 import {
   BOOKING_PRESENTATIONS,
   FONT_STACK_CHARACTER,
   FONT_STACK_IDS,
   FOOTER_PRESENTATIONS,
   GALLERY_PRESENTATIONS,
-  ART_TREATMENTS,
   CTA_SHAPES,
   DENSITIES,
-  EYEBROW_STYLES,
   MAX_NAV_ITEMS,
   NAV_POSITIONS,
   NAV_SHAPES,
@@ -37,7 +35,6 @@ import {
   TYPE_SCALES
 } from "@/lib/site-spec/vocabulary";
 import { contrastRatio, type SiteSpec } from "@/lib/site-spec/schema";
-import type { Expectation } from "@/lib/site-spec/expectations";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // What the model may propose
@@ -165,152 +162,6 @@ export type ModelEditOp = z.infer<typeof ModelEditOpSchema>;
 export const ALREADY_TRUE_FACTS = ["menu_at_top"] as const;
 export type AlreadyTrueFact = (typeof ALREADY_TRUE_FACTS)[number];
 
-/**
- * What the model says will be observably true once its operations are applied.
- *
- * A closed union, exactly like the operations themselves: the model can only
- * assert things this file already knows how to check, and `lib/site-spec/expectations.ts`
- * checks every one of them against the stored spec before and after. It can
- * refuse an edit; it can never authorise one, and it never reaches the owner.
- */
-const EXPECTATION_CHECKS = [
-  "token_equals",
-  "token_increases",
-  "token_decreases",
-  "section_layout",
-  "section_presentation",
-  "section_before",
-  "section_last",
-  "text_shorter",
-  "text_changed",
-  "text_on_page",
-  "menu_includes",
-  "menu_excludes",
-  "menu_length",
-  "photo_changed",
-  "photo_is_generated",
-  "gallery_photo_count_decreases",
-  "gallery_every_photo_captioned",
-  "terminology_says"
-] as const;
-
-const TEXT_FIELDS = [
-  "hero.headline",
-  "hero.body",
-  "hero.eyebrow",
-  "hero.primaryCta",
-  "nav.cta",
-  "footer.note",
-  "seo.title",
-  "seo.description",
-  "section.title",
-  "section.sub",
-  "section.cta"
-] as const;
-
-/**
- * The shape the MODEL fills in — deliberately flat.
- *
- * The internal Expectation type is a strict discriminated union, and it stays
- * that way: it is what the checker reads and what the tests pin. But a union of
- * eighteen object variants converts into a JSON schema of eighteen `anyOf`
- * branches, and the provider is handed that schema on every single edit. Keeping
- * the model's side flat holds the request schema close to the size it was before
- * this stage (46 properties, 7 levels), which matters because a schema the
- * provider rejects is not a degraded edit — it is every edit failing at once.
- *
- * Flat does not mean loose. `toExpectation` below is the boundary: it accepts a
- * row only if the fields that check genuinely needs are present and well formed,
- * and returns null otherwise. A claim that does not survive that is simply not
- * checked — it can never widen what an edit is allowed to do.
- */
-export const ExpectationSchema = z.object({
-  check: z.enum(EXPECTATION_CHECKS),
-  /** For the token_* checks. */
-  path: z.enum(TOKEN_PATHS).nullable(),
-  /** For the section_*, menu_include/exclude and section-scoped text checks. */
-  sectionId: z.string().nullable(),
-  /** The second section, for section_before. */
-  otherSectionId: z.string().nullable(),
-  layout: z.enum(SECTION_LAYOUTS).nullable(),
-  presentation: z.string().nullable(),
-  /** Which piece of text a text_* check is about. */
-  field: z.enum(TEXT_FIELDS).nullable(),
-  /** Words that must appear, for text_on_page and terminology_says. */
-  words: z.string().nullable(),
-  /** The exact value a token must end up at. */
-  value: z.string().nullable(),
-  /** How many menu links there must be. */
-  count: z.number().nullable(),
-  where: z.enum(["hero", "gallery"]).nullable(),
-  /** Which piece of terminology, for terminology_says. */
-  key: z.enum(TERMINOLOGY_KEYS).nullable()
-});
-
-export type ModelExpectation = z.infer<typeof ExpectationSchema>;
-
-/**
- * The boundary: a flat row becomes a typed expectation, or nothing.
- *
- * Every check names exactly what it needs. Anything missing, and the claim is
- * dropped rather than guessed at — the same rule the operation mapping has
- * followed since Stage 1.
- */
-export const toExpectation = (raw: ModelExpectation): Expectation | null => {
-  const text = () => {
-    if (!raw.field) return null;
-    if (raw.field.startsWith("section.")) {
-      return raw.sectionId ? { field: raw.field, sectionId: raw.sectionId } : null;
-    }
-    return { field: raw.field };
-  };
-
-  switch (raw.check) {
-    case "token_equals":
-      return raw.path && raw.value !== null ? { check: "token_equals", path: raw.path, value: raw.value } : null;
-    case "token_increases":
-    case "token_decreases":
-      return raw.path ? { check: raw.check, path: raw.path } : null;
-    case "section_layout":
-      return raw.sectionId && raw.layout ? { check: "section_layout", sectionId: raw.sectionId, layout: raw.layout } : null;
-    case "section_presentation":
-      return raw.sectionId && raw.presentation
-        ? { check: "section_presentation", sectionId: raw.sectionId, presentation: raw.presentation }
-        : null;
-    case "section_before":
-      return raw.sectionId && raw.otherSectionId
-        ? { check: "section_before", sectionId: raw.sectionId, otherSectionId: raw.otherSectionId }
-        : null;
-    case "section_last":
-      return raw.sectionId ? { check: "section_last", sectionId: raw.sectionId } : null;
-    case "text_shorter":
-    case "text_changed": {
-      const what = text();
-      return what ? ({ check: raw.check, what } as Expectation) : null;
-    }
-    case "text_on_page":
-      return raw.words && raw.words.trim() ? { check: "text_on_page", words: raw.words } : null;
-    case "menu_includes":
-    case "menu_excludes":
-      return raw.sectionId ? { check: raw.check, sectionId: raw.sectionId } : null;
-    case "menu_length":
-      return raw.count !== null && Number.isInteger(raw.count) ? { check: "menu_length", count: raw.count } : null;
-    case "photo_changed":
-      return raw.where ? { check: "photo_changed", where: raw.where } : null;
-    case "photo_is_generated":
-      return raw.where === "hero" ? { check: "photo_is_generated", where: "hero" } : null;
-    case "gallery_photo_count_decreases":
-    case "gallery_every_photo_captioned":
-      return { check: raw.check };
-    case "terminology_says":
-      return raw.key && raw.words && raw.words.trim()
-        ? { check: "terminology_says", key: raw.key, words: raw.words }
-        : null;
-    default:
-      return null;
-  }
-};
-
 export const EditPlanSchema = z.object({
   /**
    * What the model understood. Used for logging and to explain a refusal — the
@@ -335,13 +186,7 @@ export const EditPlanSchema = z.object({
    * proposing the operation with the value it already has, so the no-op guard
    * can compare the site before and after and say what it actually saw.
    */
-  alreadyTrue: z.enum(ALREADY_TRUE_FACTS).nullable(),
-  /**
-   * Stage 3G.2. What must be observably true of the site once your operations
-   * are applied. The system checks these against the site itself; a claim that
-   * does not come true is repaired once and then refused.
-   */
-  expectations: z.array(ExpectationSchema)
+  alreadyTrue: z.enum(ALREADY_TRUE_FACTS).nullable()
 });
 
 export type EditPlan = z.infer<typeof EditPlanSchema>;
@@ -518,20 +363,6 @@ RULES
                                                         editorial | photographic
     "warmer" / "a different colour"                   → palette.* with a #rrggbb value
   A numeric token takes numberValue; a named or colour token takes stringValue.
-· SAY WHAT WILL BE TRUE. With every set of operations, fill in EXPECTATIONS: what
-  the system should be able to SEE about the site once your operations are applied
-  — a token's value, a section's layout or presentation, one section before
-  another, a piece of text being shorter or changed, words appearing on the page,
-  what the menu links to, a photo having changed. The system checks each one
-  against the site itself. If a claim does not come true you get one chance to
-  correct it, and then the edit is refused and nothing is saved — so state what
-  you are actually going to do, and state at least one expectation for every
-  request you act on. Each one names a check and fills ONLY the fields that check
-  needs — path and value for a token, sectionId and layout for a layout,
-  sectionId and presentation for a presentation, field (and sectionId for a
-  section.* field) for a piece of text, words for something that must appear on
-  the page — and leaves every other field null. A claim missing what it needs is
-  dropped and cannot be checked.
 · RELATIVE requests move from the CURRENT value, one step. "A little larger" is one rung up
   the size ladder from where the headings are now; "more spacious" is one step up the
   density ladder, and once density is already spacious it means a larger
@@ -569,22 +400,17 @@ RULES
 · PRESENTATION and LAYOUT are different things, and SECTIONS below lists both for
   every section. A section's PRESENTATION is how that section arranges its own
   content — a gallery as a mosaic or a filmstrip, hours as a strip, a card or
-  columns, services as rows, cards or packages — and its choices are exactly the
-  words listed after "can be" for that section. Its LAYOUT is how that section's
-  heading and body sit in the page, and every layout has plain-English names an
-  owner actually uses:
-    "side by side" / "beside each other" / "the heading next to the text"  → split
-    "stacked" / "one above the other" / "the heading above the text"       → stack
-    "full width" / "wider" / "use the whole page"                          → wide
-    "centred" / "centre the heading and the text"                          → centered
-    "a big offset heading"                                                 → edge
-    "edge to edge" (a contact section only, read as wide anywhere else)    → flush
-  Decide between the two by the owner's own word. If it is one of the values
-  listed after "can be" for that section, it is a set_presentation: "Show the
-  hours as columns" is set_presentation "cols". If it is one of the layout names
-  above, it is a set_layout: "Put the services side by side" is set_layout
-  "split", even though a services section also has presentations. Say which of
-  the two you did in EXPECTATIONS, and the system will check the site agrees.
+  columns, services as rows, cards or packages. Its LAYOUT is how the section's
+  heading and body sit in the page. If the owner's word is one of the values
+  listed after "can be" for that section, it is a set_presentation — never a
+  set_layout. "Show the hours as columns" is set_presentation "cols"; it is not a
+  layout change.
+· Layout is one of six compositions: stack (heading above body), split (label column
+  beside the body), wide (heading above a body using the full measure), centered, edge
+  (oversized heading beside the body), flush (edge-to-edge, no side padding).
+  "Make it full width" / "make it wider" / "use the whole page" is set_layout with
+  layout "wide". The flush layout is only for a contact section; asking for it anywhere else is
+  read as "wide".
 · Typography is two separate things and both are closed choices.
   SIZE — "make the headings a little larger", "the typography is too big", "make the body
   text smaller", "put the headings back to normal" — is set_token on
@@ -615,12 +441,6 @@ ${FONT_CHARACTER_LINES}
   has not given you. But a fact the owner states about their OWN business is theirs to
   state: if they tell you they won an award, the year they opened, or how they would
   describe themselves, you may put it on the page in their words.
-· WHERE A CLAIM GOES. When the owner gives you a fact about their own business to
-  put on the page, the field to write it into is named under WHERE A CLAIM GOES ON
-  THIS SITE below — it is worked out from the sections this site actually has. Use
-  that field. Never refuse an owner's claim for want of an "about" or "story"
-  section, and never add a section to hold it. Add an expectation of text_on_page
-  with the words that must appear.
 · Never write words and attribute them to someone else. A testimonial or review from a
   named customer is not yours to write, however it is asked for: return no operations and
   say plainly that a review has to come from the customer.
@@ -641,8 +461,6 @@ export type InterpretResult =
       ok: true;
       ops: SiteSpecOp[];
       understanding: string;
-      /** What the model says will be true afterwards; checked in code, never trusted. */
-      expectations?: Expectation[];
       dropped: number;
       /**
        * The model operations that could not be mapped to a typed operation, kept
@@ -745,160 +563,30 @@ export type InterpretInput = {
  * exists. Nothing here is a new capability: every path is already in TOKEN_PATHS
  * and every value is already accepted by the validator.
  */
-/**
- * What every control is called in the owner's terms, and anything the model needs
- * to choose a value. Keyed by the writable-control registry itself, so the
- * description cannot drift from what the vocabulary allows.
- *
- * A control with no entry here is still described — from its path, with its
- * current value — because the alternative is the Stage 3F.1 defect all over
- * again: a token that can be written but cannot be seen. `describeDesignForEditing`
- * walks TOKEN_PATHS, not a hand-written list, and a test fails if any path is
- * missing from the output.
- */
-const CONTROL_LABELS: Partial<Record<TokenPath, string>> = {
-  density: "spacing",
-  "chrome.nav": "menu tab shape",
-  "chrome.navPosition": "menu alignment",
-  "chrome.cta": "button shape",
-  "chrome.eyebrow": "heading labels",
-  "art.treatment": "photo style",
-  "palette.background": "background colour",
-  "palette.ink": "text colour",
-  "palette.muted": "muted text colour",
-  "palette.accent": "accent colour",
-  "palette.accentInk": "text on accent",
-  "palette.line": "hairline colour",
-  "palette.soft": "soft background",
-  "palette.panel": "panel colour",
-  "geometry.radius": "corner rounding (cards and images — not buttons)",
-  "geometry.radiusLg": "corner rounding on large panels",
-  "geometry.sectionPad": "space between sections",
-  "geometry.sectionPadX": "space at the sides",
-  "geometry.gap": "space between items in a grid",
-  "geometry.colGap": "space between columns",
-  "geometry.rule": "thickness of dividing lines",
-  "typography.body": "body typeface",
-  "typography.display": "heading typeface",
-  "typography.displayWeight": "heading weight",
-  "typography.heroWeight": "headline weight",
-  "typography.tracking": "letter spacing",
-  "typography.measure": "how wide a line of text runs",
-  "typography.headingScale": "heading size",
-  "typography.bodyScale": "body text size",
-  "hero.height": "height of the top section",
-  "hero.mobileHeight": "height of the top section on a phone",
-  "hero.measure": "width of the headline block"
-};
-
-/** The choices a named control accepts, for the ones that are a closed list. */
-const CONTROL_CHOICES: Partial<Record<TokenPath, readonly string[]>> = {
-  density: DENSITIES,
-  "chrome.nav": NAV_SHAPES,
-  "chrome.navPosition": NAV_POSITIONS,
-  "chrome.cta": CTA_SHAPES,
-  "chrome.eyebrow": EYEBROW_STYLES,
-  "art.treatment": ART_TREATMENTS,
-  "typography.body": FONT_STACK_IDS,
-  "typography.display": FONT_STACK_IDS,
-  "typography.headingScale": TYPE_SCALES,
-  "typography.bodyScale": TYPE_SCALES
-};
-
-/**
- * What a control does NOT mean.
- *
- * Deriving the block from TOKEN_PATHS must not cost the annotations that Stage
- * 3F.2 added for controls owners regularly mistake for something else — the menu
- * alignment above all, which is where the links sit inside a header that is
- * always at the top of the page.
- */
-const CONTROL_NOTES: Partial<Record<TokenPath, string>> = {
-  "chrome.navPosition": "where the links sit INSIDE the header; the menu is always at the top of the page",
-  "chrome.cta": "buttons take their shape from here only — corner rounding does not touch them",
-  "typography.displayWeight": "how heavy section headings are",
-  "typography.heroWeight": "how heavy the main headline is"
-};
-
-/** Which bound belongs to which numeric control. */
-const CONTROL_BOUNDS: Partial<Record<TokenPath, keyof typeof TOKEN_BOUNDS>> = {
-  "geometry.radius": "radius",
-  "geometry.radiusLg": "radiusLg",
-  "geometry.sectionPad": "sectionPad",
-  "geometry.sectionPadX": "sectionPadX",
-  "geometry.gap": "gap",
-  "geometry.colGap": "colGap",
-  "geometry.rule": "rule",
-  "typography.displayWeight": "displayWeight",
-  "typography.heroWeight": "heroWeight",
-  "typography.tracking": "tracking",
-  "typography.measure": "measure",
-  "hero.height": "heroHeight",
-  "hero.mobileHeight": "heroMobileHeight",
-  "hero.measure": "heroMeasure"
-};
-
-/** Read a token's current value straight out of the spec. */
-export const readToken = (spec: SiteSpec, path: TokenPath): string | number | undefined => {
-  const [head, tail] = path.split(".") as [string, string | undefined];
-  const design = spec.design as unknown as Record<string, any>;
-  const value = tail === undefined ? design[head] : design[head]?.[tail];
-  return typeof value === "string" || typeof value === "number" ? value : undefined;
-};
-
-/**
- * Every writable control, with its current value — derived from TOKEN_PATHS so a
- * control cannot be writable and invisible at the same time.
- */
 export const describeDesignForEditing = (spec: SiteSpec): string[] => {
-  const { palette } = spec.design;
-  const lines = ["DESIGN — the current value of EVERY look-and-feel control you can set:"];
-  for (const path of TOKEN_PATHS) {
-    const label = CONTROL_LABELS[path] ?? path.split(".").pop() ?? path;
-    const value = readToken(spec, path);
-    const choices = CONTROL_CHOICES[path];
-    const bound = CONTROL_BOUNDS[path];
-    const range = choices
-      ? `   (${choices.join(" | ")})`
-      : bound
-        ? `   (${TOKEN_BOUNDS[bound].min}–${TOKEN_BOUNDS[bound].max})`
-        : path.startsWith("palette.")
-          ? "   (#rrggbb)"
-          : "";
-    const note = CONTROL_NOTES[path] ? `   — ${CONTROL_NOTES[path]}` : "";
-    lines.push(`  ${label.padEnd(34)} ${path.padEnd(26)} = ${value ?? "(unset)"}${range}${note}`);
-  }
-  lines.push(
-    `  contrast now: text on background ${contrastRatio(palette.background, palette.ink).toFixed(2)}:1 (needs 4.5) · ` +
+  const { typography, chrome, geometry, palette, art, density } = spec.design;
+  const ladder = (values: readonly string[]) => values.join(" < ");
+  const bound = (key: keyof typeof TOKEN_BOUNDS) => `${TOKEN_BOUNDS[key].min}–${TOKEN_BOUNDS[key].max}`;
+  return [
+    "DESIGN — the current value of every look-and-feel control you can set:",
+    `  heading size       typography.headingScale = ${typography.headingScale ?? "default"}   (${ladder(TYPE_SCALES)})`,
+    `  body text size     typography.bodyScale    = ${typography.bodyScale ?? "default"}   (same ladder)`,
+    `  heading typeface   typography.display      = ${typography.display}`,
+    `  body typeface      typography.body         = ${typography.body}`,
+    `  spacing            density                 = ${density ?? "regular"}   (${ladder(DENSITIES)})`,
+    `  section spacing    geometry.sectionPad     = ${geometry.sectionPad}   (${bound("sectionPad")}; larger = more space between sections)`,
+    `  corner rounding    geometry.radius         = ${geometry.radius}   (${bound("radius")}; cards and images — not buttons)`,
+    `  button shape       chrome.cta              = ${chrome.cta}   (${CTA_SHAPES.join(" | ")}; pill is fully rounded)`,
+    `  menu tab shape     chrome.nav              = ${chrome.nav}   (${NAV_SHAPES.join(" | ")})`,
+    `  menu alignment     chrome.navPosition      = ${chrome.navPosition}   (${NAV_POSITIONS.join(" | ")} — where the links sit INSIDE the header; the menu is always at the top)`,
+    `  heading labels     chrome.eyebrow          = ${chrome.eyebrow}`,
+    `  photo style        art.treatment           = ${art.treatment}`,
+    `  colours            palette.background = ${palette.background} · palette.ink (text) = ${palette.ink} · ` +
+      `palette.muted = ${palette.muted}`,
+    `                     palette.accent = ${palette.accent} · palette.accentInk (text on accent) = ${palette.accentInk}`,
+    `                     contrast now: text on background ${contrastRatio(palette.background, palette.ink).toFixed(2)}:1 (needs 4.5) · ` +
       `accentInk on accent ${contrastRatio(palette.accent, palette.accentInk).toFixed(2)}:1 (needs 3)`
-  );
-  return lines;
-};
-
-/**
- * Where a fact the owner states about their own business goes ON THIS SITE.
- *
- * Stage 3G.1 refused one of these outright — "there is no 'story' section on
- * this site" — and the obvious prompt fix ("fall back to the hero") produced a
- * set_copy naming a story section that still did not exist, which the mapping
- * dropped. So the destination is not a rule for the model to apply: it is
- * computed here from the sections the site actually has, and named.
- *
- * The order is the one an owner would expect: the place a site keeps prose,
- * then the introduction, then the line under the heading of a section that can
- * carry it. Nothing here writes anything, strengthens a claim, or creates a
- * section — it only says which existing field the copy belongs in.
- */
-export const claimDestination = (spec: SiteSpec): string => {
-  const story = spec.sections.find((section) => section.type === "story");
-  if (story) return `set_copy "story.body" with sectionId "${story.id}"`;
-  const hero = spec.sections.find((section) => section.type === "hero");
-  if (hero) return `set_copy "hero.body"`;
-  const carrier = spec.sections.find((section) =>
-    ["services", "team", "gallery", "contact"].includes(section.type)
-  );
-  if (carrier) return `set_copy "section.sub" with sectionId "${carrier.id}"`;
-  return `set_copy "seo.description"`;
+  ];
 };
 
 /** A compact description of the current site, so the model edits what exists. */
@@ -920,10 +608,6 @@ export const describeSpecForEditing = (
   // the Stage 3F.1 run changed nothing that way.
   lines.push("");
   lines.push(...describeDesignForEditing(spec));
-  lines.push("");
-  lines.push(
-    `WHERE A CLAIM GOES ON THIS SITE: ${claimDestination(spec)} — this site's own field for a fact the owner tells you about their business.`
-  );
   lines.push("");
   lines.push("SECTIONS, in order:");
   for (const section of spec.sections) {
@@ -1108,7 +792,6 @@ export const interpretEdit = async ({
     ok: true,
     ops,
     understanding: plan.understanding,
-    expectations: (plan.expectations ?? []).map(toExpectation).filter((e): e is Expectation => e !== null),
     dropped: mapped.length - ops.length,
     droppedOps,
     attempts: result.attempts,

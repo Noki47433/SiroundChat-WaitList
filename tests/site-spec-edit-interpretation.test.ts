@@ -118,17 +118,10 @@ ok("A · a genuinely empty interpretation still does not spend a repair", async 
 
 // ── B · presentation is not layout ────────────────────────────────────────────
 
-/**
- * Stage 3G.2 amended this rule. It used to end "— never a set_layout", which was
- * one direction only, and suite #3 found the other one: "side by side" is a
- * layout, and the one-way rule sent it to a presentation. The distinction itself
- * is what this test pins; the both-directions wording is pinned in
- * tests/site-spec-edit-mechanisms.test.ts.
- */
 ok("B · the instructions distinguish presentation from layout and point at the section's own values", () => {
   const flat = EDIT_SYSTEM_PROMPT.replace(/\s+/g, " ");
   assert.match(flat, /PRESENTATION and LAYOUT are different things/);
-  assert.match(flat, /If it is one of the values listed after "can be" for that section, it is a set_presentation/);
+  assert.match(flat, /If the owner's word is one of the values listed after "can be" for that section, it is a set_presentation — never a set_layout/);
   assert.match(flat, /"Show the hours as columns" is set_presentation "cols"/);
   const described = describeSpecForEditing(fixture(), []);
   assert.match(described, /hours \(hours, .*can be strip \| card \| cols\)/);

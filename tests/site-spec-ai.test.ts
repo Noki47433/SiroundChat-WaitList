@@ -578,8 +578,7 @@ const editPlan = (operations: ModelEditOp[], understanding = "…", notAWebsiteC
   understanding,
   operations,
   notAWebsiteChange,
-  alreadyTrue: null,
-  expectations: []
+  alreadyTrue: null
 });
 
 ok("a simple copy change appends a draft version and reports what it did", async () => {
