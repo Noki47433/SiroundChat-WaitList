@@ -349,7 +349,7 @@ const main = async () => {
   }
 
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const name = "phase-e-measurement";
+  const name = process.env.MEASUREMENT_NAME ?? "phase-e-measurement";
   const path = `/Users/kyro/Downloads/next/audit-output/phase-3/evidence/site-spec-stage3g1/${name}-${stamp}.json`;
   writeFileSync(path, JSON.stringify({ suite: "held-out", deployment: process.env.DEPLOYMENT ?? null, commit: process.env.COMMIT ?? null, witnessSha256: SEALED.sha256, measuredAt: new Date().toISOString(), cohort: total, perBusiness, executions: all }, null, 2));
   console.log(`\n  written to ${path}`);

@@ -25,7 +25,12 @@ import { COHORT, admin, pageFingerprint } from "./stage3f1-cohort";
 
 const BASE = process.env.BASE_URL ?? "https://siroundchat.com";
 const EVIDENCE = "/Users/kyro/Downloads/next/audit-output/phase-3/evidence";
-export const WITNESS_PATH = `${EVIDENCE}/site-spec-stage3g1/phase-d-witness.json`;
+/**
+ * Which witness this run uses. A witness is written once and never rewritten, so
+ * a second measurement needs a second file rather than a deleted one — the name
+ * is given on the command line, and both the writer and the reader use it.
+ */
+export const WITNESS_PATH = `${EVIDENCE}/site-spec-stage3g1/${process.env.WITNESS_NAME ?? "phase-d-witness"}.json`;
 export const WITNESS_HASH_PATH = `${WITNESS_PATH}.sha256`;
 const db = admin();
 
@@ -173,7 +178,7 @@ const main = async () => {
   );
   writeFileSync(WITNESS_PATH, body, { flag: "wx" });
   const sha = createHash("sha256").update(body).digest("hex");
-  writeFileSync(WITNESS_HASH_PATH, `${sha}  phase-d-witness.json\n`, { flag: "wx" });
+  writeFileSync(WITNESS_HASH_PATH, `${sha}  ${WITNESS_PATH.split("/").pop()}\n`, { flag: "wx" });
   chmodSync(WITNESS_PATH, 0o444);
   chmodSync(WITNESS_HASH_PATH, 0o444);
   console.log(`  sealed ${WITNESS_PATH}`);
