@@ -776,6 +776,11 @@ const describeDroppedOps = (dropped: Array<{ op: string; [key: string]: unknown 
     if (op.op === "set_copy" && String(op.field).startsWith("section.") && !op.sectionId) {
       return `set_copy ${op.field} needs "sectionId".`;
     }
+    // A claim aimed at a story section on a site that has none. Naming the
+    // field it should have used costs one line and saves the whole edit.
+    if (op.op === "set_copy" && String(op.field).startsWith("story.") && !op.sectionId) {
+      return `set_copy ${op.field} needs the id of a story section, and this site has none — see WHERE A CLAIM GOES ON THIS SITE above for the field to use instead.`;
+    }
     if (op.op === "bind_asset") return `bind_asset needs a slot, and an asset id you were given.`;
     return `${op.op} was missing a field it needs, or named something that does not exist.`;
   });

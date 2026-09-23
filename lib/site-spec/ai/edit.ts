@@ -616,11 +616,11 @@ ${FONT_CHARACTER_LINES}
   state: if they tell you they won an award, the year they opened, or how they would
   describe themselves, you may put it on the page in their words.
 · WHERE A CLAIM GOES. When the owner gives you a fact about their own business to
-  put on the page, write it into the first of these that exists: the story/about
-  section's body; otherwise the hero intro (hero.body); otherwise the subheading of
-  the section the claim is about, or of the services section. Never refuse an
-  owner's claim because there is no story section, and never add a section to hold
-  it. Add an expectation of text_on_page with the words that must appear.
+  put on the page, the field to write it into is named under WHERE A CLAIM GOES ON
+  THIS SITE below — it is worked out from the sections this site actually has. Use
+  that field. Never refuse an owner's claim for want of an "about" or "story"
+  section, and never add a section to hold it. Add an expectation of text_on_page
+  with the words that must appear.
 · Never write words and attribute them to someone else. A testimonial or review from a
   named customer is not yours to write, however it is asked for: return no operations and
   say plainly that a review has to come from the customer.
@@ -875,6 +875,32 @@ export const describeDesignForEditing = (spec: SiteSpec): string[] => {
   return lines;
 };
 
+/**
+ * Where a fact the owner states about their own business goes ON THIS SITE.
+ *
+ * Stage 3G.1 refused one of these outright — "there is no 'story' section on
+ * this site" — and the obvious prompt fix ("fall back to the hero") produced a
+ * set_copy naming a story section that still did not exist, which the mapping
+ * dropped. So the destination is not a rule for the model to apply: it is
+ * computed here from the sections the site actually has, and named.
+ *
+ * The order is the one an owner would expect: the place a site keeps prose,
+ * then the introduction, then the line under the heading of a section that can
+ * carry it. Nothing here writes anything, strengthens a claim, or creates a
+ * section — it only says which existing field the copy belongs in.
+ */
+export const claimDestination = (spec: SiteSpec): string => {
+  const story = spec.sections.find((section) => section.type === "story");
+  if (story) return `set_copy "story.body" with sectionId "${story.id}"`;
+  const hero = spec.sections.find((section) => section.type === "hero");
+  if (hero) return `set_copy "hero.body"`;
+  const carrier = spec.sections.find((section) =>
+    ["services", "team", "gallery", "contact"].includes(section.type)
+  );
+  if (carrier) return `set_copy "section.sub" with sectionId "${carrier.id}"`;
+  return `set_copy "seo.description"`;
+};
+
 /** A compact description of the current site, so the model edits what exists. */
 export const describeSpecForEditing = (
   spec: SiteSpec,
@@ -894,6 +920,10 @@ export const describeSpecForEditing = (
   // the Stage 3F.1 run changed nothing that way.
   lines.push("");
   lines.push(...describeDesignForEditing(spec));
+  lines.push("");
+  lines.push(
+    `WHERE A CLAIM GOES ON THIS SITE: ${claimDestination(spec)} — this site's own field for a fact the owner tells you about their business.`
+  );
   lines.push("");
   lines.push("SECTIONS, in order:");
   for (const section of spec.sections) {

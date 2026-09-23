@@ -20,10 +20,12 @@ import assert from "node:assert/strict";
 
 import { emptyModelUsage } from "@/lib/site-spec/ai/client";
 import {
+  claimDestination,
   describeSpecForEditing,
   EDIT_SYSTEM_PROMPT,
   readToken,
-  toExpectation
+  toExpectation,
+  type ModelExpectation
 } from "@/lib/site-spec/ai/edit";
 import { runEdit } from "@/lib/site-spec/ai/session";
 import {
@@ -220,36 +222,36 @@ ok("2 · diagnostics carry the shape of the failure, never the owner's words", (
   assert.match(describeExpectationFailures(failures), /services layout is wide/);
 });
 
-const RAW: Record<string, any> = {
+const RAW = {
   check: "token_equals", path: null, sectionId: null, otherSectionId: null, layout: null,
   presentation: null, field: null, words: null, value: null, count: null, where: null, key: null
-};
+} satisfies ModelExpectation;
 
 ok("2 · the flat model row becomes a typed expectation only when it is complete", () => {
   assert.deepEqual(
-    toExpectation({ ...RAW, check: "token_equals", path: "chrome.cta", value: "pill" }),
+    toExpectation({ ...RAW, check: "token_equals", path: "chrome.cta", value: "pill" } as ModelExpectation),
     { check: "token_equals", path: "chrome.cta", value: "pill" }
   );
-  assert.equal(toExpectation({ ...RAW, check: "token_equals", path: "chrome.cta" }), null, "no value, no check");
-  assert.equal(toExpectation({ ...RAW, check: "section_layout", layout: "split" }), null, "no section, no check");
+  assert.equal(toExpectation({ ...RAW, check: "token_equals", path: "chrome.cta" } as ModelExpectation), null, "no value, no check");
+  assert.equal(toExpectation({ ...RAW, check: "section_layout", layout: "split" } as ModelExpectation), null, "no section, no check");
   assert.deepEqual(
-    toExpectation({ ...RAW, check: "text_shorter", field: "hero.headline" }),
+    toExpectation({ ...RAW, check: "text_shorter", field: "hero.headline" } as ModelExpectation),
     { check: "text_shorter", what: { field: "hero.headline" } }
   );
-  assert.equal(toExpectation({ ...RAW, check: "text_shorter", field: "section.title" }), null, "a section field needs its section");
+  assert.equal(toExpectation({ ...RAW, check: "text_shorter", field: "section.title" } as ModelExpectation), null, "a section field needs its section");
   assert.deepEqual(
-    toExpectation({ ...RAW, check: "text_shorter", field: "section.title", sectionId: "services" }),
+    toExpectation({ ...RAW, check: "text_shorter", field: "section.title", sectionId: "services" } as ModelExpectation),
     { check: "text_shorter", what: { field: "section.title", sectionId: "services" } }
   );
-  assert.equal(toExpectation({ ...RAW, check: "text_on_page", words: "   " }), null, "empty words claim nothing");
-  assert.deepEqual(toExpectation({ ...RAW, check: "gallery_every_photo_captioned" }), { check: "gallery_every_photo_captioned" });
+  assert.equal(toExpectation({ ...RAW, check: "text_on_page", words: "   " } as ModelExpectation), null, "empty words claim nothing");
+  assert.deepEqual(toExpectation({ ...RAW, check: "gallery_every_photo_captioned" } as ModelExpectation), { check: "gallery_every_photo_captioned" });
 });
 
 ok("2 · a dropped claim is simply not checked — it can never widen what an edit may do", () => {
   const before = fixture();
   const after = applyToken(before, "chrome.cta", "pill");
   // an incomplete row maps to nothing, so there is no expectation to satisfy
-  assert.equal(toExpectation({ ...RAW, check: "section_layout", layout: "split" }), null);
+  assert.equal(toExpectation({ ...RAW, check: "section_layout", layout: "split" } as ModelExpectation), null);
   assert.deepEqual(checkExpectations([], before, after), []);
 });
 
@@ -311,12 +313,27 @@ ok("3 · the validator is exactly as strict as it was", () => {
 
 // ── 4 · an owner's claim has somewhere to go ──────────────────────────────────
 
-ok("4 · the instructions name an ordered home for a claim, and never invent a section", () => {
+ok("4 · the site names the field a claim goes in, and the model is told to use it", () => {
   const flat = EDIT_SYSTEM_PROMPT.replace(/\s+/g, " ");
   assert.match(flat, /WHERE A CLAIM GOES/);
-  assert.match(flat, /the story\/about section's body; otherwise the hero intro \(hero\.body\); otherwise the subheading/);
-  assert.match(flat, /Never refuse an owner's claim because there is no story section/);
+  assert.match(flat, /the field to write it into is named under WHERE A CLAIM GOES ON THIS SITE below/);
+  assert.match(flat, /Never refuse an owner's claim for want of an "about" or "story" section/);
   assert.match(flat, /never add a section to hold it/);
+
+  // and it is computed from the sections the site has, in that order
+  const withStory: SiteSpec = JSON.parse(JSON.stringify(fixture()));
+  assert.equal(claimDestination(fixture()), 'set_copy "hero.body"', "no story section — the hero intro carries it");
+  withStory.sections.splice(1, 0, {
+    id: "our-story", type: "story", layout: "wide", presentation: "column",
+    heading: { title: "Our story" }, body: "Two chairs and a window."
+  } as any);
+  assert.equal(claimDestination(withStory), 'set_copy "story.body" with sectionId "our-story"');
+  const noHero: SiteSpec = JSON.parse(JSON.stringify(fixture()));
+  noHero.sections = noHero.sections.filter((section) => section.type !== "hero");
+  assert.equal(claimDestination(noHero), 'set_copy "section.sub" with sectionId "services"');
+
+  // the context the model reads carries whichever one applies
+  assert.match(describeSpecForEditing(fixture(), []), /WHERE A CLAIM GOES ON THIS SITE: set_copy "hero\.body"/);
   // and the facts rules it must not weaken are still in force
   assert.match(flat, /Never INVENT a fact to fill space/);
   assert.match(flat, /A testimonial or review from a named customer is not yours to write/);
