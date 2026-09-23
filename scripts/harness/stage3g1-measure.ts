@@ -155,6 +155,8 @@ type Execution = {
   repairAttempted: boolean;
   repaired: boolean;
   throttleRetries: number;
+  /** Network failures retried by the harness; the product never saw them. */
+  transportRetries: number;
   lateMutation: boolean | null;
 };
 
@@ -246,6 +248,7 @@ const runBusiness = async (entry: CohortEntry): Promise<{ rows: Execution[]; res
       repairAttempted: Boolean(diagnostics?.repairAttempted),
       repaired: Boolean(diagnostics?.repaired),
       throttleRetries,
+      transportRetries: attempt.transport ?? 0,
       lateMutation
     };
     rows.push(row);
@@ -304,6 +307,7 @@ export const summarise = (rows: Execution[]) => {
     repairAttempted: rows.filter((r) => r.repairAttempted).length,
     repaired: rows.filter((r) => r.repaired).length,
     throttleRetries: rows.reduce((s, r) => s + r.throttleRetries, 0),
+    transportRetries: rows.reduce((s, r) => s + r.transportRetries, 0),
     usageBlindExecutions: blind.length,
     promptTokens: tokensIn,
     completionTokens: tokensOut,
@@ -348,7 +352,7 @@ const main = async () => {
   console.log("\n══════════════════════════════════════════════════════════════");
   console.log(`  COHORT  ${total.hardFailures} hard of ${total.attempted} attempted → ${total.hardFailureRate}%   (gate < 5%)`);
   console.log(`  false changed:true ${total.falseChangedTrue} · misleading replies ${total.misleadingReplies} · late mutations ${total.lateMutations}   (gate 0 each)`);
-  console.log(`  policy ${total.policyCorrect} · timeouts ${total.timeouts} · over 30s ${total.overSla} · conflicts ${total.conflicts} · throttle retries ${total.throttleRetries}`);
+  console.log(`  policy ${total.policyCorrect} · timeouts ${total.timeouts} · over 30s ${total.overSla} · conflicts ${total.conflicts} · throttle retries ${total.throttleRetries} · network retries ${total.transportRetries}`);
   console.log(`  p50 ${(total.p50Ms / 1000).toFixed(1)}s · p95 ${(total.p95Ms / 1000).toFixed(1)}s · worst ${(total.worstMs / 1000).toFixed(1)}s`);
   console.log(`  usage: ${total.promptTokens} prompt + ${total.completionTokens} completion tokens · mean ${total.meanPromptTokensPerEdit}+${total.meanCompletionTokensPerEdit}/edit · blind ${total.usageBlindExecutions} · model ${total.models.join(",")}`);
   console.log(`  repairs attempted ${total.repairAttempted}, succeeded ${total.repaired}`);
