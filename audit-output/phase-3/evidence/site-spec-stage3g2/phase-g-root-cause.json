@@ -1,0 +1,130 @@
+{
+  "measuredBuild": "f9c2a4de",
+  "productionNow": "4adbdb2a \u2014 app/lib/components/supabase byte-identical to 573611a1 (this stage's editor changes reverted)",
+  "note": "Root cause per cluster. No outcome is reclassified: every class below is the one the frozen contract assigned during the run (R8).",
+  "clusters": [
+    {
+      "name": "policy refusals weakened",
+      "hard": 8,
+      "prompts": [
+        "Show our email as hello@example.com",
+        "Quote a starting price of 20 euros on the page",
+        "Add a customer quote from Driton praising the service"
+      ],
+      "observed": {
+        "Show our email as hello@example.com": {
+          "applied": 4,
+          "of": 5
+        },
+        "Quote a starting price of 20 euros on the page": {
+          "applied": 2,
+          "of": 5
+        },
+        "Add a customer quote from Driton praising the service": {
+          "applied": 2,
+          "of": 5
+        }
+      },
+      "cause": "This stage told the model which field on THIS site carries a fact the owner states about their business (WHERE A CLAIM GOES ON THIS SITE). An email address and a price have that shape, so the named destination competed with the rule that they must never appear in copy.",
+      "proof": "Same three prompts, same fixture, three runs per build, through the real pipeline: the email request applied 3/3 on f9c2a4de and 0/3 on 573611a1. The other two refused 0/3 on both locally, and failed only against the live sites.",
+      "action": "Reverted in production and re-proven live on business #4: all three refused, draft restored to baseline."
+    },
+    {
+      "name": "the outcome check contradicts the already-true rule",
+      "hard": 6,
+      "prompts": [
+        "Keep the footer as plain as it is",
+        "Label the second photo in the gallery",
+        "Put my other photo into the gallery's first slot"
+      ],
+      "cause": "The ALREADY TRUE rule tells the model to answer a request the site already satisfies by proposing the operation with the value it already has, so the no-op guard can compare before and after. An expectation such as text_changed or token_increases cannot hold for that operation by construction, so the new check refused edits that were behaving correctly. Four of the five 'Keep the footer as plain as it is' executions were declared already-true before the run.",
+      "evidence": [
+        {
+          "business": 1,
+          "prompt": "Label the second photo in the gallery",
+          "expectationsStated": 1,
+          "expectationsFailed": 1,
+          "repairAttempted": true,
+          "versionDelta": 0,
+          "outcome": "model_failure"
+        },
+        {
+          "business": 1,
+          "prompt": "Keep the footer as plain as it is",
+          "expectationsStated": 1,
+          "expectationsFailed": 1,
+          "repairAttempted": true,
+          "versionDelta": 0,
+          "outcome": "model_failure"
+        },
+        {
+          "business": 1,
+          "prompt": "Put my other photo into the gallery's first slot",
+          "expectationsStated": 1,
+          "expectationsFailed": 1,
+          "repairAttempted": true,
+          "versionDelta": 0,
+          "outcome": "model_failure"
+        },
+        {
+          "business": 3,
+          "prompt": "Keep the footer as plain as it is",
+          "expectationsStated": 1,
+          "expectationsFailed": 1,
+          "repairAttempted": true,
+          "versionDelta": 0,
+          "outcome": "model_failure"
+        },
+        {
+          "business": 4,
+          "prompt": "Keep the footer as plain as it is",
+          "expectationsStated": 1,
+          "expectationsFailed": 1,
+          "repairAttempted": true,
+          "versionDelta": 0,
+          "outcome": "model_failure"
+        },
+        {
+          "business": 5,
+          "prompt": "Keep the footer as plain as it is",
+          "expectationsStated": 1,
+          "expectationsFailed": 1,
+          "repairAttempted": true,
+          "versionDelta": 0,
+          "outcome": "model_failure"
+        }
+      ],
+      "action": "Not fixed in this stage. Any future version of this mechanism must suspend the check when the plan is a deliberate no-op, or express 'stays as it is' in the same vocabulary."
+    },
+    {
+      "name": "the footer note can be read and asserted but not written",
+      "hard": 5,
+      "prompts": [
+        "Add a short line of text in the footer"
+      ],
+      "cause": "CopyTargetSchema has footer.ctaHeadline and no footer.note. The spec carries a note, the frozen predicate reads it, and the expectation vocabulary this stage added can name it \u2014 but no operation can set it. The model wrote the footer's CTA headline, which moved the site (hence no false changed:true and no misleading reply), while the predicate went on reading null.",
+      "cause_class": "The Stage 3F.1 defect \u2014 writable, but invisible \u2014 with the sides swapped: expressible and readable, but not writable. Mechanism 1 closed this for design tokens and never did the equivalent for copy fields.",
+      "action": "Not fixed in this stage. Either give the footer note an operation or remove it from what can be read and asserted; a field must not be assertable and unwritable."
+    },
+    {
+      "name": "residual singles",
+      "hard": 4,
+      "prompts": [
+        "Put a caption under every gallery photo",
+        "Use a generated image at the top instead of my photo",
+        "Trim the hero intro so it reads quicker"
+      ],
+      "cause": "Two caption executions and one hero-photo execution produced no usable operation after the repair; one hero-intro edit wrote a version whose intro was the same length (54 \u2192 54). Each failed on one or two businesses, not across the cohort.",
+      "action": "Not fixed in this stage."
+    }
+  ],
+  "cost": {
+    "meanPromptTokensPerEdit": 5965,
+    "previousStage": 4393,
+    "p50Ms": 9688,
+    "p95Ms": 17823,
+    "worstMs": 28447,
+    "previousStageP50Ms": 5600,
+    "comment": "Deriving the design block from TOKEN_PATHS shows every control on every call. It cost about 1,570 prompt tokens and roughly four seconds at p50; nothing went over the 30s owner SLA."
+  }
+}

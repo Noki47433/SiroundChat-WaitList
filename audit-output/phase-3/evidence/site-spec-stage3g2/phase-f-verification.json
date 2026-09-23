@@ -1,0 +1,77 @@
+{
+  "verifiedAt": "2026-09-23T20:34:17.356Z",
+  "passed": 14,
+  "failed": 0,
+  "results": [
+    {
+      "name": "exactly five businesses are enabled, and they are the five",
+      "ok": true,
+      "detail": "Siround e7387690 canary/site_spec · Stage 3F · Solo Studio 3f000002 canary/site_spec · Stage 3F · Two Chairs 3f000003 canary/site_spec · Stage 3F · Late & Closed 3f000004 canary/site_spec · Stage 3F · Atelier Nord 3f000005 canary/site_spec"
+    },
+    {
+      "name": "all five public pages answer 200 on their intended published version, byte-identical to the witness",
+      "ok": true,
+      "detail": "siround 200 ✓ · stage3f-solo-studio 200 ✓ · stage3f-two-chairs 200 ✓ · stage3f-late-and-closed 200 ✓ · stage3f-atelier-nord 200 ✓"
+    },
+    {
+      "name": "every draft is back at its Phase D baseline",
+      "ok": true,
+      "detail": "siround v339 · stage3f-solo-studio v234 · stage3f-two-chairs v205 · stage3f-late-and-closed v181 · stage3f-atelier-nord v183"
+    },
+    {
+      "name": "every cohort business is on the neutral booking runtime",
+      "ok": true,
+      "detail": "siround=neutral_active · stage3f-solo-studio=neutral_active · stage3f-two-chairs=neutral_active · stage3f-late-and-closed=neutral_active · stage3f-atelier-nord=neutral_active"
+    },
+    {
+      "name": "shared rate limiting is configured and production-safe",
+      "ok": true,
+      "detail": "shared · configured · productionSafe"
+    },
+    {
+      "name": "siround: availability → book → view → reschedule → cancel",
+      "ok": true,
+      "detail": "2026-09-25 · booked Internal Test Provider · view/reschedule/cancel 200 · forged token 404"
+    },
+    {
+      "name": "stage3f-solo-studio: availability → book → view → reschedule → cancel",
+      "ok": true,
+      "detail": "2026-09-25 · booked Ardita · view/reschedule/cancel 200 · forged token 404"
+    },
+    {
+      "name": "stage3f-two-chairs: availability → book → view → reschedule → cancel",
+      "ok": true,
+      "detail": "2026-09-25 · booked Blerim · view/reschedule/cancel 200 · forged token 404"
+    },
+    {
+      "name": "stage3f-late-and-closed: availability → book → view → reschedule → cancel",
+      "ok": true,
+      "detail": "2026-09-25 · booked Fatmire · view/reschedule/cancel 200 · forged token 404"
+    },
+    {
+      "name": "stage3f-atelier-nord: availability → book → view → reschedule → cancel",
+      "ok": true,
+      "detail": "2026-09-25 · booked Lira · view/reschedule/cancel 200 · forged token 404"
+    },
+    {
+      "name": "no cohort business accepts another's service id",
+      "ok": true,
+      "detail": "20 cross-tenant probes, all 404"
+    },
+    {
+      "name": "the 15 legacy sites are byte-identical to the pre-widening witness",
+      "ok": true,
+      "detail": "15/15 identical"
+    },
+    {
+      "name": "nothing was written outside the cohort since the mission began",
+      "ok": true,
+      "detail": "builder_site_versions +172 (all cohort) · booking +5 (all cohort) · reservations +0 (all cohort) · service +0 (all cohort) · team_member +0 (all cohort)"
+    },
+    {
+      "name": "no sixth business was created or enabled",
+      "ok": true,
+      "detail": "5 enabled · 0 businesses created since 2026-09-22"
+    }
+  ]
+}
