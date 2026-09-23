@@ -24,6 +24,12 @@ import { authorizeOps, type OpRejection, type OpWarning } from "@/lib/site-spec/
 import { applyOps, type SiteSpecOp } from "@/lib/site-spec/ops";
 import { ALREADY_TRUE_REPLIES, describeObservedChange, describeUnchanged } from "@/lib/site-spec/describe-change";
 import { sameWebsite } from "@/lib/site-spec/semantic-fingerprint";
+import {
+  checkExpectations,
+  describeExpectationFailures,
+  summariseExpectationFailures,
+  type Expectation
+} from "@/lib/site-spec/expectations";
 import { saveDraftSpec, type SiteVersion } from "@/lib/site-spec/store";
 import type { SiteSpec } from "@/lib/site-spec/schema";
 
@@ -229,6 +235,8 @@ export type EditOutcome = {
   repair?: { attempted: boolean; succeeded: boolean };
   /** The model the edit was interpreted with. Not a secret; reported for cost. */
   model?: string;
+  /** Typed outcome checks the model stated, and how many did not come true. */
+  expectations?: { stated: number; failed: number };
 };
 
 /**
@@ -237,7 +245,11 @@ export type EditOutcome = {
  * Every failure path leaves the draft untouched — an edit either lands whole or
  * does not land at all.
  */
-type EditTrace = { repair: { attempted: boolean; succeeded: boolean } };
+type EditTrace = {
+  repair: { attempted: boolean; succeeded: boolean };
+  /** Typed outcome checks stated by the model, and how many did not come true. */
+  expectations: { stated: number; failed: number };
+};
 
 /**
  * The diagnostics the owner's edit route returns (Stage 3F.2 · Phase E).
@@ -257,13 +269,19 @@ export const editDiagnostics = (outcome: EditOutcome, totalMs: number) => ({
   modelMs: outcome.usage.durationMs,
   totalMs,
   noOp: outcome.noOp ?? false,
+  /** How many typed expectations the model stated for this edit, and how many failed. */
+  expectationsStated: outcome.expectations?.stated ?? 0,
+  expectationsFailed: outcome.expectations?.failed ?? 0,
   stage: outcome.diagnostics?.stage ?? null
 });
 
 export const runEdit = async (input: Parameters<typeof runEditPipeline>[0]): Promise<EditOutcome> => {
-  const trace: EditTrace = { repair: { attempted: false, succeeded: false } };
+  const trace: EditTrace = {
+    repair: { attempted: false, succeeded: false },
+    expectations: { stated: 0, failed: 0 }
+  };
   const outcome = await runEditPipeline(input, trace);
-  return { ...outcome, repair: trace.repair, model: SITE_SPEC_MODEL };
+  return { ...outcome, repair: trace.repair, model: SITE_SPEC_MODEL, expectations: trace.expectations };
 };
 
 const runEditPipeline = async ({
@@ -449,7 +467,22 @@ const runEditPipeline = async ({
   let authorized = decision.authorized;
   // An explicit, checkable constraint in the owner's own words ("shorter"),
   // checked the way contrast is: before anything is saved.
+  const expectations: Expectation[] = ("expectations" in interpreted && interpreted.expectations) || [];
+  /**
+   * Stage 3G.2. Two post-conditions now, checked the same way and repaired the
+   * same way: what the OWNER asked for in words the code understands ("shorter"),
+   * and what the MODEL said would be true, in the closed vocabulary of
+   * lib/site-spec/expectations.ts. Neither can authorise anything — both can only
+   * turn a save into a repair, and then into an honest refusal.
+   */
+  trace.expectations.stated = expectations.length;
+  const unmetExpectations = (from: SiteSpec, to: SiteSpec) => {
+    const failures = checkExpectations(expectations, from, to);
+    trace.expectations.failed = failures.length;
+    return failures;
+  };
   let unmet = applied.ok ? unmetLengthRequest(message, spec, authorized) : null;
+  let broken = applied.ok ? unmetExpectations(spec, applied.spec) : [];
 
   // ONE bounded repair. Generation already feeds validation issues back to the
   // model; editing needs the same, because ordinary requests ("make it feel more
@@ -462,9 +495,13 @@ const runEditPipeline = async ({
   // second model call on every duplicate request (ten per cohort run) and added
   // seconds to the reply for nothing. Only repairable failures are repaired.
   const final = !applied.ok && applied.reason === "unapplicable" && ownerReadableRefusal(applied) !== null;
-  if (((!applied.ok && !final) || unmet) && remaining > 3_000) {
+  if (((!applied.ok && !final) || unmet || broken.length) && remaining > 3_000) {
     trace.repair.attempted = true;
-    const feedback = !applied.ok ? `${describeFailure(applied)} ${repairAdvice(applied)}` : unmet!.feedback;
+    const feedback = !applied.ok
+      ? `${describeFailure(applied)} ${repairAdvice(applied)}`
+      : unmet
+        ? unmet.feedback
+        : `${describeExpectationFailures(broken)}. Propose operations that actually bring this about, or say plainly that it cannot be done.`;
     const retry = await withinDeadline(
       interpret({
         message: `${message}\n\n(Your previous attempt was rejected: ${feedback})`,
@@ -481,9 +518,11 @@ const runEditPipeline = async ({
       const retryDecision = authorizeOps(retry.ops, { spec, business });
       if (retryDecision.authorized.length) {
         const second = applyOps(spec, retryDecision.authorized, { assets });
-        if (second.ok && !unmetLengthRequest(message, spec, retryDecision.authorized)) {
+        const stillBroken = second.ok ? unmetExpectations(spec, second.spec) : [];
+        if (second.ok && !unmetLengthRequest(message, spec, retryDecision.authorized) && !stillBroken.length) {
           trace.repair.succeeded = true;
           unmet = null;
+          broken = [];
           applied = second;
           authorized = retryDecision.authorized;
           decision.rejected.push(...retryDecision.rejected);
@@ -502,6 +541,22 @@ const runEditPipeline = async ({
       warnings: decision.warnings,
       diagnostics: { stage: "apply", detail: describeFailure(applied) },
       reply: explainApplyFailure(applied)
+    };
+  }
+
+  // The model said something would be true of the site and it is not. Saving it
+  // would be a change nobody asked for, reported as the one that was.
+  if (applied.ok && !unmet && broken.length) {
+    return {
+      changed: false,
+      usage,
+      ops: authorized,
+      rejections: decision.rejected,
+      warnings: decision.warnings,
+      diagnostics: { stage: "apply", detail: `expectation not met: ${summariseExpectationFailures(broken).slice(0, 200)}` },
+      reply:
+        "I couldn't make that change come out the way you asked, so I've left the site as it was. " +
+        "Try saying it a different way, or tell me exactly what you'd like it to look like."
     };
   }
 
