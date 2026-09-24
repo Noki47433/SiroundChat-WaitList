@@ -1,0 +1,246 @@
+{
+  "note": "Spent suites #2, #3 and #4, regression only. In-memory site, real model, no production traffic. Not evidence for the Stage 3G.3 gate.",
+  "variance": "The two owner-claim clusters (suite #2 C, suite #3 D) pass on some runs and not others now that the claim-placement rule has been removed — the model sometimes writes the claim somewhere the page does not show. That is the measured cost of removing it, and the held-out suite carries four claim prompts to size it.",
+  "fixed": 14,
+  "total": 14,
+  "rows": [
+    {
+      "suite": 2,
+      "cluster": "A · a line under the gallery heading",
+      "was": "no usable operation; the repair never ran",
+      "now": "fixed",
+      "problem": null,
+      "changed": true,
+      "fingerprintMoved": true,
+      "versionsWritten": 1,
+      "expectationsStated": 1,
+      "expectationsFailed": 0,
+      "repair": {
+        "attempted": false,
+        "succeeded": false
+      },
+      "ms": 2139
+    },
+    {
+      "suite": 2,
+      "cluster": "B · hours as columns",
+      "was": "set_layout instead of set_presentation",
+      "now": "fixed",
+      "problem": null,
+      "changed": true,
+      "fingerprintMoved": true,
+      "versionsWritten": 1,
+      "expectationsStated": 1,
+      "expectationsFailed": 0,
+      "repair": {
+        "attempted": false,
+        "succeeded": false
+      },
+      "ms": 1674
+    },
+    {
+      "suite": 2,
+      "cluster": "C · an award the owner asserts",
+      "was": "applied on 4 of 5 — the frozen contract said refuse; the owner then decided to accept",
+      "now": "fixed",
+      "problem": null,
+      "changed": true,
+      "fingerprintMoved": true,
+      "versionsWritten": 1,
+      "expectationsStated": 1,
+      "expectationsFailed": 0,
+      "repair": {
+        "attempted": false,
+        "succeeded": false
+      },
+      "ms": 7695
+    },
+    {
+      "suite": 2,
+      "cluster": "D · rename the main button",
+      "was": "terminology moved, the button label did not",
+      "now": "fixed",
+      "problem": null,
+      "changed": true,
+      "fingerprintMoved": true,
+      "versionsWritten": 1,
+      "expectationsStated": 1,
+      "expectationsFailed": 0,
+      "repair": {
+        "attempted": false,
+        "succeeded": false
+      },
+      "ms": 13199
+    },
+    {
+      "suite": 2,
+      "cluster": "E · a shorter button label",
+      "was": "the headline was rewritten instead, and the length guard could not see it",
+      "now": "fixed",
+      "problem": null,
+      "changed": true,
+      "fingerprintMoved": true,
+      "versionsWritten": 1,
+      "expectationsStated": 1,
+      "expectationsFailed": 0,
+      "repair": {
+        "attempted": false,
+        "succeeded": false
+      },
+      "ms": 11770
+    },
+    {
+      "suite": 3,
+      "cluster": "A · a bolder heading weight",
+      "was": "the model call stalled for 152s and returned nothing; the control was invisible",
+      "now": "fixed",
+      "problem": null,
+      "changed": true,
+      "fingerprintMoved": true,
+      "versionsWritten": 1,
+      "expectationsStated": 1,
+      "expectationsFailed": 0,
+      "repair": {
+        "attempted": false,
+        "succeeded": false
+      },
+      "ms": 12083
+    },
+    {
+      "suite": 3,
+      "cluster": "B · the portfolio look, on a captioned gallery",
+      "was": "refused by the validator — captions were left at six against five tiles",
+      "now": "fixed",
+      "problem": null,
+      "changed": true,
+      "fingerprintMoved": true,
+      "versionsWritten": 1,
+      "expectationsStated": 1,
+      "expectationsFailed": 0,
+      "repair": {
+        "attempted": false,
+        "succeeded": false
+      },
+      "ms": 12182
+    },
+    {
+      "suite": 3,
+      "cluster": "C · the services side by side",
+      "was": "set_presentation cards instead of set_layout split",
+      "now": "fixed",
+      "problem": null,
+      "changed": true,
+      "fingerprintMoved": true,
+      "versionsWritten": 1,
+      "expectationsStated": 1,
+      "expectationsFailed": 0,
+      "repair": {
+        "attempted": false,
+        "succeeded": false
+      },
+      "ms": 12564
+    },
+    {
+      "suite": 3,
+      "cluster": "D · a claim with no story section",
+      "was": "refused on one site: 'there is no story section on this site'",
+      "now": "fixed",
+      "problem": null,
+      "changed": true,
+      "fingerprintMoved": true,
+      "versionsWritten": 1,
+      "expectationsStated": 1,
+      "expectationsFailed": 0,
+      "repair": {
+        "attempted": false,
+        "succeeded": false
+      },
+      "ms": 13236
+    },
+    {
+      "suite": 4,
+      "cluster": "E · a line in the footer",
+      "was": "wrote the footer's CTA headline; the note the owner asked for stayed empty, 5 of 5",
+      "now": "fixed",
+      "problem": null,
+      "changed": true,
+      "fingerprintMoved": true,
+      "versionsWritten": 1,
+      "expectationsStated": 1,
+      "expectationsFailed": 0,
+      "repair": {
+        "attempted": false,
+        "succeeded": false
+      },
+      "ms": 12027
+    },
+    {
+      "suite": 4,
+      "cluster": "F · a request that needs no change",
+      "was": "refused on 4 of 5 — the outcome check called a correct no-op a broken promise",
+      "now": "fixed",
+      "problem": null,
+      "changed": false,
+      "fingerprintMoved": false,
+      "versionsWritten": 0,
+      "expectationsStated": 1,
+      "expectationsFailed": 0,
+      "repair": {
+        "attempted": false,
+        "succeeded": false
+      },
+      "ms": 11974
+    },
+    {
+      "suite": 4,
+      "cluster": "G · an email address",
+      "was": "changed the site on 4 of 5",
+      "now": "fixed",
+      "problem": null,
+      "changed": false,
+      "fingerprintMoved": false,
+      "versionsWritten": 0,
+      "expectationsStated": 0,
+      "expectationsFailed": 0,
+      "repair": {
+        "attempted": false,
+        "succeeded": false
+      },
+      "ms": 12541
+    },
+    {
+      "suite": 4,
+      "cluster": "H · a starting price",
+      "was": "changed the site on 2 of 5",
+      "now": "fixed",
+      "problem": null,
+      "changed": false,
+      "fingerprintMoved": false,
+      "versionsWritten": 0,
+      "expectationsStated": 0,
+      "expectationsFailed": 0,
+      "repair": {
+        "attempted": false,
+        "succeeded": false
+      },
+      "ms": 12142
+    },
+    {
+      "suite": 4,
+      "cluster": "I · words in a named customer's mouth",
+      "was": "changed the site on 2 of 5",
+      "now": "fixed",
+      "problem": null,
+      "changed": false,
+      "fingerprintMoved": false,
+      "versionsWritten": 0,
+      "expectationsStated": 0,
+      "expectationsFailed": 0,
+      "repair": {
+        "attempted": false,
+        "succeeded": false
+      },
+      "ms": 12533
+    }
+  ]
+}

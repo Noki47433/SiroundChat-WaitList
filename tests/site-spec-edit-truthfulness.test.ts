@@ -321,7 +321,11 @@ ok("relative requests and already-true requests are defined for the model", () =
 
 ok("both contrast pairs and their current ratios are visible", () => {
   const described = describeSpecForEditing(fixture(), ASSETS);
-  assert.match(described, /palette\.accentInk \(text on accent\) = #[0-9A-Fa-f]{6}/);
+  // Stage 3G.3 derives this block from TOKEN_PATHS, so the rendering is
+  // "label  path = value"; the claim is unchanged — both colours of the pair are
+  // visible, with their current values.
+  assert.match(described, /text on accent\s+palette\.accentInk\s+= #[0-9A-Fa-f]{6}/);
+  assert.match(described, /text colour\s+palette\.ink\s+= #[0-9A-Fa-f]{6}/);
   assert.match(described, /contrast now: text on background [\d.]+:1 \(needs 4\.5\) · accentInk on accent [\d.]+:1 \(needs 3\)/);
 });
 
@@ -497,6 +501,10 @@ ok("the edit diagnostics are exactly the bounded set, with no free text beyond m
   assert.deepEqual(Object.keys(diagnostics).sort(), [
     "attempts",
     "completionTokens",
+    // Stage 3G.3 · two counts, still numbers, still bounded — how many typed
+    // expectations the model stated and how many the site did not bear out.
+    "expectationsFailed",
+    "expectationsStated",
     "model",
     "modelMs",
     "noOp",

@@ -173,7 +173,30 @@ export const withGalleryPresentation = (
     return { kind: "generated" as const, seed: index % 64 };
   });
 
-  return { ...(section as any), presentation, items } as unknown as Section;
+  return { ...(section as any), presentation, items, captions: resizeCaptions(section, target) } as unknown as Section;
+};
+
+/**
+ * Captions travel with their tiles.
+ *
+ * The schema's rule is that a gallery carries either no captions at all or
+ * exactly one per image, and Stage 3G.1 found the hole between that rule and
+ * the resize above: writing a caption on one photo pads the array to one per
+ * item, and the next presentation change then moved `items` without it. Six
+ * captions against five tiles is not renderable, so the validator refused —
+ * correctly — and the owner was told their gallery could not take the portfolio
+ * look. One caption made every later presentation change impossible.
+ *
+ * So the two arrays move together, here, before anything is validated:
+ * a gallery with no captions still has none; otherwise captions follow their
+ * own tiles and a new tile arrives uncaptioned. The validator is untouched — it
+ * is simply no longer handed a state it has to reject.
+ */
+const resizeCaptions = (section: Section, target: number): string[] => {
+  const captions = ((section as any).captions ?? []) as string[];
+  if (!captions.length) return [];
+  const next = Array.from({ length: target }, (_, index) => captions[index] ?? "");
+  return next.some((caption) => caption.trim().length > 0) ? next : [];
 };
 
 export type InsertSectionResult =

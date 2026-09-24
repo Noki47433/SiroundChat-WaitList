@@ -86,6 +86,14 @@ export const CopyTargetSchema = z.discriminatedUnion("field", [
   z.object({ field: z.literal("bookingStrip.sub"), sectionId: SectionIdSchema }),
   z.object({ field: z.literal("gallery.caption"), sectionId: SectionIdSchema, index: z.number().int().min(0).max(11) }),
   z.object({ field: z.literal("footer.ctaHeadline") }),
+  /**
+   * Stage 3G.3. The footer note is rendered, it is readable, and until now no
+   * operation could write it — so "put a note at the bottom of the page" wrote
+   * the footer's CTA headline instead, on five sites out of five, while the
+   * thing the owner asked for stayed empty. A field that a page shows must be a
+   * field an owner can change.
+   */
+  z.object({ field: z.literal("footer.note") }),
   z.object({ field: z.literal("nav.cta") }),
   z.object({ field: z.literal("seo.title") }),
   z.object({ field: z.literal("seo.description") })
@@ -410,6 +418,10 @@ const applyOne = (spec: SiteSpec, op: SiteSpecOp, context: ApplyContext = {}): s
         }
       }
 
+      if (target.field === "footer.note") {
+        spec.footer.note = value || undefined;
+        return null;
+      }
       if (target.field === "footer.ctaHeadline") {
         spec.footer.ctaHeadline = value || undefined;
         return null;
