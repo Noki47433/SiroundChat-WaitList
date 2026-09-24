@@ -1,0 +1,181 @@
+{
+  "note": "Run after the measurement. It reclassifies nothing — the frozen contract's outcomes stand (R8). This is the check that should have run before the freeze, and must run before suite #6 is frozen.",
+  "promptsChecked": 34,
+  "promptsUnsatisfiableSomewhere": 8,
+  "promptSitePairsAffected": 18,
+  "rows": [
+    {
+      "prompt": "Give the team section a warmer introduction line",
+      "needs": [
+        "a team section"
+      ],
+      "unsatisfiableOn": [
+        {
+          "site": "#1 siround",
+          "missing": [
+            "a team section"
+          ]
+        }
+      ]
+    },
+    {
+      "prompt": "Shorten the line under the booking heading",
+      "needs": [
+        "a booking subheading with text in it"
+      ],
+      "unsatisfiableOn": [
+        {
+          "site": "#1 siround",
+          "missing": [
+            "a booking subheading with text in it"
+          ]
+        },
+        {
+          "site": "#2 stage3f-solo-studio",
+          "missing": [
+            "a booking subheading with text in it"
+          ]
+        },
+        {
+          "site": "#3 stage3f-two-chairs",
+          "missing": [
+            "a booking subheading with text in it"
+          ]
+        }
+      ]
+    },
+    {
+      "prompt": "Let the contact block run right to the edges",
+      "needs": [
+        "a contact section"
+      ],
+      "unsatisfiableOn": [
+        {
+          "site": "#1 siround",
+          "missing": [
+            "a contact section"
+          ]
+        },
+        {
+          "site": "#2 stage3f-solo-studio",
+          "missing": [
+            "a contact section"
+          ]
+        },
+        {
+          "site": "#3 stage3f-two-chairs",
+          "missing": [
+            "a contact section"
+          ]
+        },
+        {
+          "site": "#4 stage3f-late-and-closed",
+          "missing": [
+            "a contact section"
+          ]
+        },
+        {
+          "site": "#5 stage3f-atelier-nord",
+          "missing": [
+            "a contact section"
+          ]
+        }
+      ]
+    },
+    {
+      "prompt": "Show the team as plain portraits",
+      "needs": [
+        "a team section"
+      ],
+      "unsatisfiableOn": [
+        {
+          "site": "#1 siround",
+          "missing": [
+            "a team section"
+          ]
+        }
+      ]
+    },
+    {
+      "prompt": "Give the team photos an overlay treatment",
+      "needs": [
+        "a team section"
+      ],
+      "unsatisfiableOn": [
+        {
+          "site": "#1 siround",
+          "missing": [
+            "a team section"
+          ]
+        }
+      ]
+    },
+    {
+      "prompt": "Bring the team section up before the services",
+      "needs": [
+        "a team section",
+        "a services section"
+      ],
+      "unsatisfiableOn": [
+        {
+          "site": "#1 siround",
+          "missing": [
+            "a team section"
+          ]
+        }
+      ]
+    },
+    {
+      "prompt": "Put the contact details last on the page",
+      "needs": [
+        "a contact section"
+      ],
+      "unsatisfiableOn": [
+        {
+          "site": "#1 siround",
+          "missing": [
+            "a contact section"
+          ]
+        },
+        {
+          "site": "#2 stage3f-solo-studio",
+          "missing": [
+            "a contact section"
+          ]
+        },
+        {
+          "site": "#3 stage3f-two-chairs",
+          "missing": [
+            "a contact section"
+          ]
+        },
+        {
+          "site": "#4 stage3f-late-and-closed",
+          "missing": [
+            "a contact section"
+          ]
+        },
+        {
+          "site": "#5 stage3f-atelier-nord",
+          "missing": [
+            "a contact section"
+          ]
+        }
+      ]
+    },
+    {
+      "prompt": "Refer to the team as our crew",
+      "needs": [
+        "a team section"
+      ],
+      "unsatisfiableOn": [
+        {
+          "site": "#1 siround",
+          "missing": [
+            "a team section"
+          ]
+        }
+      ]
+    }
+  ]
+}
