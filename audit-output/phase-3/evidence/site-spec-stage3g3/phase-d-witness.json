@@ -1,0 +1,225 @@
+{
+  "takenAt": "2026-09-24T18:03:03.403Z",
+  "deployment": "dpl_B8j6KqqQ4NR6263Jux7VHyQ3Pgt7",
+  "commit": "d4248e62",
+  "note": "Written once, made read-only, hashed beside this file, and committed before the held-out measurement.",
+  "enabled": [
+    {
+      "businessId": "e7387690-bef7-4a9d-bcf5-0830d713e7c4",
+      "name": "Siround",
+      "state": "canary",
+      "publicMode": "site_spec"
+    },
+    {
+      "businessId": "3f000002-0000-4000-8000-000000000001",
+      "name": "Stage 3F · Solo Studio",
+      "state": "canary",
+      "publicMode": "site_spec"
+    },
+    {
+      "businessId": "3f000003-0000-4000-8000-000000000001",
+      "name": "Stage 3F · Two Chairs",
+      "state": "canary",
+      "publicMode": "site_spec"
+    },
+    {
+      "businessId": "3f000004-0000-4000-8000-000000000001",
+      "name": "Stage 3F · Late & Closed",
+      "state": "canary",
+      "publicMode": "site_spec"
+    },
+    {
+      "businessId": "3f000005-0000-4000-8000-000000000001",
+      "name": "Stage 3F · Atelier Nord",
+      "state": "canary",
+      "publicMode": "site_spec"
+    }
+  ],
+  "sites": [
+    {
+      "n": 1,
+      "slug": "siround",
+      "draftVersionId": "b3016c59-427c-4b5b-9441-10893de6898c",
+      "draftVersionNumber": 339,
+      "draftSemanticFingerprint": "791e92557a37cf78f0eca77af31f7c29bb4541ad1394f551976a73fc6bb974da",
+      "draftIsDeclaredBaseline": true,
+      "baselineVersionId": "8e35a424-9426-49ce-8737-5735748cc6b2",
+      "publishedVersionId": "c30cfb71-6258-445f-8891-5dd757c7464a",
+      "publishedVersionNumber": 22,
+      "specPublishedAt": "2026-09-08T18:47:54.421937+00:00",
+      "versionCount": 339,
+      "publishedSemanticFingerprint": "791e92557a37cf78f0eca77af31f7c29bb4541ad1394f551976a73fc6bb974da",
+      "publicPageFingerprint": "36e362a7d1cf838c6a142f76acfc793bbdacc46857712c66ec672b946cc6cd0b"
+    },
+    {
+      "n": 2,
+      "slug": "stage3f-solo-studio",
+      "draftVersionId": "180be378-4046-477b-90f2-c9dbd9d80f46",
+      "draftVersionNumber": 239,
+      "draftSemanticFingerprint": "09e119bd66dfd057ba5c2633b858f09ebd605e277e1bdf2582b2bcf83eb9180c",
+      "draftIsDeclaredBaseline": true,
+      "baselineVersionId": "1bb03c63-81df-4fad-8227-2ac3f8bf8f52",
+      "publishedVersionId": "538d658a-3522-42e1-a527-4eed6986f4be",
+      "publishedVersionNumber": 12,
+      "specPublishedAt": "2026-09-09T18:54:25.313945+00:00",
+      "versionCount": 239,
+      "publishedSemanticFingerprint": "569a816fecdce6e8d8061b02fff0b98b8c5005967b4f2cb24d6d866944cbcf68",
+      "publicPageFingerprint": "388496515d78a83f2d01ac889c0c7e59ee8850bdb0a1a1afb1c8f6b4c3d7546c"
+    },
+    {
+      "n": 3,
+      "slug": "stage3f-two-chairs",
+      "draftVersionId": "7b02febe-8964-4eed-8241-3f726761a5a5",
+      "draftVersionNumber": 205,
+      "draftSemanticFingerprint": "d852e1e1bbf63e7ee5680531d152865a824387e499ed7ba990fdd3ff01c6ee36",
+      "draftIsDeclaredBaseline": true,
+      "baselineVersionId": "1b300f79-ee90-4a0e-b027-febee3d1eaf8",
+      "publishedVersionId": "1b300f79-ee90-4a0e-b027-febee3d1eaf8",
+      "publishedVersionNumber": 13,
+      "specPublishedAt": "2026-09-09T19:06:55.410305+00:00",
+      "versionCount": 205,
+      "publishedSemanticFingerprint": "d852e1e1bbf63e7ee5680531d152865a824387e499ed7ba990fdd3ff01c6ee36",
+      "publicPageFingerprint": "39d774fde82c483fe48b9c5f6c5819b2fa5ecebcb16d99a10097758eb1e2d1fd"
+    },
+    {
+      "n": 4,
+      "slug": "stage3f-late-and-closed",
+      "draftVersionId": "7cbacefd-5e5f-4680-9ef0-ab0ad9b95b38",
+      "draftVersionNumber": 181,
+      "draftSemanticFingerprint": "6870670a26c508326ae71216e2d210b7f3e17f1e7044f82bb28781e74178e6e7",
+      "draftIsDeclaredBaseline": true,
+      "baselineVersionId": "0ad0d07c-5be9-410a-b0c8-2e1db85f7116",
+      "publishedVersionId": "0ad0d07c-5be9-410a-b0c8-2e1db85f7116",
+      "publishedVersionNumber": 13,
+      "specPublishedAt": "2026-09-09T19:14:05.916599+00:00",
+      "versionCount": 181,
+      "publishedSemanticFingerprint": "6870670a26c508326ae71216e2d210b7f3e17f1e7044f82bb28781e74178e6e7",
+      "publicPageFingerprint": "338ef80555767182527da809b1151fd2efc27b3a5f959c03078ff6e130cad04b"
+    },
+    {
+      "n": 5,
+      "slug": "stage3f-atelier-nord",
+      "draftVersionId": "eb529a59-6771-4e99-8fc8-b95a05d65209",
+      "draftVersionNumber": 183,
+      "draftSemanticFingerprint": "7a199e901622fb6b410d50b11d98947b29c83811ccce34fb0ac0d797e91b0a6a",
+      "draftIsDeclaredBaseline": true,
+      "baselineVersionId": "f2d6bdc2-95cd-4643-bfd8-e96b5c7d2a3b",
+      "publishedVersionId": "f2d6bdc2-95cd-4643-bfd8-e96b5c7d2a3b",
+      "publishedVersionNumber": 13,
+      "specPublishedAt": "2026-09-09T19:21:00.313063+00:00",
+      "versionCount": 183,
+      "publishedSemanticFingerprint": "7a199e901622fb6b410d50b11d98947b29c83811ccce34fb0ac0d797e91b0a6a",
+      "publicPageFingerprint": "98266c12daeef4313cda366d9ccdafee88bd5d431428456fbefc78fc308bb82f"
+    }
+  ],
+  "legacy": [
+    {
+      "slug": "codex-verify-mo8ujlg1",
+      "status": 404,
+      "md5": "54d126912f22d47fee7dd4c3b76a1b10",
+      "identicalToPreWideningWitness": true
+    },
+    {
+      "slug": "hotel-qama",
+      "status": 200,
+      "md5": "adf7256962b33bb204dd7618d134d26c",
+      "identicalToPreWideningWitness": true
+    },
+    {
+      "slug": "marcos-italiano",
+      "status": 200,
+      "md5": "42f913b7435c878a080f558c4ce7cda4",
+      "identicalToPreWideningWitness": true
+    },
+    {
+      "slug": "rikoli-restaurant-123-jbbd",
+      "status": 200,
+      "md5": "4762655d6f4f978cc15d663d15d68108",
+      "identicalToPreWideningWitness": true
+    },
+    {
+      "slug": "rikoli-restaurant-123-uxi2",
+      "status": 200,
+      "md5": "bc80b85ad602f2d9774869f8f3477e37",
+      "identicalToPreWideningWitness": true
+    },
+    {
+      "slug": "rikoli-restaurant-5pxg",
+      "status": 200,
+      "md5": "f7447dd084ac1758c812d8384701385d",
+      "identicalToPreWideningWitness": true
+    },
+    {
+      "slug": "rikoli-restaurant-9uih",
+      "status": 200,
+      "md5": "9112db0b6d938110981dfff1b660216f",
+      "identicalToPreWideningWitness": true
+    },
+    {
+      "slug": "rikoli-restaurant-i659",
+      "status": 200,
+      "md5": "cc7f392237169779e55bd5d4dcda2eb6",
+      "identicalToPreWideningWitness": true
+    },
+    {
+      "slug": "rikoli-restaurant-strw",
+      "status": 200,
+      "md5": "e3090587d639da2919c2d3a523c7685f",
+      "identicalToPreWideningWitness": true
+    },
+    {
+      "slug": "rikoli-restaurant-tii0",
+      "status": 200,
+      "md5": "52c58e760a1cec9b81e153b2a6d1d8c4",
+      "identicalToPreWideningWitness": true
+    },
+    {
+      "slug": "rikoli-restaurant-xmja",
+      "status": 200,
+      "md5": "7bd0af0f9fdbfad8983b5a53f9961d1a",
+      "identicalToPreWideningWitness": true
+    },
+    {
+      "slug": "sarajeva-steak-house",
+      "status": 200,
+      "md5": "85952695d04f6d70f171257b66922f7c",
+      "identicalToPreWideningWitness": true
+    },
+    {
+      "slug": "siroundchat",
+      "status": 200,
+      "md5": "1a7be339919a0f4f6b592ad8035dcc18",
+      "identicalToPreWideningWitness": true
+    },
+    {
+      "slug": "test43-business-h76h",
+      "status": 200,
+      "md5": "d1f8793d62c12fc36cb993a2ffc2d9d4",
+      "identicalToPreWideningWitness": true
+    },
+    {
+      "slug": "testtesttest",
+      "status": 200,
+      "md5": "77a42db76c9b7bc37cd9bb4ca7605956",
+      "identicalToPreWideningWitness": true
+    }
+  ],
+  "counts": {
+    "businesses": 22,
+    "builder_sites": 521,
+    "builder_site_versions": 1147,
+    "builder_site_assets": 45,
+    "business_site_spec_rollout": 5,
+    "business_booking_migration": 22,
+    "booking": 46,
+    "reservations": 28,
+    "service": 7,
+    "team_member": 6,
+    "leads": 24
+  },
+  "limiter": {
+    "mode": "shared",
+    "configured": true,
+    "productionSafe": true
+  }
+}
