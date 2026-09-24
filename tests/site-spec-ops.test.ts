@@ -421,14 +421,26 @@ ok("a price that contradicts the business record is refused and routed", () => {
   assert.match(decision.rejected[0].message, /Services in your Business settings/);
 });
 
-ok("a price that matches the business record is allowed, with a staleness warning", () => {
+/**
+ * Stage 3G.3 changed this deliberately. It used to allow a price that matched
+ * the business record, with a warning that it would go stale — the warning went
+ * to a log and the price went onto the website. The product's rule has always
+ * been that these facts are bound, never written, so an edit asking for one is
+ * refused whatever today's number is. The classifier still tells a true price
+ * from a false one; only what the authorization layer does with it changed.
+ */
+ok("a price that matches the business record is refused too, and says why", () => {
   const decision = authorizeOps(
     [{ op: "set_copy", target: { field: "hero.headline" }, value: "Skin fades from €12." }],
     { spec: base(), business: FADE_BUSINESS }
   );
-  assert.equal(decision.authorized.length, 1, "a true price should be allowed");
-  assert.equal(decision.warnings.length, 1);
-  assert.equal(decision.warnings[0].kind, "stale_fact");
+  assert.equal(decision.authorized.length, 0, "a price does not belong in copy, true or not");
+  assert.equal(decision.rejected[0].reason, "operational_fact");
+  assert.match(decision.rejected[0].message, /right today/);
+  assert.equal(
+    checkCopyForOperationalFacts("Skin fades from €12.", FADE_BUSINESS, "en").verdict,
+    "matches_canonical"
+  );
 });
 
 ok("durations, opening times and phone numbers are held to the same rule", () => {

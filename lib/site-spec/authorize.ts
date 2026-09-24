@@ -78,6 +78,38 @@ const CLOCK = /\b(?:[01]?\d|2[0-3])[:.][0-5]\d\b|\b(?:1[0-2]|0?\d)\s*(?:am|pm)\b
 /** A run of digits long enough to be a phone number. */
 const PHONE = /(?:\+\d[\d\s().-]{7,}\d)|(?:\b\d[\d\s().-]{8,}\d\b)/g;
 
+/**
+ * An email address. Stage 3G.3.
+ *
+ * There was no pattern for one until now, and that is how "show our email as
+ * hello@example.com" reached the page on four of five businesses in Stage
+ * 3G.2's held-out run: nothing in the code looked for it, so the only thing
+ * refusing it was a sentence in the system prompt, and a sentence lost.
+ *
+ * A business record has no email field at all (BusinessLocation is address and
+ * phone), so an address written into copy can never be checked against
+ * anything. It is always refused, and always routed to the place contact
+ * details actually live.
+ */
+const EMAIL = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g;
+
+/**
+ * A price written the way an owner says it out loud. Stage 3G.3.
+ *
+ * MONEY above only matches a symbol or an ISO code next to digits, so "20
+ * euros" and "twenty five euros" both read as ordinary prose — which is how a
+ * price request slipped past the guard on two businesses in Stage 3G.2. Both
+ * forms are prices, and neither belongs in copy.
+ */
+const CURRENCY_WORD = "(?:euros?|dollars?|pounds?|francs?|lek[ëe]?s?|denars?|dinars?|cents?)";
+const NUMBER_WORD =
+  "(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|" +
+  "sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred)";
+const MONEY_IN_WORDS = new RegExp(
+  `\\b(?:\\d+(?:[.,]\\d{1,2})?|${NUMBER_WORD}(?:[\\s-]+(?:and[\\s-]+)?${NUMBER_WORD})*)\\s+${CURRENCY_WORD}\\b`,
+  "gi"
+);
+
 const normaliseNumber = (value: string): string =>
   value.replace(/[^\d.,]/g, "").replace(",", ".").replace(/\.0+$/, "");
 
@@ -133,6 +165,26 @@ export const checkCopyForOperationalFacts = (
   business: BusinessPayload,
   locale: string
 ): FactCheck => {
+  const emails = text.match(EMAIL);
+  if (emails?.length) {
+    return {
+      verdict: "contradicts",
+      kind: "email address",
+      found: emails[0].trim(),
+      routeTo: "Contact details in your Business settings"
+    };
+  }
+
+  const spoken = text.match(MONEY_IN_WORDS);
+  if (spoken?.length) {
+    return {
+      verdict: "contradicts",
+      kind: "price",
+      found: spoken[0].trim(),
+      routeTo: "Services in your Business settings"
+    };
+  }
+
   const money = text.match(MONEY);
   if (money?.length) {
     const canonical = canonicalMoney(business, locale);
@@ -253,15 +305,32 @@ export const authorizeOps = (ops: SiteSpecOp[], context: AuthorizeContext): Auth
         continue;
       }
 
+      /**
+       * Stage 3G.3 — a fact that happens to be TRUE today is still a fact.
+       *
+       * Until now this was a warning: copy saying "from €12" was written when
+       * €12 was the real price, with a note that it would go stale. The note
+       * went to a log; the price went on the website. The product's own rule has
+       * always been absolute — "never put a price, duration, opening time,
+       * address or phone number into any copy, they are bound from the business
+       * record and appear automatically" — and an owner asking for one is asking
+       * for the thing that rule forbids, whatever today's number happens to be.
+       *
+       * So an edit is refused either way, and the difference between the two
+       * verdicts is only what the owner is told. Nothing generation writes comes
+       * through here; this path is the owner's own edits.
+       */
       if (check.verdict === "matches_canonical") {
-        warnings.push({
+        rejected.push({
           op,
           index,
-          kind: "stale_fact",
+          reason: "operational_fact",
           message:
-            `This copy states a ${check.kind} ("${check.found}") that is correct today but is ` +
-            `written into the text, so it will not update when your business record changes.`
+            `That ${check.kind} is right today, but writing "${check.found}" into the page would ` +
+            `freeze it there — your site already shows whatever your business record says, and ` +
+            `updates by itself when you change it.`
         });
+        continue;
       }
     }
 
